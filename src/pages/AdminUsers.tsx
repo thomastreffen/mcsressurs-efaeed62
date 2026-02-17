@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { EmployeeImport } from "@/components/EmployeeImport";
 import {
   Select,
   SelectContent,
@@ -130,6 +131,10 @@ export default function AdminUsers() {
                 })}
               </TableBody>
             </Table>
+          </div>
+
+          <div className="mt-8">
+            <EmployeeImport />
           </div>
         </div>
       </main>

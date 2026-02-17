@@ -2,3 +2,9 @@ project_id = "nmqycanqumelmfpdmkpr"
 
 [functions.auth-callback]
 verify_jwt = false
+
+[functions.fetch-employees]
+verify_jwt = false
+
+[functions.add-technicians]
+verify_jwt = false

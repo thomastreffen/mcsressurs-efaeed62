@@ -162,6 +162,17 @@ Deno.serve(async (req) => {
       );
     }
 
+    // Store Microsoft tokens for Graph API access
+    const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+    await supabaseAdmin
+      .from("microsoft_tokens")
+      .upsert({
+        user_id: userId,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || null,
+        expires_at: expiresAt,
+      }, { onConflict: "user_id" });
+
     // Fetch user role
     const { data: roleData } = await supabaseAdmin
       .from("user_roles")
