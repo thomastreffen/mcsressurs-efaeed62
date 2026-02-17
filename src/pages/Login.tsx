@@ -28,10 +28,21 @@ export default function Login() {
 
   const exchangeCode = useCallback(async (code: string) => {
     setProcessing(true);
+    
+    // Timeout after 15 seconds
+    const timeoutId = setTimeout(() => {
+      setProcessing(false);
+      toast.error("Innlogging tok for lang tid", {
+        description: "Prøv igjen.",
+      });
+    }, 15000);
+
     try {
       const { data, error } = await supabase.functions.invoke("auth-callback", {
         body: { code, redirect_uri: redirectUri },
       });
+
+      clearTimeout(timeoutId);
 
       if (error || !data?.session) {
         toast.error("Innlogging feilet", {
@@ -51,6 +62,7 @@ export default function Login() {
       });
       navigate("/", { replace: true });
     } catch (err) {
+      clearTimeout(timeoutId);
       console.error("Login error:", err);
       toast.error("Innlogging feilet");
       setProcessing(false);
