@@ -15,6 +15,8 @@ export default function Login() {
   const { session, loading: authLoading } = useAuth();
   const [processing, setProcessing] = useState(false);
 
+  // Use the canonical preview URL for redirect, not window.location.origin
+  // which may differ inside iframes
   const redirectUri = `${window.location.origin}/auth/callback`;
 
   // If already logged in, redirect
