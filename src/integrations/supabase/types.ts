@@ -14,6 +14,42 @@ export type Database = {
   }
   public: {
     Tables: {
+      event_technicians: {
+        Row: {
+          created_at: string
+          event_id: string
+          id: string
+          technician_id: string
+        }
+        Insert: {
+          created_at?: string
+          event_id: string
+          id?: string
+          technician_id: string
+        }
+        Update: {
+          created_at?: string
+          event_id?: string
+          id?: string
+          technician_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_technicians_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "event_technicians_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       events: {
         Row: {
           address: string | null
