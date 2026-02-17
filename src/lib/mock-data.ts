@@ -15,11 +15,31 @@ export interface Attachment {
   size?: number; // bytes
 }
 
+export type AppRole = "super_admin" | "admin" | "montør";
+
+export interface AdminUser {
+  id: string;
+  name: string;
+  email: string;
+  role: AppRole;
+  active: boolean;
+}
+
 export interface Technician {
   id: string;
   name: string;
   email: string;
   role: "admin" | "montør";
+}
+
+export interface EventLog {
+  id: string;
+  eventId: string;
+  actionType: "created" | "updated" | "cancelled" | "attendee_added" | "attendee_removed";
+  performedBy: string; // admin user id
+  performedByName: string;
+  timestamp: Date;
+  changeSummary: string;
 }
 
 export interface Job {
@@ -37,6 +57,20 @@ export interface Job {
   proposedStart?: Date;
   proposedEnd?: Date;
   attachments?: Attachment[];
+  // Audit fields
+  createdBy?: string;
+  createdByName?: string;
+  createdAt?: Date;
+  updatedBy?: string;
+  updatedByName?: string;
+  updatedAt?: Date;
+  cancelledBy?: string;
+  cancelledByName?: string;
+  cancelledAt?: Date;
+  // Soft-lock
+  editingBy?: string;
+  editingByName?: string;
+  editingStartedAt?: Date;
 }
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -47,6 +81,23 @@ export const technicians: Technician[] = [
   { id: "3", name: "Kari Olsen", email: "kari@mcs.no", role: "montør" },
   { id: "4", name: "Thomas Berg", email: "thomas@mcs.no", role: "montør" },
 ];
+
+export const adminUsers: AdminUser[] = [
+  { id: "a1", name: "Thomas Berg", email: "thomas@mcs.no", role: "super_admin", active: true },
+  { id: "a2", name: "Øyvind Larsen", email: "oyvind@mcs.no", role: "admin", active: true },
+  { id: "a3", name: "Silje Moen", email: "silje@mcs.no", role: "admin", active: false },
+];
+
+export const eventLogs: EventLog[] = [
+  { id: "l1", eventId: "j1", actionType: "created", performedBy: "a1", performedByName: "Thomas Berg", timestamp: addDays(weekStart, -1), changeSummary: "Jobb opprettet" },
+  { id: "l2", eventId: "j1", actionType: "updated", performedBy: "a2", performedByName: "Øyvind Larsen", timestamp: addDays(weekStart, 0), changeSummary: "Endret tidspunkt fra 08:00-11:00 til 09:00-12:00" },
+  { id: "l3", eventId: "j5", actionType: "created", performedBy: "a2", performedByName: "Øyvind Larsen", timestamp: addDays(weekStart, -2), changeSummary: "Jobb opprettet" },
+  { id: "l4", eventId: "j5", actionType: "attendee_added", performedBy: "a2", performedByName: "Øyvind Larsen", timestamp: addDays(weekStart, -1), changeSummary: "Kari Olsen lagt til som montør" },
+];
+
+export function getEventLogs(eventId: string): EventLog[] {
+  return eventLogs.filter((l) => l.eventId === eventId).sort((a, b) => b.timestamp.getTime() - a.timestamp.getTime());
+}
 
 export const jobs: Job[] = [
   {
@@ -61,6 +112,12 @@ export const jobs: Job[] = [
     start: setMinutes(setHours(addDays(weekStart, 0), 9), 0),
     end: setMinutes(setHours(addDays(weekStart, 0), 12), 0),
     status: "accepted",
+    createdBy: "a1",
+    createdByName: "Thomas Berg",
+    createdAt: addDays(weekStart, -1),
+    updatedBy: "a2",
+    updatedByName: "Øyvind Larsen",
+    updatedAt: weekStart,
     attachments: [
       { name: "serviceskjema.pdf", url: "#", size: 245000 },
       { name: "foto_anlegg.jpg", url: "#", size: 1800000 },
