@@ -1,0 +1,93 @@
+import { createContext, useContext, useEffect, useState, useCallback, type ReactNode } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import type { Session, User } from "@supabase/supabase-js";
+
+export type AppRole = "super_admin" | "admin" | "montør";
+
+interface AuthUser {
+  id: string;
+  email: string;
+  name: string;
+  role: AppRole;
+}
+
+interface AuthContextType {
+  session: Session | null;
+  user: AuthUser | null;
+  loading: boolean;
+  isAdmin: boolean;
+  isSuperAdmin: boolean;
+  signOut: () => Promise<void>;
+}
+
+const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [session, setSession] = useState<Session | null>(null);
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  const fetchRole = useCallback(async (supaUser: User): Promise<AuthUser> => {
+    const { data } = await supabase
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", supaUser.id)
+      .single();
+
+    return {
+      id: supaUser.id,
+      email: supaUser.email || "",
+      name: supaUser.user_metadata?.full_name || supaUser.email || "",
+      role: (data?.role as AppRole) || "montør",
+    };
+  }, []);
+
+  useEffect(() => {
+    // Set up listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange(
+      async (_event, newSession) => {
+        setSession(newSession);
+        if (newSession?.user) {
+          const authUser = await fetchRole(newSession.user);
+          setUser(authUser);
+        } else {
+          setUser(null);
+        }
+        setLoading(false);
+      }
+    );
+
+    // Then check existing session
+    supabase.auth.getSession().then(async ({ data: { session: existing } }) => {
+      setSession(existing);
+      if (existing?.user) {
+        const authUser = await fetchRole(existing.user);
+        setUser(authUser);
+      }
+      setLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
+  }, [fetchRole]);
+
+  const signOut = useCallback(async () => {
+    await supabase.auth.signOut();
+    setSession(null);
+    setUser(null);
+  }, []);
+
+  const isAdmin = user?.role === "admin" || user?.role === "super_admin";
+  const isSuperAdmin = user?.role === "super_admin";
+
+  return (
+    <AuthContext.Provider value={{ session, user, loading, isAdmin, isSuperAdmin, signOut }}>
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+export function useAuth() {
+  const ctx = useContext(AuthContext);
+  if (!ctx) throw new Error("useAuth must be used within AuthProvider");
+  return ctx;
+}
