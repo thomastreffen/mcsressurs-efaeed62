@@ -48,8 +48,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       async (_event, newSession) => {
         setSession(newSession);
         if (newSession?.user) {
-          const authUser = await fetchRole(newSession.user);
-          setUser(authUser);
+          try {
+            const authUser = await fetchRole(newSession.user);
+            setUser(authUser);
+          } catch (err) {
+            console.error("Failed to fetch role:", err);
+            setUser(null);
+          }
         } else {
           setUser(null);
         }
@@ -61,8 +66,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     supabase.auth.getSession().then(async ({ data: { session: existing } }) => {
       setSession(existing);
       if (existing?.user) {
-        const authUser = await fetchRole(existing.user);
-        setUser(authUser);
+        try {
+          const authUser = await fetchRole(existing.user);
+          setUser(authUser);
+        } catch (err) {
+          console.error("Failed to fetch role:", err);
+          setUser(null);
+        }
       }
       setLoading(false);
     });
