@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,6 +12,8 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TechnicianMultiSelect } from "./TechnicianMultiSelect";
 import { FileUpload } from "./FileUpload";
+import { ConflictWarning } from "./ConflictWarning";
+import { getConflicts } from "@/lib/mock-data";
 import { toast } from "sonner";
 
 interface CreateJobDialogProps {
@@ -35,6 +37,14 @@ export function CreateJobDialog({
   const [endTime, setEndTime] = useState("16:00");
   const [techIds, setTechIds] = useState<string[]>(preselectedTechId ? [preselectedTechId] : []);
   const [files, setFiles] = useState<File[]>([]);
+
+  const conflicts = useMemo(() => {
+    if (!startDate || !startTime || !endDate || !endTime || techIds.length === 0) return [];
+    const start = new Date(`${startDate}T${startTime}`);
+    const end = new Date(`${endDate}T${endTime}`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+    return getConflicts(techIds, start, end);
+  }, [techIds, startDate, startTime, endDate, endTime]);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -149,6 +159,8 @@ export function CreateJobDialog({
               </div>
             </div>
           </div>
+
+          <ConflictWarning conflicts={conflicts} />
 
           <div>
             <Label htmlFor="description">Beskrivelse</Label>

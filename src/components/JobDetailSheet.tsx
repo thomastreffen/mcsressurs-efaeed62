@@ -1,4 +1,4 @@
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import {
   Sheet,
   SheetContent,
@@ -9,19 +9,18 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
-import { JobStatusBadge } from "./JobStatusBadge";
 import { TechnicianMultiSelect } from "./TechnicianMultiSelect";
 import { FileUpload } from "./FileUpload";
+import { AttendeeStatusList } from "./AttendeeStatusList";
+import { AttachmentList } from "./AttachmentList";
+import { ConflictWarning } from "./ConflictWarning";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
-import { technicians, type Job } from "@/lib/mock-data";
+import { technicians, getConflicts, type Job, type Attachment } from "@/lib/mock-data";
 import {
   MapPin,
   Clock,
-  User,
   Building2,
-  CalendarCheck,
-  CalendarX,
   Pencil,
   Copy,
   ArrowLeft,
@@ -37,8 +36,7 @@ interface JobDetailSheetProps {
 
 export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDetailSheetProps) {
   const [mode, setMode] = useState<"view" | "edit">("view");
-  
-  // Edit form state
+
   const [title, setTitle] = useState("");
   const [customer, setCustomer] = useState("");
   const [address, setAddress] = useState("");
@@ -49,13 +47,10 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
   const [endTime, setEndTime] = useState("");
   const [techIds, setTechIds] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
-  const [existingAttachments, setExistingAttachments] = useState<{ name: string; url: string }[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<Attachment[]>([]);
 
-  // Reset to view mode when job changes or sheet opens
   useEffect(() => {
-    if (open && job) {
-      setMode("view");
-    }
+    if (open && job) setMode("view");
   }, [open, job]);
 
   const populateEditForm = () => {
@@ -73,9 +68,18 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
     setExistingAttachments(job.attachments || []);
   };
 
+  // Conflict detection for edit mode
+  const editConflicts = useMemo(() => {
+    if (mode !== "edit" || !startDate || !startTime || !endDate || !endTime || techIds.length === 0) return [];
+    const start = new Date(`${startDate}T${startTime}`);
+    const end = new Date(`${endDate}T${endTime}`);
+    if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
+    return getConflicts(techIds, start, end, job?.id);
+  }, [mode, techIds, startDate, startTime, endDate, endTime, job?.id]);
+
   if (!job) return null;
 
-  const assignedTechs = technicians.filter((t) => job.technicianIds.includes(t.id));
+  const hasChangeRequest = job.attendeeStatuses.some((a) => a.status === "change-request");
 
   const handleEdit = () => {
     populateEditForm();
@@ -85,20 +89,23 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     if (techIds.length === 0) return;
-    toast.success("Jobb oppdatert", {
-      description: `SERVICE – ${title} er lagret.`,
+    toast.success("Jobb oppdatert", { description: `SERVICE – ${title} er lagret.` });
+    onOpenChange(false);
+  };
+
+  const handleAcceptProposal = (techId: string) => {
+    const tech = technicians.find((t) => t.id === techId);
+    toast.success("Nytt tidspunkt godtatt", {
+      description: `Forslaget fra ${tech?.name} er godtatt. Alle deltakere oppdateres.`,
     });
     onOpenChange(false);
   };
 
-  const handleAcceptProposal = () => {
-    toast.success("Nytt tidspunkt godtatt");
-    onOpenChange(false);
-  };
-
-  const handleDeclineProposal = () => {
-    toast.info("Foreslått tidspunkt avvist, opprinnelig beholdt");
-    onOpenChange(false);
+  const handleDeclineProposal = (techId: string) => {
+    const tech = technicians.find((t) => t.id === techId);
+    toast.info("Foreslått tidspunkt avvist", {
+      description: `Forslaget fra ${tech?.name} er avvist, opprinnelig tidspunkt beholdt.`,
+    });
   };
 
   const handleCancel = () => {
@@ -121,47 +128,33 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
             </SheetHeader>
 
             <div className="mt-6 space-y-5">
-              <div className="flex items-center justify-between">
-                <JobStatusBadge status={job.status} />
-                <div className="flex gap-1.5">
-                  <Button size="sm" variant="outline" onClick={handleEdit} className="gap-1.5">
-                    <Pencil className="h-3.5 w-3.5" />
-                    Rediger
+              <div className="flex items-center justify-end gap-1.5">
+                <Button size="sm" variant="outline" onClick={handleEdit} className="gap-1.5">
+                  <Pencil className="h-3.5 w-3.5" />
+                  Rediger
+                </Button>
+                {onDuplicate && (
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => { onDuplicate(job); onOpenChange(false); }}
+                    className="gap-1.5"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                    Dupliser
                   </Button>
-                  {onDuplicate && (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => { onDuplicate(job); onOpenChange(false); }}
-                      className="gap-1.5"
-                    >
-                      <Copy className="h-3.5 w-3.5" />
-                      Dupliser
-                    </Button>
-                  )}
-                </div>
+                )}
               </div>
 
               <div className="space-y-3">
                 <div className="flex items-start gap-3 text-sm">
-                  <User className="h-4 w-4 mt-0.5 text-muted-foreground" />
-                  <div>
-                    {assignedTechs.map((t) => (
-                      <p key={t.id} className="font-medium">{t.name} <span className="font-normal text-muted-foreground">({t.email})</span></p>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="flex items-start gap-3 text-sm">
                   <Building2 className="h-4 w-4 mt-0.5 text-muted-foreground" />
                   <p>{job.customer}</p>
                 </div>
-
                 <div className="flex items-start gap-3 text-sm">
                   <MapPin className="h-4 w-4 mt-0.5 text-muted-foreground" />
                   <p>{job.address}</p>
                 </div>
-
                 <div className="flex items-start gap-3 text-sm">
                   <Clock className="h-4 w-4 mt-0.5 text-muted-foreground" />
                   <div>
@@ -173,37 +166,50 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
                 </div>
               </div>
 
+              {/* Per-attendee status */}
+              <div className="space-y-2">
+                <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Montører</p>
+                <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
+              </div>
+
+              {/* Change request actions per attendee */}
+              {hasChangeRequest && (
+                <div className="space-y-2">
+                  {job.attendeeStatuses
+                    .filter((a) => a.status === "change-request" && a.proposedStart && a.proposedEnd)
+                    .map((att) => {
+                      const tech = technicians.find((t) => t.id === att.technicianId);
+                      return (
+                        <div key={att.technicianId} className="rounded-lg border-2 border-status-change-request/30 bg-status-change-request/5 p-3 space-y-2">
+                          <p className="text-sm font-medium">
+                            {tech?.name} foreslår nytt tidspunkt
+                          </p>
+                          <div className="flex gap-2">
+                            <Button size="sm" onClick={() => handleAcceptProposal(att.technicianId)} className="gap-1.5">
+                              Godta
+                            </Button>
+                            <Button size="sm" variant="outline" onClick={() => handleDeclineProposal(att.technicianId)} className="gap-1.5">
+                              Avvis
+                            </Button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                </div>
+              )}
+
               {job.description && (
                 <div className="rounded-lg bg-secondary p-3">
                   <p className="text-sm">{job.description}</p>
                 </div>
               )}
 
-              {job.status === "change-request" && job.proposedStart && job.proposedEnd && (
-                <div className="rounded-lg border-2 border-status-change-request/30 bg-status-change-request/5 p-4 space-y-3">
-                  <p className="text-sm font-medium">Foreslått nytt tidspunkt:</p>
-                  <div className="flex items-center gap-2 text-sm">
-                    <Clock className="h-4 w-4 text-status-change-request" />
-                    <span>
-                      {format(job.proposedStart, "EEEE d. MMMM", { locale: nb })},{" "}
-                      {format(job.proposedStart, "HH:mm")} –{" "}
-                      {format(job.proposedEnd, "HH:mm")}
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Button size="sm" onClick={handleAcceptProposal} className="gap-1.5">
-                      <CalendarCheck className="h-3.5 w-3.5" />
-                      Godta
-                    </Button>
-                    <Button size="sm" variant="outline" onClick={handleDeclineProposal} className="gap-1.5">
-                      <CalendarX className="h-3.5 w-3.5" />
-                      Avvis
-                    </Button>
-                  </div>
-                </div>
+              {/* Attachment list with details */}
+              {job.attachments && job.attachments.length > 0 && (
+                <AttachmentList attachments={job.attachments} />
               )}
 
-              <div className="pt-4 border-t flex gap-2">
+              <div className="pt-4 border-t">
                 <Button variant="destructive" size="sm" onClick={handleCancel}>
                   Avlys jobb
                 </Button>
@@ -258,6 +264,9 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
                   </div>
                 </div>
               </div>
+
+              {/* Conflict warning */}
+              <ConflictWarning conflicts={editConflicts} />
 
               <div>
                 <Label htmlFor="edit-description">Beskrivelse</Label>
