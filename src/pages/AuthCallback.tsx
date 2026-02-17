@@ -11,10 +11,11 @@ export default function AuthCallback() {
 
     if (window.opener) {
       // We're in a popup — send code back to parent
+      // Use "*" as target origin since preview/published URLs may differ
       if (code) {
-        window.opener.postMessage({ type: "microsoft-auth-code", code }, window.location.origin);
+        window.opener.postMessage({ type: "microsoft-auth-code", code }, "*");
       } else if (error) {
-        window.opener.postMessage({ type: "microsoft-auth-error", error }, window.location.origin);
+        window.opener.postMessage({ type: "microsoft-auth-error", error }, "*");
       }
       window.close();
     }
