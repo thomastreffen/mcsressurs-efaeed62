@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { Wrench, Loader2 } from "lucide-react";
@@ -15,7 +15,7 @@ export default function Login() {
   const { session, loading: authLoading } = useAuth();
   const [processing, setProcessing] = useState(false);
 
-  const redirectUri = `${window.location.origin}/login`;
+  const redirectUri = `${window.location.origin}/auth/callback`;
 
   // If already logged in, redirect
   useEffect(() => {
@@ -24,47 +24,54 @@ export default function Login() {
     }
   }, [session, authLoading, navigate]);
 
-  // Handle callback with authorization code
+  const exchangeCode = useCallback(async (code: string) => {
+    setProcessing(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("auth-callback", {
+        body: { code, redirect_uri: redirectUri },
+      });
+
+      if (error || !data?.session) {
+        toast.error("Innlogging feilet", {
+          description: data?.error || error?.message || "Kunne ikke logge inn.",
+        });
+        setProcessing(false);
+        return;
+      }
+
+      await supabase.auth.setSession({
+        access_token: data.session.access_token,
+        refresh_token: data.session.refresh_token,
+      });
+
+      toast.success("Innlogget", {
+        description: `Velkommen, ${data.user.name}!`,
+      });
+      navigate("/", { replace: true });
+    } catch (err) {
+      console.error("Login error:", err);
+      toast.error("Innlogging feilet");
+      setProcessing(false);
+    }
+  }, [navigate, redirectUri]);
+
+  // Handle callback code in URL (direct redirect flow)
   useEffect(() => {
     const code = searchParams.get("code");
     if (!code || processing) return;
+    exchangeCode(code);
+  }, [searchParams, processing, exchangeCode]);
 
-    setProcessing(true);
-
-    (async () => {
-      try {
-        const { data, error } = await supabase.functions.invoke("auth-callback", {
-          body: { code, redirect_uri: redirectUri },
-        });
-
-        if (error || !data?.session) {
-          toast.error("Innlogging feilet", {
-            description: data?.error || error?.message || "Kunne ikke logge inn.",
-          });
-          setProcessing(false);
-          // Clear code from URL
-          navigate("/login", { replace: true });
-          return;
-        }
-
-        // Set the session in the Supabase client
-        await supabase.auth.setSession({
-          access_token: data.session.access_token,
-          refresh_token: data.session.refresh_token,
-        });
-
-        toast.success("Innlogget", {
-          description: `Velkommen, ${data.user.name}!`,
-        });
-        navigate("/", { replace: true });
-      } catch (err) {
-        console.error("Login error:", err);
-        toast.error("Innlogging feilet");
-        setProcessing(false);
-        navigate("/login", { replace: true });
+  // Listen for code from popup window
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === "microsoft-auth-code" && event.data?.code) {
+        exchangeCode(event.data.code);
       }
-    })();
-  }, [searchParams, processing, navigate, redirectUri]);
+    };
+    window.addEventListener("message", handleMessage);
+    return () => window.removeEventListener("message", handleMessage);
+  }, [exchangeCode]);
 
   const handleLogin = () => {
     const scope = encodeURIComponent(
@@ -78,7 +85,12 @@ export default function Login() {
       `&scope=${scope}` +
       `&response_mode=query`;
 
-    window.location.href = authUrl;
+    // Try popup first (works in iframe preview), fall back to redirect
+    const popup = window.open(authUrl, "microsoft-login", "width=500,height=700,scrollbars=yes");
+    if (!popup || popup.closed) {
+      // Popup blocked — fall back to direct redirect
+      window.location.href = authUrl;
+    }
   };
 
   if (authLoading || processing) {
