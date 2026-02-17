@@ -3,7 +3,6 @@ import { TopBar } from "@/components/TopBar";
 import { TechnicianList } from "@/components/TechnicianList";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
-import { EditJobDialog } from "@/components/EditJobDialog";
 import { JobDetailSheet } from "@/components/JobDetailSheet";
 import { StatusLegend } from "@/components/StatusLegend";
 import { technicians, type Job } from "@/lib/mock-data";
@@ -16,8 +15,6 @@ export default function Dashboard() {
   const [createJobOpen, setCreateJobOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobSheetOpen, setJobSheetOpen] = useState(false);
-  const [editJob, setEditJob] = useState<Job | null>(null);
-  const [editJobOpen, setEditJobOpen] = useState(false);
 
   const selectedTech = technicians.find((t) => t.id === selectedTechId);
 
@@ -26,16 +23,10 @@ export default function Dashboard() {
     setJobSheetOpen(true);
   };
 
-  const handleEdit = (job: Job) => {
-    setEditJob(job);
-    setEditJobOpen(true);
-  };
-
   const handleDuplicate = (job: Job) => {
     toast.success("Jobb duplisert", {
-      description: `Kopi av "${job.title}" opprettet. Åpne "Ny jobb" for å justere.`,
+      description: `Kopi av "${job.title}" opprettet.`,
     });
-    // In production, this would pre-fill CreateJobDialog with job data
   };
 
   return (
@@ -44,18 +35,13 @@ export default function Dashboard() {
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-64 shrink-0 border-r bg-card overflow-y-auto p-3">
-          <TechnicianList
-            selectedId={selectedTechId}
-            onSelect={setSelectedTechId}
-          />
+          <TechnicianList selectedId={selectedTechId} onSelect={setSelectedTechId} />
         </aside>
 
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold">
-                {selectedTech?.name}
-              </h2>
+              <h2 className="text-xl font-semibold">{selectedTech?.name}</h2>
               <p className="text-sm text-muted-foreground">
                 Uke {format(new Date(), "w", { locale: nb })} ·{" "}
                 {format(new Date(), "MMMM yyyy", { locale: nb })}
@@ -64,10 +50,7 @@ export default function Dashboard() {
             <StatusLegend />
           </div>
 
-          <WeekCalendar
-            technicianId={selectedTechId}
-            onJobClick={handleJobClick}
-          />
+          <WeekCalendar technicianId={selectedTechId} onJobClick={handleJobClick} />
         </main>
       </div>
 
@@ -77,17 +60,10 @@ export default function Dashboard() {
         preselectedTechId={selectedTechId}
       />
 
-      <EditJobDialog
-        job={editJob}
-        open={editJobOpen}
-        onOpenChange={setEditJobOpen}
-      />
-
       <JobDetailSheet
         job={selectedJob}
         open={jobSheetOpen}
         onOpenChange={setJobSheetOpen}
-        onEdit={handleEdit}
         onDuplicate={handleDuplicate}
       />
     </div>
