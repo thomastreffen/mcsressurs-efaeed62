@@ -1,6 +1,6 @@
 import { addDays, format, startOfWeek, isSameDay } from "date-fns";
 import { nb } from "date-fns/locale";
-import { getJobsForDay, type Job, type JobStatus } from "@/lib/mock-data";
+import { getJobsForDay, getBookedMinutesForDay, type Job, type JobStatus } from "@/lib/mock-data";
 import { cn } from "@/lib/utils";
 import { JobStatusBadge } from "./JobStatusBadge";
 
@@ -16,10 +16,17 @@ const statusBorder: Record<JobStatus, string> = {
   "change-request": "border-l-status-change-request",
 };
 
+function formatHours(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return m > 0 ? `${h}t ${m}m` : `${h}t`;
+}
+
 export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
+  const WORK_DAY_MINUTES = 480; // 8 hours
 
   return (
     <div className="grid grid-cols-7 gap-px rounded-xl border bg-border overflow-hidden">
@@ -27,6 +34,8 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
         const dayJobs = getJobsForDay(technicianId, day);
         const isToday = isSameDay(day, today);
         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
+        const bookedMinutes = getBookedMinutesForDay(technicianId, day);
+        const utilizationPct = Math.min(100, Math.round((bookedMinutes / WORK_DAY_MINUTES) * 100));
 
         return (
           <div
@@ -49,6 +58,28 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
                 {format(day, "d")}
               </p>
             </div>
+
+            {/* Daily hours summary */}
+            {!isWeekend && bookedMinutes > 0 && (
+              <div className="px-2 pt-1.5 pb-0.5">
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
+                  <span>{formatHours(bookedMinutes)} / 8t</span>
+                  <span>{utilizationPct}%</span>
+                </div>
+                <div className="h-1 rounded-full bg-muted overflow-hidden">
+                  <div
+                    className={cn(
+                      "h-full rounded-full transition-all",
+                      utilizationPct >= 100 ? "bg-destructive" :
+                      utilizationPct >= 75 ? "bg-status-pending" :
+                      "bg-status-accepted"
+                    )}
+                    style={{ width: `${utilizationPct}%` }}
+                  />
+                </div>
+              </div>
+            )}
+
             <div className="flex-1 p-1.5 space-y-1">
               {dayJobs.map((job) => (
                 <button
