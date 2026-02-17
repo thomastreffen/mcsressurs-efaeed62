@@ -43,41 +43,59 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   useEffect(() => {
+    let mounted = true;
+
     // Set up listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
+        if (!mounted) return;
         setSession(newSession);
         if (newSession?.user) {
           try {
             const authUser = await fetchRole(newSession.user);
-            setUser(authUser);
+            if (mounted) setUser(authUser);
           } catch (err) {
             console.error("Failed to fetch role:", err);
-            setUser(null);
+            if (mounted) setUser(null);
           }
         } else {
           setUser(null);
         }
-        setLoading(false);
+        if (mounted) setLoading(false);
       }
     );
 
-    // Then check existing session
+    // Then check existing session with a timeout to prevent infinite hang
+    const timeout = setTimeout(() => {
+      if (mounted && loading) {
+        console.warn("Auth loading timed out, redirecting to login");
+        setLoading(false);
+      }
+    }, 5000);
+
     supabase.auth.getSession().then(async ({ data: { session: existing } }) => {
+      if (!mounted) return;
       setSession(existing);
       if (existing?.user) {
         try {
           const authUser = await fetchRole(existing.user);
-          setUser(authUser);
+          if (mounted) setUser(authUser);
         } catch (err) {
           console.error("Failed to fetch role:", err);
-          setUser(null);
+          if (mounted) setUser(null);
         }
       }
-      setLoading(false);
+      if (mounted) setLoading(false);
+    }).catch((err) => {
+      console.error("getSession failed:", err);
+      if (mounted) setLoading(false);
     });
 
-    return () => subscription.unsubscribe();
+    return () => {
+      mounted = false;
+      clearTimeout(timeout);
+      subscription.unsubscribe();
+    };
   }, [fetchRole]);
 
   const signOut = useCallback(async () => {
