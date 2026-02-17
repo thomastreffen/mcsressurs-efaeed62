@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import {
   Dialog,
   DialogContent,
@@ -12,97 +12,103 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TechnicianMultiSelect } from "./TechnicianMultiSelect";
 import { FileUpload } from "./FileUpload";
+import { type Job } from "@/lib/mock-data";
+import { format } from "date-fns";
 import { toast } from "sonner";
 
-interface CreateJobDialogProps {
+interface EditJobDialogProps {
+  job: Job | null;
   open: boolean;
   onOpenChange: (open: boolean) => void;
-  preselectedTechId?: string;
 }
 
-export function CreateJobDialog({
-  open,
-  onOpenChange,
-  preselectedTechId,
-}: CreateJobDialogProps) {
+export function EditJobDialog({ job, open, onOpenChange }: EditJobDialogProps) {
   const [title, setTitle] = useState("");
   const [customer, setCustomer] = useState("");
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
   const [startDate, setStartDate] = useState("");
-  const [startTime, setStartTime] = useState("08:00");
+  const [startTime, setStartTime] = useState("");
   const [endDate, setEndDate] = useState("");
-  const [endTime, setEndTime] = useState("16:00");
-  const [techIds, setTechIds] = useState<string[]>(preselectedTechId ? [preselectedTechId] : []);
+  const [endTime, setEndTime] = useState("");
+  const [techIds, setTechIds] = useState<string[]>([]);
   const [files, setFiles] = useState<File[]>([]);
+  const [existingAttachments, setExistingAttachments] = useState<{ name: string; url: string }[]>([]);
+
+  useEffect(() => {
+    if (job) {
+      setTitle(job.title.replace("SERVICE – ", ""));
+      setCustomer(job.customer);
+      setAddress(job.address);
+      setDescription(job.description);
+      setStartDate(format(job.start, "yyyy-MM-dd"));
+      setStartTime(format(job.start, "HH:mm"));
+      setEndDate(format(job.end, "yyyy-MM-dd"));
+      setEndTime(format(job.end, "HH:mm"));
+      setTechIds(job.technicianIds);
+      setFiles([]);
+      setExistingAttachments(job.attachments || []);
+    }
+  }, [job]);
+
+  if (!job) return null;
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (techIds.length === 0) return;
 
-    toast.success("Jobb opprettet", {
-      description: `SERVICE – ${title} er lagt til for ${techIds.length} montør(er).`,
+    toast.success("Jobb oppdatert", {
+      description: `SERVICE – ${title} er lagret.`,
     });
     onOpenChange(false);
-    resetForm();
   };
 
-  const resetForm = () => {
-    setTitle("");
-    setCustomer("");
-    setAddress("");
-    setDescription("");
-    setStartDate("");
-    setEndDate("");
-    setTechIds(preselectedTechId ? [preselectedTechId] : []);
-    setFiles([]);
+  const handleRemoveExisting = (name: string) => {
+    setExistingAttachments((prev) => prev.filter((a) => a.name !== name));
+    toast.info(`Vedlegg "${name}" fjernet`);
   };
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
-          <DialogTitle>Ny jobb</DialogTitle>
+          <DialogTitle>Rediger jobb</DialogTitle>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="title">Tittel</Label>
+            <Label htmlFor="edit-title">Tittel</Label>
             <div className="flex items-center gap-2 mt-1">
               <span className="text-sm text-muted-foreground whitespace-nowrap">
                 SERVICE –
               </span>
               <Input
-                id="title"
+                id="edit-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                placeholder="Beskrivelse av jobb"
                 required
               />
             </div>
-          </div>
-
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="customer">Kunde</Label>
-              <Input
-                id="customer"
-                value={customer}
-                onChange={(e) => setCustomer(e.target.value)}
-                placeholder="Kundenavn"
-                required
-                className="mt-1"
-              />
-            </div>
-            <TechnicianMultiSelect selectedIds={techIds} onChange={setTechIds} />
           </div>
 
           <div>
-            <Label htmlFor="address">Adresse</Label>
+            <Label htmlFor="edit-customer">Kunde</Label>
             <Input
-              id="address"
+              id="edit-customer"
+              value={customer}
+              onChange={(e) => setCustomer(e.target.value)}
+              required
+              className="mt-1"
+            />
+          </div>
+
+          <TechnicianMultiSelect selectedIds={techIds} onChange={setTechIds} />
+
+          <div>
+            <Label htmlFor="edit-address">Adresse</Label>
+            <Input
+              id="edit-address"
               value={address}
               onChange={(e) => setAddress(e.target.value)}
-              placeholder="Gateadresse, postnr, sted"
               required
               className="mt-1"
             />
@@ -115,10 +121,7 @@ export function CreateJobDialog({
                 <Input
                   type="date"
                   value={startDate}
-                  onChange={(e) => {
-                    setStartDate(e.target.value);
-                    if (!endDate) setEndDate(e.target.value);
-                  }}
+                  onChange={(e) => setStartDate(e.target.value)}
                   required
                 />
                 <Input
@@ -151,25 +154,29 @@ export function CreateJobDialog({
           </div>
 
           <div>
-            <Label htmlFor="description">Beskrivelse</Label>
+            <Label htmlFor="edit-description">Beskrivelse</Label>
             <Textarea
-              id="description"
+              id="edit-description"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="Kort beskrivelse av jobben..."
               rows={3}
               className="mt-1"
             />
           </div>
 
-          <FileUpload files={files} onChange={setFiles} />
+          <FileUpload
+            files={files}
+            onChange={setFiles}
+            existingAttachments={existingAttachments}
+            onRemoveExisting={handleRemoveExisting}
+          />
 
           <DialogFooter>
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Avbryt
             </Button>
             <Button type="submit" disabled={techIds.length === 0}>
-              Opprett jobb
+              Lagre endringer
             </Button>
           </DialogFooter>
         </form>

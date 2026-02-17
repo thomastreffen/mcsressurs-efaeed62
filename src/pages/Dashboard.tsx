@@ -3,17 +3,21 @@ import { TopBar } from "@/components/TopBar";
 import { TechnicianList } from "@/components/TechnicianList";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
+import { EditJobDialog } from "@/components/EditJobDialog";
 import { JobDetailSheet } from "@/components/JobDetailSheet";
 import { StatusLegend } from "@/components/StatusLegend";
 import { technicians, type Job } from "@/lib/mock-data";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
+import { toast } from "sonner";
 
 export default function Dashboard() {
   const [selectedTechId, setSelectedTechId] = useState<string>(technicians[0].id);
   const [createJobOpen, setCreateJobOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobSheetOpen, setJobSheetOpen] = useState(false);
+  const [editJob, setEditJob] = useState<Job | null>(null);
+  const [editJobOpen, setEditJobOpen] = useState(false);
 
   const selectedTech = technicians.find((t) => t.id === selectedTechId);
 
@@ -22,12 +26,23 @@ export default function Dashboard() {
     setJobSheetOpen(true);
   };
 
+  const handleEdit = (job: Job) => {
+    setEditJob(job);
+    setEditJobOpen(true);
+  };
+
+  const handleDuplicate = (job: Job) => {
+    toast.success("Jobb duplisert", {
+      description: `Kopi av "${job.title}" opprettet. Åpne "Ny jobb" for å justere.`,
+    });
+    // In production, this would pre-fill CreateJobDialog with job data
+  };
+
   return (
     <div className="flex h-screen flex-col">
       <TopBar onNewJob={() => setCreateJobOpen(true)} />
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <aside className="w-64 shrink-0 border-r bg-card overflow-y-auto p-3">
           <TechnicianList
             selectedId={selectedTechId}
@@ -35,7 +50,6 @@ export default function Dashboard() {
           />
         </aside>
 
-        {/* Main */}
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-5 flex items-center justify-between">
             <div>
@@ -63,10 +77,18 @@ export default function Dashboard() {
         preselectedTechId={selectedTechId}
       />
 
+      <EditJobDialog
+        job={editJob}
+        open={editJobOpen}
+        onOpenChange={setEditJobOpen}
+      />
+
       <JobDetailSheet
         job={selectedJob}
         open={jobSheetOpen}
         onOpenChange={setJobSheetOpen}
+        onEdit={handleEdit}
+        onDuplicate={handleDuplicate}
       />
     </div>
   );

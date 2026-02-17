@@ -12,7 +12,7 @@ export interface Technician {
 export interface Job {
   id: string;
   microsoftEventId: string;
-  userId: string;
+  technicianIds: string[];
   title: string;
   customer: string;
   address: string;
@@ -22,6 +22,7 @@ export interface Job {
   status: JobStatus;
   proposedStart?: Date;
   proposedEnd?: Date;
+  attachments?: { name: string; url: string }[];
 }
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
@@ -37,7 +38,7 @@ export const jobs: Job[] = [
   {
     id: "j1",
     microsoftEventId: "ms-1",
-    userId: "1",
+    technicianIds: ["1"],
     title: "SERVICE – Varmepumpe vedlikehold",
     customer: "Norsk Bolig AS",
     address: "Storgata 15, 0182 Oslo",
@@ -49,7 +50,7 @@ export const jobs: Job[] = [
   {
     id: "j2",
     microsoftEventId: "ms-2",
-    userId: "1",
+    technicianIds: ["1"],
     title: "SERVICE – Ventilasjon inspeksjon",
     customer: "Fjord Eiendom",
     address: "Havnegata 8, 0150 Oslo",
@@ -61,7 +62,7 @@ export const jobs: Job[] = [
   {
     id: "j3",
     microsoftEventId: "ms-3",
-    userId: "2",
+    technicianIds: ["2"],
     title: "SERVICE – Kjøling reparasjon",
     customer: "Bergen Handelshus",
     address: "Bryggen 22, 5003 Bergen",
@@ -73,7 +74,7 @@ export const jobs: Job[] = [
   {
     id: "j4",
     microsoftEventId: "ms-4",
-    userId: "2",
+    technicianIds: ["2"],
     title: "SERVICE – Varmeanlegg feil",
     customer: "Solsiden Senter",
     address: "Beddingen 10, 7014 Trondheim",
@@ -87,7 +88,7 @@ export const jobs: Job[] = [
   {
     id: "j5",
     microsoftEventId: "ms-5",
-    userId: "3",
+    technicianIds: ["1", "3"],
     title: "SERVICE – Installasjon varmepumpe",
     customer: "Privatkunde Nilsen",
     address: "Løkkeveien 45, 4008 Stavanger",
@@ -99,7 +100,7 @@ export const jobs: Job[] = [
   {
     id: "j6",
     microsoftEventId: "ms-6",
-    userId: "3",
+    technicianIds: ["3"],
     title: "SERVICE – Akutt lekkasje",
     customer: "Hotell Nordlys",
     address: "Sjøgata 12, 8006 Bodø",
@@ -111,7 +112,7 @@ export const jobs: Job[] = [
   {
     id: "j7",
     microsoftEventId: "ms-7",
-    userId: "4",
+    technicianIds: ["4"],
     title: "SERVICE – Preventiv vedlikehold",
     customer: "Kommunale bygg",
     address: "Rådhusplassen 1, 0037 Oslo",
@@ -123,7 +124,7 @@ export const jobs: Job[] = [
   {
     id: "j8",
     microsoftEventId: "ms-8",
-    userId: "4",
+    technicianIds: ["4"],
     title: "SERVICE – Garanti inspeksjon",
     customer: "Nybygg Prosjekt AS",
     address: "Ensjøveien 34, 0661 Oslo",
@@ -135,13 +136,13 @@ export const jobs: Job[] = [
 ];
 
 export function getJobsForTechnician(techId: string): Job[] {
-  return jobs.filter((j) => j.userId === techId);
+  return jobs.filter((j) => j.technicianIds.includes(techId));
 }
 
 export function getJobsForDay(techId: string, date: Date): Job[] {
   return jobs.filter(
     (j) =>
-      j.userId === techId &&
+      j.technicianIds.includes(techId) &&
       j.start.toDateString() === date.toDateString()
   );
 }
