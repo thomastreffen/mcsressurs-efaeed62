@@ -47,6 +47,16 @@ export default {
           DEFAULT: "hsl(var(--card))",
           foreground: "hsl(var(--card-foreground))",
         },
+        status: {
+          accepted: "hsl(var(--status-accepted))",
+          "accepted-foreground": "hsl(var(--status-accepted-foreground))",
+          pending: "hsl(var(--status-pending))",
+          "pending-foreground": "hsl(var(--status-pending-foreground))",
+          declined: "hsl(var(--status-declined))",
+          "declined-foreground": "hsl(var(--status-declined-foreground))",
+          "change-request": "hsl(var(--status-change-request))",
+          "change-request-foreground": "hsl(var(--status-change-request-foreground))",
+        },
         sidebar: {
           DEFAULT: "hsl(var(--sidebar-background))",
           foreground: "hsl(var(--sidebar-foreground))",
