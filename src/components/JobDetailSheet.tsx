@@ -14,9 +14,12 @@ import { FileUpload } from "./FileUpload";
 import { AttendeeStatusList } from "./AttendeeStatusList";
 import { AttachmentList } from "./AttachmentList";
 import { ConflictWarning } from "./ConflictWarning";
+import { AuditInfo } from "./AuditInfo";
+import { EventLogList } from "./EventLogList";
+import { EditLockWarning } from "./EditLockWarning";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
-import { technicians, getConflicts, type Job, type Attachment } from "@/lib/mock-data";
+import { technicians, getConflicts, getEventLogs, type Job, type Attachment } from "@/lib/mock-data";
 import {
   MapPin,
   Clock,
@@ -80,6 +83,9 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
   if (!job) return null;
 
   const hasChangeRequest = job.attendeeStatuses.some((a) => a.status === "change-request");
+  const logs = getEventLogs(job.id);
+  const hasEditLock = job.editingByName && job.editingStartedAt &&
+    (Date.now() - job.editingStartedAt.getTime()) < 10 * 60 * 1000;
 
   const handleEdit = () => {
     populateEditForm();
@@ -207,6 +213,20 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
               {/* Attachment list with details */}
               {job.attachments && job.attachments.length > 0 && (
                 <AttachmentList attachments={job.attachments} />
+              )}
+
+              {/* Audit info */}
+              <AuditInfo job={job} />
+
+              {/* Event log */}
+              <EventLogList logs={logs} />
+
+              {/* Edit lock warning */}
+              {hasEditLock && (
+                <EditLockWarning
+                  editingByName={job.editingByName!}
+                  editingStartedAt={job.editingStartedAt!}
+                />
               )}
 
               <div className="pt-4 border-t">

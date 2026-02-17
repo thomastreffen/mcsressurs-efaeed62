@@ -14,6 +14,41 @@ export type Database = {
   }
   public: {
     Tables: {
+      event_logs: {
+        Row: {
+          action_type: string
+          change_summary: string | null
+          event_id: string
+          id: string
+          performed_by: string | null
+          timestamp: string
+        }
+        Insert: {
+          action_type: string
+          change_summary?: string | null
+          event_id: string
+          id?: string
+          performed_by?: string | null
+          timestamp?: string
+        }
+        Update: {
+          action_type?: string
+          change_summary?: string | null
+          event_id?: string
+          id?: string
+          performed_by?: string | null
+          timestamp?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "event_logs_event_id_fkey"
+            columns: ["event_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_technicians: {
         Row: {
           created_at: string
@@ -53,10 +88,14 @@ export type Database = {
       events: {
         Row: {
           address: string | null
+          cancelled_at: string | null
+          cancelled_by: string | null
           created_at: string
           created_by: string | null
           customer: string | null
           description: string | null
+          editing_by: string | null
+          editing_started_at: string | null
           end_time: string
           id: string
           microsoft_event_id: string | null
@@ -67,13 +106,18 @@ export type Database = {
           technician_id: string
           title: string
           updated_at: string
+          updated_by: string | null
         }
         Insert: {
           address?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           created_at?: string
           created_by?: string | null
           customer?: string | null
           description?: string | null
+          editing_by?: string | null
+          editing_started_at?: string | null
           end_time: string
           id?: string
           microsoft_event_id?: string | null
@@ -84,13 +128,18 @@ export type Database = {
           technician_id: string
           title: string
           updated_at?: string
+          updated_by?: string | null
         }
         Update: {
           address?: string | null
+          cancelled_at?: string | null
+          cancelled_by?: string | null
           created_at?: string
           created_by?: string | null
           customer?: string | null
           description?: string | null
+          editing_by?: string | null
+          editing_started_at?: string | null
           end_time?: string
           id?: string
           microsoft_event_id?: string | null
@@ -101,6 +150,7 @@ export type Database = {
           technician_id?: string
           title?: string
           updated_at?: string
+          updated_by?: string | null
         }
         Relationships: [
           {
@@ -172,7 +222,7 @@ export type Database = {
       is_admin: { Args: never; Returns: boolean }
     }
     Enums: {
-      app_role: "admin" | "montør"
+      app_role: "admin" | "montør" | "super_admin"
       event_status: "pending" | "accepted" | "declined" | "change_request"
     }
     CompositeTypes: {
@@ -301,7 +351,7 @@ export type CompositeTypes<
 export const Constants = {
   public: {
     Enums: {
-      app_role: ["admin", "montør"],
+      app_role: ["admin", "montør", "super_admin"],
       event_status: ["pending", "accepted", "declined", "change_request"],
     },
   },
