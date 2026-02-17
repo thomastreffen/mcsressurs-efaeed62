@@ -71,9 +71,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchRole]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut();
-    setSession(null);
     setUser(null);
+    setSession(null);
+    await supabase.auth.signOut();
   }, []);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
