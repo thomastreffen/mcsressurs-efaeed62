@@ -10,7 +10,7 @@ async function refreshMicrosoftToken(
   supabaseAdmin: any,
   userId: string,
   refreshToken: string
-): Promise<{ access_token: string; refresh_token: string; expires_at: string } | null> {
+): Promise<string | null> {
   const clientId = Deno.env.get("AZURE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("AZURE_CLIENT_SECRET")!;
   const tenantId = Deno.env.get("AZURE_TENANT_ID")!;
@@ -41,21 +41,48 @@ async function refreshMicrosoftToken(
   const tokens = await tokenRes.json();
   const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
 
-  // Update user_metadata with refreshed tokens
-  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
-  const existingMeta = userData?.user?.user_metadata || {};
+  // Update microsoft_tokens table
+  const { error: updateErr } = await supabaseAdmin
+    .from("microsoft_tokens")
+    .update({
+      access_token: tokens.access_token,
+      refresh_token: tokens.refresh_token || refreshToken,
+      expires_at: expiresAt,
+    })
+    .eq("user_id", userId);
 
-  await supabaseAdmin.auth.admin.updateUserById(userId, {
-    user_metadata: {
-      ...existingMeta,
-      ms_access_token: tokens.access_token,
-      ms_refresh_token: tokens.refresh_token || refreshToken,
-      ms_expires_at: expiresAt,
-    },
-  });
+  if (updateErr) {
+    console.error("[fetch-employees] Token update error:", updateErr.message);
+    return null;
+  }
 
-  console.log("[fetch-employees] Token refreshed and stored in user_metadata, expires_at:", expiresAt);
-  return { access_token: tokens.access_token, refresh_token: tokens.refresh_token || refreshToken, expires_at: expiresAt };
+  console.log("[fetch-employees] Token refreshed and stored in microsoft_tokens, expires_at:", expiresAt);
+  return tokens.access_token;
+}
+
+async function fetchGraphEmployees(accessToken: string) {
+  return fetch(
+    "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department&$top=999",
+    { headers: { Authorization: `Bearer ${accessToken}` } }
+  );
+}
+
+async function mapEmployees(graphData: any, supabaseAdmin: any) {
+  const { data: existingTechs } = await supabaseAdmin
+    .from("technicians")
+    .select("email, microsoft_user_id");
+
+  const existingEmails = new Set((existingTechs || []).map((t: any) => t.email?.toLowerCase()));
+  const existingMsIds = new Set((existingTechs || []).map((t: any) => t.microsoft_user_id));
+
+  return (graphData.value || []).map((u: any) => ({
+    microsoftId: u.id,
+    name: u.displayName,
+    email: u.mail || u.userPrincipalName,
+    jobTitle: u.jobTitle,
+    department: u.department,
+    alreadyAdded: existingEmails.has((u.mail || u.userPrincipalName)?.toLowerCase()) || existingMsIds.has(u.id),
+  }));
 }
 
 Deno.serve(async (req) => {
@@ -72,22 +99,21 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Service role client for microsoft_tokens access
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Anon client for JWT validation only
     const jwt = authHeader.replace("Bearer ", "");
-    console.log("[fetch-employees] JWT present:", !!jwt);
-
     const supabaseAnon = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Verify JWT and get userId only
     const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
     if (userErr || !userData?.user) {
       console.error("[fetch-employees] getUser failed:", userErr?.message);
@@ -114,93 +140,67 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Read Microsoft tokens from user_metadata via admin API (NOT from getUser)
-    console.log("[fetch-employees] Using admin.getUserById for metadata");
-    const { data: adminUserData, error: adminErr } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (adminErr) {
-      console.error("[fetch-employees] admin.getUserById error:", adminErr.message);
-    }
-    const meta = adminUserData?.user?.user_metadata;
-    console.log("[fetch-employees] Admin metadata:", meta);
-    console.log("[fetch-employees] Metadata keys:", Object.keys(meta || {}));
-    console.log("[fetch-employees] ms_access_token present:", !!meta?.ms_access_token);
-    console.log("[fetch-employees] ms_refresh_token present:", !!meta?.ms_refresh_token);
-    console.log("[fetch-employees] ms_expires_at:", meta?.ms_expires_at);
+    // Read Microsoft token from database table (NOT user_metadata)
+    const { data: tokenRow, error: tokenErr } = await supabaseAdmin
+      .from("microsoft_tokens")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
 
-    if (!meta?.ms_access_token) {
-      return new Response(JSON.stringify({ error: "No Microsoft token found in user metadata. Please log out and log in again." }), {
+    if (tokenErr || !tokenRow) {
+      console.error("[fetch-employees] No token row found:", tokenErr?.message);
+      return new Response(JSON.stringify({ error: "Microsoft token not found. Please log out and log in again." }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let accessToken = meta.ms_access_token;
+    console.log("[fetch-employees] Token row found, expires_at:", tokenRow.expires_at);
+
+    let accessToken = tokenRow.access_token;
 
     // Check expiration and refresh if needed
-    const now = new Date();
-    const expiresAt = meta.ms_expires_at ? new Date(meta.ms_expires_at) : null;
-    const isExpired = !expiresAt || expiresAt <= now;
+    const isExpired = new Date(tokenRow.expires_at) <= new Date();
 
     if (isExpired) {
       console.log("[fetch-employees] Token expired, attempting refresh...");
-      if (!meta.ms_refresh_token) {
+      if (!tokenRow.refresh_token) {
         return new Response(JSON.stringify({ error: "Microsoft token expired and no refresh token available. Please log out and log in again." }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, meta.ms_refresh_token);
+      const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, tokenRow.refresh_token);
       if (!refreshed) {
         return new Response(JSON.stringify({ error: "Failed to refresh Microsoft token. Please log out and log in again." }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      accessToken = refreshed.access_token;
-    } else {
-      console.log("[fetch-employees] Using stored token, expires_at:", meta.ms_expires_at);
+      accessToken = refreshed;
     }
 
     // Fetch employees from Microsoft Graph
-    const graphRes = await fetch(
-      "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department&$top=999",
-      { headers: { Authorization: `Bearer ${accessToken}` } }
-    );
+    const graphRes = await fetchGraphEmployees(accessToken);
 
     if (!graphRes.ok) {
       const errText = await graphRes.text();
       console.error("[fetch-employees] Graph API error:", graphRes.status, errText);
 
-      if (graphRes.status === 401 && meta.ms_refresh_token) {
-        console.log("[fetch-employees] Graph returned 401, attempting token refresh...");
-        const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, meta.ms_refresh_token);
+      // If 401, try refresh once
+      if (graphRes.status === 401 && tokenRow.refresh_token) {
+        console.log("[fetch-employees] Graph 401, attempting token refresh...");
+        const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, tokenRow.refresh_token);
         if (refreshed) {
-          const retryRes = await fetch(
-            "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department&$top=999",
-            { headers: { Authorization: `Bearer ${refreshed.access_token}` } }
-          );
+          const retryRes = await fetchGraphEmployees(refreshed);
           if (retryRes.ok) {
             const retryData = await retryRes.json();
-            const { data: existingTechs } = await supabaseAdmin
-              .from("technicians")
-              .select("email, microsoft_user_id");
-            const existingEmails = new Set((existingTechs || []).map((t: any) => t.email?.toLowerCase()));
-            const existingMsIds = new Set((existingTechs || []).map((t: any) => t.microsoft_user_id));
-            const employees = (retryData.value || []).map((u: any) => ({
-              microsoftId: u.id,
-              name: u.displayName,
-              email: u.mail || u.userPrincipalName,
-              jobTitle: u.jobTitle,
-              department: u.department,
-              alreadyAdded: existingEmails.has((u.mail || u.userPrincipalName)?.toLowerCase()) || existingMsIds.has(u.id),
-            }));
+            const employees = await mapEmployees(retryData, supabaseAdmin);
             return new Response(JSON.stringify({ employees }), {
               status: 200,
               headers: { ...corsHeaders, "Content-Type": "application/json" },
             });
           }
-          const retryErr = await retryRes.text();
-          console.error("[fetch-employees] Retry also failed:", retryErr);
         }
         return new Response(JSON.stringify({ error: "Microsoft token invalid. Please log out and log in again." }), {
           status: 401,
@@ -217,21 +217,7 @@ Deno.serve(async (req) => {
     const graphData = await graphRes.json();
     console.log("[fetch-employees] Graph returned", (graphData.value || []).length, "users");
 
-    const { data: existingTechs } = await supabaseAdmin
-      .from("technicians")
-      .select("email, microsoft_user_id");
-
-    const existingEmails = new Set((existingTechs || []).map((t: any) => t.email?.toLowerCase()));
-    const existingMsIds = new Set((existingTechs || []).map((t: any) => t.microsoft_user_id));
-
-    const employees = (graphData.value || []).map((u: any) => ({
-      microsoftId: u.id,
-      name: u.displayName,
-      email: u.mail || u.userPrincipalName,
-      jobTitle: u.jobTitle,
-      department: u.department,
-      alreadyAdded: existingEmails.has((u.mail || u.userPrincipalName)?.toLowerCase()) || existingMsIds.has(u.id),
-    }));
+    const employees = await mapEmployees(graphData, supabaseAdmin);
 
     return new Response(JSON.stringify({ employees }), {
       status: 200,
