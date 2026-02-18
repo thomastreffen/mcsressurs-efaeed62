@@ -25,6 +25,7 @@ export function TechnicianList({ selectedId, onSelect }: TechnicianListProps) {
       const { data, error } = await supabase
         .from("technicians")
         .select("id, name, email, user_id")
+        .not("user_id", "is", null)
         .order("name");
 
       if (error) {
