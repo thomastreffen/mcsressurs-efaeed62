@@ -178,22 +178,38 @@ Deno.serve(async (req) => {
 
     // Store Microsoft tokens for Graph API access
     console.log("[auth-callback] Supabase user id:", userId);
+    console.log("[auth-callback] access_token preview:", tokens.access_token?.substring(0, 20));
+    console.log("[auth-callback] refresh_token exists:", !!tokens.refresh_token);
     const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
     console.log("[auth-callback] Saving Microsoft token for user:", userId, "expires_at:", expiresAt);
-    const { error: upsertErr } = await supabaseAdmin
+    const { data: upsertData, error: upsertErr } = await supabaseAdmin
       .from("microsoft_tokens")
       .upsert({
         user_id: userId,
         access_token: tokens.access_token,
         refresh_token: tokens.refresh_token || null,
         expires_at: expiresAt,
-      }, { onConflict: "user_id" });
+      }, { onConflict: "user_id" })
+      .select();
+    
+    console.log("[auth-callback] Upsert result - data:", JSON.stringify(upsertData), "error:", JSON.stringify(upsertErr));
     
     if (upsertErr) {
       console.error("[auth-callback] Failed to save Microsoft token:", upsertErr);
-    } else {
-      console.log("[auth-callback] Microsoft token saved successfully for user:", userId);
+      return new Response(
+        JSON.stringify({ error: "Failed to store Microsoft token: " + upsertErr.message }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
+
+    // Verify the row was actually written
+    const { data: verifyRow, error: verifyErr } = await supabaseAdmin
+      .from("microsoft_tokens")
+      .select("*")
+      .eq("user_id", userId)
+      .single();
+    
+    console.log("[auth-callback] Verify SELECT - data:", JSON.stringify(verifyRow ? { id: verifyRow.id, user_id: verifyRow.user_id, has_access: !!verifyRow.access_token, has_refresh: !!verifyRow.refresh_token, expires_at: verifyRow.expires_at } : null), "error:", JSON.stringify(verifyErr));
 
     // Fetch user role
     const { data: roleData } = await supabaseAdmin

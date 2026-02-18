@@ -92,6 +92,7 @@ Deno.serve(async (req) => {
     }
 
     const userId = claimsData.claims.sub as string;
+    console.log("[fetch-employees] Authenticated userId:", userId);
 
     // Check admin role
     const { data: roleData } = await supabaseAdmin
@@ -114,9 +115,10 @@ Deno.serve(async (req) => {
       .eq("user_id", userId)
       .maybeSingle();
 
+    console.log("[fetch-employees] microsoft_tokens SELECT result - data:", tokenData ? { user_id: tokenData.user_id, has_access: !!tokenData.access_token, has_refresh: !!tokenData.refresh_token, expires_at: tokenData.expires_at } : null, "error:", tokenErr?.message);
+
     if (tokenErr || !tokenData) {
-      console.error("[fetch-employees] No Microsoft token found for user:", userId, tokenErr?.message);
-      return new Response(JSON.stringify({ error: "No Microsoft token found. Please log out and log in again." }), {
+      return new Response(JSON.stringify({ error: "No token row found for userId: " + userId + (tokenErr ? " (DB error: " + tokenErr.message + ")" : " (no row exists)") }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
