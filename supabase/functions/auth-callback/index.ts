@@ -177,8 +177,10 @@ Deno.serve(async (req) => {
     }
 
     // Store Microsoft tokens for Graph API access
+    console.log("[auth-callback] Supabase user id:", userId);
     const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
-    await supabaseAdmin
+    console.log("[auth-callback] Saving Microsoft token for user:", userId, "expires_at:", expiresAt);
+    const { error: upsertErr } = await supabaseAdmin
       .from("microsoft_tokens")
       .upsert({
         user_id: userId,
@@ -186,6 +188,12 @@ Deno.serve(async (req) => {
         refresh_token: tokens.refresh_token || null,
         expires_at: expiresAt,
       }, { onConflict: "user_id" });
+    
+    if (upsertErr) {
+      console.error("[auth-callback] Failed to save Microsoft token:", upsertErr);
+    } else {
+      console.log("[auth-callback] Microsoft token saved successfully for user:", userId);
+    }
 
     // Fetch user role
     const { data: roleData } = await supabaseAdmin
