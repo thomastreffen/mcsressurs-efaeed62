@@ -4,6 +4,8 @@ import type { Session, User } from "@supabase/supabase-js";
 
 export type AppRole = "super_admin" | "admin" | "montør";
 
+const AZURE_TENANT_ID = "e1b96c2a-c273-40b9-bb46-a2a7b570e133";
+
 interface AuthUser {
   id: string;
   email: string;
@@ -28,21 +30,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchRole = useCallback(async (supaUser: User): Promise<AuthUser> => {
-    // Try fetching from DB first, fall back to user_metadata
-    let role: AppRole = (supaUser.user_metadata?.app_role as AppRole) || "montør";
-    
+    let role: AppRole = "montør";
+
+    // Try DB first
     try {
-      const { data } = await supabase
+      const { data, error } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", supaUser.id)
-        .single();
+        .maybeSingle();
+      
       if (data?.role) {
         role = data.role as AppRole;
+        console.log("[Auth] Role from DB:", role);
+      } else if (error) {
+        console.warn("[Auth] DB role query error:", error.message);
+        // Fallback to user_metadata
+        const metaRole = supaUser.user_metadata?.app_role as AppRole;
+        if (metaRole) {
+          role = metaRole;
+          console.log("[Auth] Role from metadata fallback:", role);
+        }
       }
-    } catch {
-      // RLS may block this query during initial login, use metadata fallback
-      console.warn("Could not fetch role from DB, using metadata fallback:", role);
+    } catch (err) {
+      console.warn("[Auth] Role fetch exception, using metadata fallback");
+      const metaRole = supaUser.user_metadata?.app_role as AppRole;
+      if (metaRole) role = metaRole;
     }
 
     return {
@@ -56,19 +69,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let mounted = true;
 
-    // Set up listener FIRST
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
       async (_event, newSession) => {
         if (!mounted) return;
+        console.log("[Auth] State change:", _event, !!newSession);
         setSession(newSession);
         if (newSession?.user) {
-          try {
-            const authUser = await fetchRole(newSession.user);
-            if (mounted) setUser(authUser);
-          } catch (err) {
-            console.error("Failed to fetch role:", err);
-            if (mounted) setUser(null);
-          }
+          const authUser = await fetchRole(newSession.user);
+          if (mounted) setUser(authUser);
         } else {
           setUser(null);
         }
@@ -76,10 +84,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     );
 
-    // Then check existing session with a timeout to prevent infinite hang
     const timeout = setTimeout(() => {
       if (mounted && loading) {
-        console.warn("Auth loading timed out, redirecting to login");
+        console.warn("[Auth] Loading timed out");
         setLoading(false);
       }
     }, 5000);
@@ -88,17 +95,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       if (!mounted) return;
       setSession(existing);
       if (existing?.user) {
-        try {
-          const authUser = await fetchRole(existing.user);
-          if (mounted) setUser(authUser);
-        } catch (err) {
-          console.error("Failed to fetch role:", err);
-          if (mounted) setUser(null);
-        }
+        const authUser = await fetchRole(existing.user);
+        if (mounted) setUser(authUser);
       }
       if (mounted) setLoading(false);
     }).catch((err) => {
-      console.error("getSession failed:", err);
+      console.error("[Auth] getSession failed:", err);
       if (mounted) setLoading(false);
     });
 
@@ -110,9 +112,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchRole]);
 
   const signOut = useCallback(async () => {
-    await supabase.auth.signOut({ scope: 'local' });
+    console.log("[Auth] Signing out...");
+    try {
+      // 1. Sign out from Supabase (clears local tokens)
+      await supabase.auth.signOut({ scope: 'local' });
+    } catch (err) {
+      console.error("[Auth] Supabase signOut error:", err);
+    }
+    
+    // 2. Clear local state immediately
     setUser(null);
     setSession(null);
+
+    // 3. Redirect to Microsoft logout endpoint to clear SSO session
+    const postLogoutRedirect = encodeURIComponent(`${window.location.origin}/login`);
+    window.location.href = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/logout?post_logout_redirect_uri=${postLogoutRedirect}`;
   }, []);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
