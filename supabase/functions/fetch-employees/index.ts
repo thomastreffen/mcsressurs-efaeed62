@@ -140,16 +140,30 @@ Deno.serve(async (req) => {
       });
     }
 
+    // Debug: list all existing token rows
+    const { data: allTokens } = await supabaseAdmin
+      .from("microsoft_tokens")
+      .select("user_id");
+    console.log("[fetch-employees] Existing token rows:", allTokens);
+
     // Read Microsoft token from database table (NOT user_metadata)
     console.log("[fetch-employees] Looking up token for userId:", userId);
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from("microsoft_tokens")
       .select("*")
       .eq("user_id", userId)
-      .single();
+      .maybeSingle();
 
-    if (tokenErr || !tokenRow) {
-      console.error("[fetch-employees] No token row found:", tokenErr?.message);
+    if (tokenErr) {
+      console.error("[fetch-employees] Token lookup error:", tokenErr.message);
+      return new Response(JSON.stringify({ error: tokenErr.message }), {
+        status: 500,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    if (!tokenRow) {
+      console.error("[fetch-employees] No token row found for user:", userId);
       return new Response(JSON.stringify({ error: "Microsoft token not found. Please log out and log in again." }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
