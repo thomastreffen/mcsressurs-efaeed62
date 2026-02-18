@@ -121,6 +121,7 @@ Deno.serve(async (req) => {
       console.error("[fetch-employees] admin.getUserById error:", adminErr.message);
     }
     const meta = adminUserData?.user?.user_metadata;
+    console.log("[fetch-employees] Admin metadata:", meta);
     console.log("[fetch-employees] Metadata keys:", Object.keys(meta || {}));
     console.log("[fetch-employees] ms_access_token present:", !!meta?.ms_access_token);
     console.log("[fetch-employees] ms_refresh_token present:", !!meta?.ms_refresh_token);
