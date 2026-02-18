@@ -150,6 +150,7 @@ Deno.serve(async (req) => {
 
     // Store Microsoft tokens in database table (NOT user_metadata)
     const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+    console.log("[auth-callback] Saving token for userId:", userId);
     const { error: tokenStoreErr } = await supabaseAdmin
       .from("microsoft_tokens")
       .upsert({
