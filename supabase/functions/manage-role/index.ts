@@ -75,7 +75,7 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Prevent demoting self (the only super_admin protection)
+    // Prevent demoting self
     if (targetUserId === user.id && newRole !== "super_admin") {
       return new Response(JSON.stringify({ error: "Du kan ikke degradere din egen super_admin-rolle" }), {
         status: 400,
@@ -97,7 +97,7 @@ Deno.serve(async (req) => {
     }
     console.log("[manage-role] Role updated to", newRole, "for", targetUserId);
 
-    // 2. Update auth.user_metadata.app_role
+    // 2. Update ONLY app_role in user_metadata (preserve all other fields)
     const { data: targetUserData } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
     const existingMeta = targetUserData?.user?.user_metadata || {};
     const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
@@ -106,24 +106,8 @@ Deno.serve(async (req) => {
 
     if (metaErr) {
       console.error("[manage-role] Metadata update error:", metaErr.message);
-      // Non-fatal, role is already set in user_roles
     } else {
       console.log("[manage-role] user_metadata.app_role updated for", targetUserId);
-    }
-
-    // 3. If role changed to/from montør, handle technicians table
-    if (newRole === "montør") {
-      // Ensure technician row exists
-      const { data: authUser } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
-      if (authUser?.user) {
-        const email = authUser.user.email?.toLowerCase() || "";
-        const name = authUser.user.user_metadata?.full_name || email;
-        await supabaseAdmin.from("technicians").upsert(
-          { user_id: targetUserId, email, name },
-          { onConflict: "user_id" }
-        );
-        console.log("[manage-role] Technician row ensured for", targetUserId);
-      }
     }
 
     return new Response(JSON.stringify({ success: true, role: newRole }), {

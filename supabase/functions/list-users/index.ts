@@ -69,13 +69,20 @@ Deno.serve(async (req) => {
     const { data: roles } = await supabaseAdmin.from("user_roles").select("user_id, role");
     const roleMap = new Map((roles || []).map((r: any) => [r.user_id, r.role]));
 
-    const users = authUsers.users.map((u: any) => ({
-      id: u.id,
-      email: u.email || "",
-      name: u.user_metadata?.full_name || u.email || "",
-      role: roleMap.get(u.id) || null,
-      created_at: u.created_at,
-    }));
+    // Get all technicians
+    const { data: technicians } = await supabaseAdmin.from("technicians").select("user_id, name, email");
+    const techMap = new Map((technicians || []).map((t: any) => [t.user_id, { name: t.name, email: t.email }]));
+
+    const users = authUsers.users.map((u: any) => {
+      const tech = techMap.get(u.id);
+      return {
+        id: u.id,
+        email: tech?.email || u.email || "",
+        name: tech?.name || "",
+        role: roleMap.get(u.id) || null,
+        created_at: u.created_at,
+      };
+    });
 
     return new Response(JSON.stringify({ users }), {
       status: 200,
