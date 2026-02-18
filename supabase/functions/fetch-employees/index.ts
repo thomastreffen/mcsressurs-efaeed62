@@ -121,9 +121,10 @@ Deno.serve(async (req) => {
       console.error("[fetch-employees] admin.getUserById error:", adminErr.message);
     }
     const meta = adminUserData?.user?.user_metadata;
+    console.log("[fetch-employees] Metadata keys:", Object.keys(meta || {}));
     console.log("[fetch-employees] ms_access_token present:", !!meta?.ms_access_token);
     console.log("[fetch-employees] ms_refresh_token present:", !!meta?.ms_refresh_token);
-    console.log("[fetch-employees] ms_expires_at:", meta?.ms_expires_at || "null");
+    console.log("[fetch-employees] ms_expires_at:", meta?.ms_expires_at);
 
     if (!meta?.ms_access_token) {
       return new Response(JSON.stringify({ error: "No Microsoft token found in user metadata. Please log out and log in again." }), {
