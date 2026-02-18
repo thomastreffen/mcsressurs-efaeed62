@@ -98,8 +98,10 @@ Deno.serve(async (req) => {
     console.log("[manage-role] Role updated to", newRole, "for", targetUserId);
 
     // 2. Update auth.user_metadata.app_role
-    const { error: metaErr } = await supabaseAdmin.auth.admin.updateUser(targetUserId, {
-      user_metadata: { app_role: newRole },
+    const { data: targetUserData } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
+    const existingMeta = targetUserData?.user?.user_metadata || {};
+    const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
+      user_metadata: { ...existingMeta, app_role: newRole },
     });
 
     if (metaErr) {
