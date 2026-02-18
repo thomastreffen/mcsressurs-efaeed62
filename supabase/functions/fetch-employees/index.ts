@@ -80,7 +80,6 @@ Deno.serve(async (req) => {
 
     const jwt = authHeader.replace("Bearer ", "");
     console.log("[fetch-employees] JWT present:", !!jwt);
-    console.log("[fetch-employees] Auth header length:", authHeader.length);
 
     const supabaseAnon = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -88,20 +87,17 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    // Verify JWT and get userId only
     const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
-    const user = userData?.user;
-
-    console.log("[fetch-employees] User ID from JWT:", user?.id);
-    console.log("[fetch-employees] getUser error:", userErr?.message || "none");
-
-    if (userErr || !user) {
+    if (userErr || !userData?.user) {
+      console.error("[fetch-employees] getUser failed:", userErr?.message);
       return new Response(JSON.stringify({ error: "Invalid user" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = user.id;
+    const userId = userData.user.id;
     console.log("[fetch-employees] Authenticated userId:", userId);
 
     // Check admin role
@@ -118,10 +114,13 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Read Microsoft token from user_metadata via admin API
-    const { data: adminUserData } = await supabaseAdmin.auth.admin.getUserById(userId);
+    // Read Microsoft tokens from user_metadata via admin API (NOT from getUser)
+    console.log("[fetch-employees] Using admin.getUserById for metadata");
+    const { data: adminUserData, error: adminErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (adminErr) {
+      console.error("[fetch-employees] admin.getUserById error:", adminErr.message);
+    }
     const meta = adminUserData?.user?.user_metadata;
-    console.log("[fetch-employees] User metadata keys:", meta ? Object.keys(meta) : "null");
     console.log("[fetch-employees] ms_access_token present:", !!meta?.ms_access_token);
     console.log("[fetch-employees] ms_refresh_token present:", !!meta?.ms_refresh_token);
     console.log("[fetch-employees] ms_expires_at:", meta?.ms_expires_at || "null");
