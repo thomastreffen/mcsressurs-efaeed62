@@ -76,11 +76,13 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Check if user exists
-    const { data: existingUsers } = await supabaseAdmin.auth.admin.listUsers();
-    const existingUser = existingUsers?.users?.find(
-      (u) => u.email?.toLowerCase() === email.toLowerCase()
-    );
+    // Check if user exists (filtered lookup, no full enumeration)
+    const { data: { users: matchedUsers } } = await supabaseAdmin.auth.admin.listUsers({
+      filter: email.toLowerCase(),
+      perPage: 1,
+    });
+    const existingUser = matchedUsers?.[0] || null;
+    console.log("[auth-callback] User lookup for", email, "found:", !!existingUser);
 
     let userId: string;
 
