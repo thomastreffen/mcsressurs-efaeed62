@@ -5,18 +5,16 @@ import { WeekCalendar } from "@/components/WeekCalendar";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
 import { JobDetailSheet } from "@/components/JobDetailSheet";
 import { StatusLegend } from "@/components/StatusLegend";
-import { technicians, type Job } from "@/lib/mock-data";
+import { type Job } from "@/lib/mock-data";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { toast } from "sonner";
 
 export default function Dashboard() {
-  const [selectedTechId, setSelectedTechId] = useState<string>(technicians[0].id);
+  const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [createJobOpen, setCreateJobOpen] = useState(false);
   const [selectedJob, setSelectedJob] = useState<Job | null>(null);
   const [jobSheetOpen, setJobSheetOpen] = useState(false);
-
-  const selectedTech = technicians.find((t) => t.id === selectedTechId);
 
   const handleJobClick = (job: Job) => {
     setSelectedJob(job);
@@ -41,7 +39,7 @@ export default function Dashboard() {
         <main className="flex-1 overflow-y-auto p-6">
           <div className="mb-5 flex items-center justify-between">
             <div>
-              <h2 className="text-xl font-semibold">{selectedTech?.name}</h2>
+              <h2 className="text-xl font-semibold">Kalender</h2>
               <p className="text-sm text-muted-foreground">
                 Uke {format(new Date(), "w", { locale: nb })} ·{" "}
                 {format(new Date(), "MMMM yyyy", { locale: nb })}
@@ -50,7 +48,7 @@ export default function Dashboard() {
             <StatusLegend />
           </div>
 
-          <WeekCalendar technicianId={selectedTechId} onJobClick={handleJobClick} />
+          {selectedTechId && <WeekCalendar technicianId={selectedTechId} onJobClick={handleJobClick} />}
         </main>
       </div>
 
