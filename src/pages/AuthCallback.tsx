@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useRef } from "react";
 import { useSearchParams, useNavigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
@@ -13,10 +13,10 @@ export default function AuthCallback() {
     const code = searchParams.get("code");
     const error = searchParams.get("error");
 
-    console.log("[AuthCallback] mounted", { code: !!code, error, hasOpener: !!window.opener, origin: window.location.origin });
+    console.log("[AuthCallback] mounted", { code: !!code, error });
 
+    // Popup flow (if applicable)
     if (window.opener) {
-      console.log("[AuthCallback] In popup, posting message to opener");
       if (code) {
         window.opener.postMessage({ type: "microsoft-auth-code", code }, "*");
       } else if (error) {
@@ -26,7 +26,6 @@ export default function AuthCallback() {
       return;
     }
 
-    // Not in a popup — handle code directly (redirect flow)
     if (error) {
       console.error("[AuthCallback] Auth error:", error);
       toast.error("Innlogging feilet", { description: error });
@@ -35,36 +34,24 @@ export default function AuthCallback() {
     }
 
     if (!code) {
-      console.warn("[AuthCallback] No code in URL");
       navigate("/login", { replace: true });
       return;
     }
 
-    if (processingRef.current) {
-      console.log("[AuthCallback] Already processing, skipping");
-      return;
-    }
+    if (processingRef.current) return;
     processingRef.current = true;
 
     const redirectUri = `${window.location.origin}/auth/callback`;
-    console.log("[AuthCallback] Exchanging code, redirectUri:", redirectUri);
-
-    const timeout = setTimeout(() => {
-      console.error("[AuthCallback] Exchange timed out");
-      toast.error("Innlogging tok for lang tid");
-      navigate("/login", { replace: true });
-    }, 15000);
 
     supabase.functions
       .invoke("auth-callback", {
         body: { code, redirect_uri: redirectUri },
       })
       .then(async ({ data, error: fnError }) => {
-        clearTimeout(timeout);
-        console.log("[AuthCallback] Edge function response:", { data: !!data, error: fnError });
+        console.log("[AuthCallback] Response:", { data: !!data, error: fnError });
 
         if (fnError || !data?.session) {
-          console.error("[AuthCallback] Login failed:", data?.error || fnError);
+          console.error("[AuthCallback] Failed:", data?.error || fnError);
           toast.error("Innlogging feilet", {
             description: data?.error || fnError?.message || "Kunne ikke logge inn.",
           });
@@ -72,18 +59,18 @@ export default function AuthCallback() {
           return;
         }
 
+        // Set session and redirect immediately — don't wait for role
         await supabase.auth.setSession({
           access_token: data.session.access_token,
           refresh_token: data.session.refresh_token,
         });
 
         toast.success("Innlogget", {
-          description: `Velkommen, ${data.user.name}!`,
+          description: `Velkommen, ${data.user?.name || ""}!`,
         });
         navigate("/", { replace: true });
       })
       .catch((err) => {
-        clearTimeout(timeout);
         console.error("[AuthCallback] Exception:", err);
         toast.error("Innlogging feilet");
         navigate("/login", { replace: true });

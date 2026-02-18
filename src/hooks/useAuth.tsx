@@ -19,86 +19,88 @@ interface AuthContextType {
   loading: boolean;
   isAdmin: boolean;
   isSuperAdmin: boolean;
-  signOut: () => Promise<void>;
+  signOut: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
+
+/** Build an AuthUser immediately from Supabase User (metadata only, no DB call) */
+function buildUserFromMeta(supaUser: User): AuthUser {
+  return {
+    id: supaUser.id,
+    email: supaUser.email || "",
+    name: supaUser.user_metadata?.full_name || supaUser.email || "",
+    role: (supaUser.user_metadata?.app_role as AppRole) || "montør",
+  };
+}
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [user, setUser] = useState<AuthUser | null>(null);
   const [loading, setLoading] = useState(true);
 
-  const fetchRole = useCallback(async (supaUser: User): Promise<AuthUser> => {
-    let role: AppRole = "montør";
-
-    // Try DB first
+  /** Non-blocking role fetch from DB — updates user if role differs */
+  const fetchRoleInBackground = useCallback(async (supaUser: User) => {
     try {
       const { data, error } = await supabase
         .from("user_roles")
         .select("role")
         .eq("user_id", supaUser.id)
         .maybeSingle();
-      
-      if (data?.role) {
-        role = data.role as AppRole;
-        console.log("[Auth] Role from DB:", role);
-      } else if (error) {
+
+      if (error) {
         console.warn("[Auth] DB role query error:", error.message);
-        // Fallback to user_metadata
-        const metaRole = supaUser.user_metadata?.app_role as AppRole;
-        if (metaRole) {
-          role = metaRole;
-          console.log("[Auth] Role from metadata fallback:", role);
+        return; // keep metadata role
+      }
+
+      if (data?.role) {
+        const dbRole = data.role as AppRole;
+        const currentMetaRole = supaUser.user_metadata?.app_role;
+        if (dbRole !== currentMetaRole) {
+          console.log("[Auth] Role from DB differs, updating:", dbRole);
         }
+        setUser((prev) =>
+          prev && prev.id === supaUser.id ? { ...prev, role: dbRole } : prev
+        );
       }
     } catch (err) {
-      console.warn("[Auth] Role fetch exception, using metadata fallback");
-      const metaRole = supaUser.user_metadata?.app_role as AppRole;
-      if (metaRole) role = metaRole;
+      console.warn("[Auth] Role fetch exception, keeping default role");
     }
-
-    return {
-      id: supaUser.id,
-      email: supaUser.email || "",
-      name: supaUser.user_metadata?.full_name || supaUser.email || "",
-      role,
-    };
   }, []);
 
   useEffect(() => {
     let mounted = true;
 
+    // 1. Listen for auth state changes
     const { data: { subscription } } = supabase.auth.onAuthStateChange(
-      async (_event, newSession) => {
+      (_event, newSession) => {
         if (!mounted) return;
         console.log("[Auth] State change:", _event, !!newSession);
         setSession(newSession);
+
         if (newSession?.user) {
-          const authUser = await fetchRole(newSession.user);
-          if (mounted) setUser(authUser);
+          // Set user immediately from metadata (non-blocking)
+          const authUser = buildUserFromMeta(newSession.user);
+          setUser(authUser);
+          // Then fetch real role in background
+          fetchRoleInBackground(newSession.user);
         } else {
           setUser(null);
         }
-        if (mounted) setLoading(false);
+        setLoading(false);
       }
     );
 
-    const timeout = setTimeout(() => {
-      if (mounted && loading) {
-        console.warn("[Auth] Loading timed out");
-        setLoading(false);
-      }
-    }, 5000);
-
-    supabase.auth.getSession().then(async ({ data: { session: existing } }) => {
+    // 2. Check existing session
+    supabase.auth.getSession().then(({ data: { session: existing } }) => {
       if (!mounted) return;
       setSession(existing);
       if (existing?.user) {
-        const authUser = await fetchRole(existing.user);
-        if (mounted) setUser(authUser);
+        const authUser = buildUserFromMeta(existing.user);
+        setUser(authUser);
+        fetchRoleInBackground(existing.user);
       }
-      if (mounted) setLoading(false);
+      setLoading(false);
     }).catch((err) => {
       console.error("[Auth] getSession failed:", err);
       if (mounted) setLoading(false);
@@ -106,25 +108,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     return () => {
       mounted = false;
-      clearTimeout(timeout);
       subscription.unsubscribe();
     };
-  }, [fetchRole]);
+  }, [fetchRoleInBackground]);
 
-  const signOut = useCallback(async () => {
+  /**
+   * Sign out: always callable, no dependency on loading state.
+   * 1. Local Supabase sign-out
+   * 2. Clear state
+   * 3. Redirect to Microsoft logout to clear SSO session
+   */
+  const signOut = useCallback(() => {
     console.log("[Auth] Signing out...");
-    try {
-      // 1. Sign out from Supabase (clears local tokens)
-      await supabase.auth.signOut({ scope: 'local' });
-    } catch (err) {
-      console.error("[Auth] Supabase signOut error:", err);
-    }
-    
-    // 2. Clear local state immediately
+    // Fire-and-forget local signout
+    supabase.auth.signOut({ scope: "local" }).catch((err) =>
+      console.error("[Auth] signOut error:", err)
+    );
+    // Clear state immediately
     setUser(null);
     setSession(null);
-
-    // 3. Redirect to Microsoft logout endpoint to clear SSO session
+    // Redirect to Microsoft logout
     const postLogoutRedirect = encodeURIComponent(`${window.location.origin}/login`);
     window.location.href = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/logout?post_logout_redirect_uri=${postLogoutRedirect}`;
   }, []);
