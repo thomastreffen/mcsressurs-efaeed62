@@ -84,14 +84,20 @@ Deno.serve(async (req) => {
 
     let userId: string;
 
+    // Fetch existing role if user exists
+    const existingRole = existingUser
+      ? (await supabaseAdmin.from("user_roles").select("role").eq("user_id", existingUser.id).single())?.data?.role
+      : null;
+
     if (existingUser) {
       userId = existingUser.id;
-      // Update metadata
+      // Update metadata including role for client-side access
       await supabaseAdmin.auth.admin.updateUserById(userId, {
         user_metadata: {
           full_name: displayName,
           microsoft_id: profile.id,
           avatar_url: null,
+          app_role: existingRole || "montør",
         },
       });
     } else {
@@ -103,6 +109,7 @@ Deno.serve(async (req) => {
           user_metadata: {
             full_name: displayName,
             microsoft_id: profile.id,
+            app_role: "montør",
           },
           password: crypto.randomUUID() + crypto.randomUUID(),
         });

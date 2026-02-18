@@ -28,17 +28,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   const fetchRole = useCallback(async (supaUser: User): Promise<AuthUser> => {
-    const { data } = await supabase
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", supaUser.id)
-      .single();
+    // Try fetching from DB first, fall back to user_metadata
+    let role: AppRole = (supaUser.user_metadata?.app_role as AppRole) || "montør";
+    
+    try {
+      const { data } = await supabase
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", supaUser.id)
+        .single();
+      if (data?.role) {
+        role = data.role as AppRole;
+      }
+    } catch {
+      // RLS may block this query during initial login, use metadata fallback
+      console.warn("Could not fetch role from DB, using metadata fallback:", role);
+    }
 
     return {
       id: supaUser.id,
       email: supaUser.email || "",
       name: supaUser.user_metadata?.full_name || supaUser.email || "",
-      role: (data?.role as AppRole) || "montør",
+      role,
     };
   }, []);
 
@@ -99,9 +110,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [fetchRole]);
 
   const signOut = useCallback(async () => {
+    await supabase.auth.signOut({ scope: 'local' });
     setUser(null);
     setSession(null);
-    await supabase.auth.signOut();
   }, []);
 
   const isAdmin = user?.role === "admin" || user?.role === "super_admin";
