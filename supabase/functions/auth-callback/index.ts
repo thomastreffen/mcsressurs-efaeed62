@@ -83,11 +83,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // 4. Duplicate guard – check exact email match in auth.users
-    //    We do NOT use listUsers (fuzzy). Instead, generate magic link which
-    //    targets exact email. If user doesn't exist, create first.
-    
-    // Try generating magic link – this only works if user exists
+    // 4. Try generating magic link (works if user exists)
     let { data: signInData, error: signInErr } =
       await supabaseAdmin.auth.admin.generateLink({
         type: "magiclink",
@@ -160,7 +156,7 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 5. Verify OTP to create session – this gives us the AUTHORITATIVE user ID
+    // 5. Verify OTP to create session
     const { data: sessionData, error: verifyErr } =
       await supabaseAdmin.auth.verifyOtp({
         token_hash: signInData.properties.hashed_token,
@@ -175,52 +171,49 @@ Deno.serve(async (req) => {
       );
     }
 
-    // 6. Use session user ID – this is the ONLY source of truth
+    // 6. Use session user ID – ONLY source of truth
     const userId = sessionData.session.user.id;
     console.log("[auth-callback] Session user ID (authoritative):", userId);
 
-    // 7. Update user_metadata (no tokens, only profile info)
+    // 7. Get existing role
     const { data: existingRole } = await supabaseAdmin
       .from("user_roles")
       .select("role")
       .eq("user_id", userId)
       .maybeSingle();
 
-    await supabaseAdmin.auth.admin.updateUserById(userId, {
+    // 8. Store Microsoft tokens in user_metadata (NO database table)
+    const msExpiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+    const existingMeta = sessionData.session.user.user_metadata || {};
+
+    console.log("[auth-callback] Saving token for userId:", userId);
+    console.log("[auth-callback] ms_expires_at:", msExpiresAt);
+    console.log("[auth-callback] ms_access_token present:", !!tokens.access_token);
+    console.log("[auth-callback] ms_refresh_token present:", !!tokens.refresh_token);
+
+    const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
       user_metadata: {
+        ...existingMeta,
         full_name: displayName,
         microsoft_id: profile.id,
-        avatar_url: null,
         app_role: existingRole?.role || "montør",
+        ms_access_token: tokens.access_token,
+        ms_refresh_token: tokens.refresh_token || null,
+        ms_expires_at: msExpiresAt,
       },
     });
 
-    // 8. Store Microsoft tokens in database – keyed by session user ID
-    const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
-    console.log("[auth-callback] Saving token for userId:", userId);
-
-    const { error: tokenStoreErr } = await supabaseAdmin
-      .from("microsoft_tokens")
-      .upsert({
-        user_id: userId,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token || null,
-        expires_at: expiresAt,
-      }, { onConflict: "user_id" });
-
-    if (tokenStoreErr) {
-      console.error("[auth-callback] Token store error:", tokenStoreErr.message);
-    } else {
-      console.log("[auth-callback] Token stored in microsoft_tokens table for:", userId);
+    if (updateErr) {
+      console.error("[auth-callback] updateUserById error:", updateErr.message);
+      return new Response(
+        JSON.stringify({ error: "Failed to store token in user metadata" }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
     }
 
-    // 9. Fetch role for response
-    const { data: roleData } = await supabaseAdmin
-      .from("user_roles")
-      .select("role")
-      .eq("user_id", userId)
-      .single();
+    console.log("[auth-callback] Tokens stored in user_metadata for:", userId);
 
+    // 9. Return session + user info
     return new Response(
       JSON.stringify({
         session: sessionData.session,
@@ -228,7 +221,7 @@ Deno.serve(async (req) => {
           id: userId,
           email,
           name: displayName,
-          role: roleData?.role || "montør",
+          role: existingRole?.role || "montør",
         },
       }),
       { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
