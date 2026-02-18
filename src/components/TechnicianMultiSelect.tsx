@@ -25,7 +25,14 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
       .select("id, name")
       .order("name")
       .then(({ data }) => {
-        setTechnicians(data || []);
+        const raw = data || [];
+        const seen = new Set<string>();
+        const unique = raw.filter((t) => {
+          if (!t.id || seen.has(t.id)) return false;
+          seen.add(t.id);
+          return true;
+        });
+        setTechnicians(unique);
         setLoading(false);
       });
   }, []);
