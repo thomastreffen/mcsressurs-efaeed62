@@ -8,3 +8,9 @@ verify_jwt = false
 
 [functions.add-technicians]
 verify_jwt = false
+
+[functions.list-users]
+verify_jwt = false
+
+[functions.manage-role]
+verify_jwt = false

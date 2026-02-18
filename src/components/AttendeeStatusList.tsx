@@ -1,4 +1,5 @@
-import { technicians, type AttendeeStatus } from "@/lib/mock-data";
+import { type AttendeeStatus } from "@/lib/mock-data";
+import { useTechnicians } from "@/hooks/useTechnicians";
 import { JobStatusBadge } from "./JobStatusBadge";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -9,6 +10,7 @@ interface AttendeeStatusListProps {
 }
 
 export function AttendeeStatusList({ attendeeStatuses }: AttendeeStatusListProps) {
+  const { technicians } = useTechnicians();
   return (
     <div className="space-y-2">
       {attendeeStatuses.map((att) => {
