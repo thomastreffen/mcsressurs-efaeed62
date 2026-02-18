@@ -66,7 +66,11 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
                   checked ? "bg-accent" : "hover:bg-secondary"
                 )}
               >
-                <Checkbox checked={checked} onCheckedChange={() => toggle(tech.id)} />
+                <Checkbox
+                  checked={checked}
+                  onCheckedChange={() => toggle(tech.id)}
+                  onClick={(e) => e.stopPropagation()}
+                />
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <User className="h-3 w-3" />
                 </div>
