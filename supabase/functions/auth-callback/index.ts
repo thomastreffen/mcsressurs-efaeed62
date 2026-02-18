@@ -164,14 +164,14 @@ Deno.serve(async (req) => {
     }
 
     // Extract the hashed_token to verify OTP and create a session
-    const { data: sessionData, error: verifyErr } =
+    const { data: sessionData, error: verifySessionErr } =
       await supabaseAdmin.auth.verifyOtp({
         token_hash: signInData.properties.hashed_token,
         type: "magiclink",
       });
 
-    if (verifyErr || !sessionData.session) {
-      console.error("OTP verification failed:", verifyErr);
+    if (verifySessionErr || !sessionData.session) {
+      console.error("OTP verification failed:", verifySessionErr);
       return new Response(
         JSON.stringify({ error: "Session verification failed" }),
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
@@ -205,13 +205,13 @@ Deno.serve(async (req) => {
     }
 
     // Verify the row was actually written
-    const { data: verifyRow, error: verifyErr } = await supabaseAdmin
+    const { data: verifyRow, error: verifySelectErr } = await supabaseAdmin
       .from("microsoft_tokens")
       .select("*")
       .eq("user_id", userId)
       .single();
     
-    console.log("[auth-callback] Verify SELECT - data:", JSON.stringify(verifyRow ? { id: verifyRow.id, user_id: verifyRow.user_id, has_access: !!verifyRow.access_token, has_refresh: !!verifyRow.refresh_token, expires_at: verifyRow.expires_at } : null), "error:", JSON.stringify(verifyErr));
+    console.log("[auth-callback] Verify SELECT - data:", JSON.stringify(verifyRow ? { id: verifyRow.id, user_id: verifyRow.user_id, has_access: !!verifyRow.access_token, has_refresh: !!verifyRow.refresh_token, expires_at: verifyRow.expires_at } : null), "error:", JSON.stringify(verifySelectErr));
 
     // Fetch user role
     const { data: roleData } = await supabaseAdmin
