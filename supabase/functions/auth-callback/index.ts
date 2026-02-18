@@ -113,6 +113,8 @@ Deno.serve(async (req) => {
           ms_expires_at: expiresAt,
         },
       });
+      const { data: verifyUser } = await supabaseAdmin.auth.admin.getUserById(userId);
+      console.log("User metadata after token save:", verifyUser?.user?.user_metadata);
       console.log("[auth-callback] Updated user_metadata with MS tokens for:", userId);
     } else {
       // Create new user
