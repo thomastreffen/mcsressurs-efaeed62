@@ -35,19 +35,7 @@ export function EmployeeImport() {
   const fetchEmployees = async () => {
     setLoading(true);
     try {
-      const { data: sessionData } = await supabase.auth.getSession();
-      const session = sessionData.session;
-
-      if (!session?.provider_token) {
-        toast.error("Ingen Microsoft-token funnet", {
-          description: "Prøv å logge ut og inn igjen.",
-        });
-        return;
-      }
-
-      const { data, error } = await supabase.functions.invoke("fetch-employees", {
-        body: { provider_token: session.provider_token },
-      });
+      const { data, error } = await supabase.functions.invoke("fetch-employees");
 
       if (error || !data?.employees) {
         toast.error("Kunne ikke hente ansatte", {
