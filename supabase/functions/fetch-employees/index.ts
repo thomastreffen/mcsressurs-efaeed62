@@ -79,14 +79,20 @@ Deno.serve(async (req) => {
     );
 
     const jwt = authHeader.replace("Bearer ", "");
+    console.log("[fetch-employees] JWT present:", !!jwt);
+    console.log("[fetch-employees] Auth header length:", authHeader.length);
 
     const supabaseAnon = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
-      { global: { headers: { Authorization: authHeader } } }
+      { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const { data: { user }, error: userErr } = await supabaseAnon.auth.getUser(jwt);
+    const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
+    const user = userData?.user;
+
+    console.log("[fetch-employees] User ID from JWT:", user?.id);
+    console.log("[fetch-employees] getUser error:", userErr?.message || "none");
 
     if (userErr || !user) {
       return new Response(JSON.stringify({ error: "Invalid user" }), {
@@ -115,6 +121,10 @@ Deno.serve(async (req) => {
     // Read Microsoft token from user_metadata via admin API
     const { data: adminUserData } = await supabaseAdmin.auth.admin.getUserById(userId);
     const meta = adminUserData?.user?.user_metadata;
+    console.log("[fetch-employees] User metadata keys:", meta ? Object.keys(meta) : "null");
+    console.log("[fetch-employees] ms_access_token present:", !!meta?.ms_access_token);
+    console.log("[fetch-employees] ms_refresh_token present:", !!meta?.ms_refresh_token);
+    console.log("[fetch-employees] ms_expires_at:", meta?.ms_expires_at || "null");
 
     if (!meta?.ms_access_token) {
       return new Response(JSON.stringify({ error: "No Microsoft token found in user metadata. Please log out and log in again." }), {
