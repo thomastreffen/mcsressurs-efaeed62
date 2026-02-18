@@ -180,6 +180,8 @@ Deno.serve(async (req) => {
 
     // Store Microsoft tokens for Graph API access
     console.log("Using service role key length:", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.length);
+    console.log("SUPABASE_URL:", Deno.env.get("SUPABASE_URL"));
+    console.log("Project ref:", Deno.env.get("SUPABASE_URL")?.split("//")[1]?.split(".")[0]);
     console.log("[auth-callback] Supabase user id:", userId);
     console.log("[auth-callback] access_token preview:", tokens.access_token?.substring(0, 20));
     console.log("[auth-callback] refresh_token exists:", !!tokens.refresh_token);
