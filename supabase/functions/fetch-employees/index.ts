@@ -74,24 +74,24 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
+    const jwt = authHeader.replace("Bearer ", "");
+
     const supabaseAnon = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
 
-    const { data: claimsData, error: claimsErr } = await supabaseAnon.auth.getClaims(
-      authHeader.replace("Bearer ", "")
-    );
+    const { data: { user }, error: userErr } = await supabaseAnon.auth.getUser(jwt);
 
-    if (claimsErr || !claimsData?.claims) {
-      return new Response(JSON.stringify({ error: "Unauthorized" }), {
+    if (userErr || !user) {
+      return new Response(JSON.stringify({ error: "Invalid user" }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    const userId = claimsData.claims.sub as string;
+    const userId = user.id;
     console.log("[fetch-employees] Authenticated userId:", userId);
 
     // Check admin role
