@@ -19,7 +19,8 @@ import { EventLogList } from "./EventLogList";
 import { EditLockWarning } from "./EditLockWarning";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
-import { technicians, getConflicts, getEventLogs, type Job, type Attachment } from "@/lib/mock-data";
+import { getConflicts, getEventLogs, type Job, type Attachment } from "@/lib/mock-data";
+import { useTechnicians } from "@/hooks/useTechnicians";
 import {
   MapPin,
   Clock,
@@ -38,6 +39,7 @@ interface JobDetailSheetProps {
 }
 
 export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDetailSheetProps) {
+  const { technicians } = useTechnicians();
   const [mode, setMode] = useState<"view" | "edit">("view");
 
   const [title, setTitle] = useState("");

@@ -1,4 +1,5 @@
-import { technicians, type Job } from "@/lib/mock-data";
+import { type Job } from "@/lib/mock-data";
+import { useTechnicians } from "@/hooks/useTechnicians";
 import { format } from "date-fns";
 import { AlertTriangle } from "lucide-react";
 
@@ -7,6 +8,7 @@ interface ConflictWarningProps {
 }
 
 export function ConflictWarning({ conflicts }: ConflictWarningProps) {
+  const { technicians } = useTechnicians();
   if (conflicts.length === 0) return null;
 
   return (

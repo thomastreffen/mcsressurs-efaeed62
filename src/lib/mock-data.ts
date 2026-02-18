@@ -17,21 +17,6 @@ export interface Attachment {
 
 export type AppRole = "super_admin" | "admin" | "montør";
 
-export interface AdminUser {
-  id: string;
-  name: string;
-  email: string;
-  role: AppRole;
-  active: boolean;
-}
-
-export interface Technician {
-  id: string;
-  name: string;
-  email: string;
-  role: "admin" | "montør";
-}
-
 export interface EventLog {
   id: string;
   eventId: string;
@@ -75,18 +60,6 @@ export interface Job {
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
 
-export const technicians: Technician[] = [
-  { id: "1", name: "Erik Hansen", email: "erik@mcs.no", role: "montør" },
-  { id: "2", name: "Lars Johansen", email: "lars@mcs.no", role: "montør" },
-  { id: "3", name: "Kari Olsen", email: "kari@mcs.no", role: "montør" },
-  { id: "4", name: "Thomas Berg", email: "thomas@mcs.no", role: "montør" },
-];
-
-export const adminUsers: AdminUser[] = [
-  { id: "a1", name: "Thomas Berg", email: "thomas@mcs.no", role: "super_admin", active: true },
-  { id: "a2", name: "Øyvind Larsen", email: "oyvind@mcs.no", role: "admin", active: true },
-  { id: "a3", name: "Silje Moen", email: "silje@mcs.no", role: "admin", active: false },
-];
 
 export const eventLogs: EventLog[] = [
   { id: "l1", eventId: "j1", actionType: "created", performedBy: "a1", performedByName: "Thomas Berg", timestamp: addDays(weekStart, -1), changeSummary: "Jobb opprettet" },
