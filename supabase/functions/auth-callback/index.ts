@@ -69,7 +69,7 @@ Deno.serve(async (req) => {
     const email = profile.mail || profile.userPrincipalName;
     const displayName = profile.displayName || email;
 
-    // Create Supabase admin client
+    // Create Supabase admin client (service_role for microsoft_tokens access)
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -97,27 +97,20 @@ Deno.serve(async (req) => {
       existingRole = roleData?.role || null;
     }
 
-    const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
-
     if (existingUser) {
       userId = existingUser.id;
-      // Store MS tokens + metadata in user_metadata
+      // Update user_metadata WITHOUT tokens – only profile info
       await supabaseAdmin.auth.admin.updateUserById(userId, {
         user_metadata: {
           full_name: displayName,
           microsoft_id: profile.id,
           avatar_url: null,
           app_role: existingRole || "montør",
-          ms_access_token: tokens.access_token,
-          ms_refresh_token: tokens.refresh_token || null,
-          ms_expires_at: expiresAt,
         },
       });
-      const { data: verifyUser } = await supabaseAdmin.auth.admin.getUserById(userId);
-      console.log("User metadata after token save:", verifyUser?.user?.user_metadata);
-      console.log("[auth-callback] Updated user_metadata with MS tokens for:", userId);
+      console.log("[auth-callback] Updated user_metadata (no tokens) for:", userId);
     } else {
-      // Create new user
+      // Create new user – no tokens in metadata
       const { data: newUser, error: createErr } =
         await supabaseAdmin.auth.admin.createUser({
           email,
@@ -126,9 +119,6 @@ Deno.serve(async (req) => {
             full_name: displayName,
             microsoft_id: profile.id,
             app_role: "montør",
-            ms_access_token: tokens.access_token,
-            ms_refresh_token: tokens.refresh_token || null,
-            ms_expires_at: expiresAt,
           },
           password: crypto.randomUUID() + crypto.randomUUID(),
         });
@@ -155,7 +145,24 @@ Deno.serve(async (req) => {
         .update({ user_id: userId })
         .eq("email", email.toLowerCase());
 
-      console.log("[auth-callback] Created new user with MS tokens:", userId);
+      console.log("[auth-callback] Created new user:", userId);
+    }
+
+    // Store Microsoft tokens in database table (NOT user_metadata)
+    const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
+    const { error: tokenStoreErr } = await supabaseAdmin
+      .from("microsoft_tokens")
+      .upsert({
+        user_id: userId,
+        access_token: tokens.access_token,
+        refresh_token: tokens.refresh_token || null,
+        expires_at: expiresAt,
+      }, { onConflict: "user_id" });
+
+    if (tokenStoreErr) {
+      console.error("[auth-callback] Token store error:", tokenStoreErr.message);
+    } else {
+      console.log("[auth-callback] Token stored in microsoft_tokens table");
     }
 
     // Generate session via magic link + OTP verify

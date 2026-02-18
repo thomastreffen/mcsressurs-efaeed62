@@ -97,12 +97,13 @@ Deno.serve(async (req) => {
     }
     console.log("[manage-role] Role updated to", newRole, "for", targetUserId);
 
-    // 2. Update ONLY app_role in user_metadata (preserve all other fields)
+    // 2. Update ONLY app_role in user_metadata (no tokens stored here)
     const { data: targetUserData } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
     const existingMeta = targetUserData?.user?.user_metadata || {};
-    console.log("[manage-role] Metadata before role update:", Object.keys(existingMeta));
+    // Remove any legacy token fields from metadata
+    const { ms_access_token, ms_refresh_token, ms_expires_at, ...cleanMeta } = existingMeta;
     const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
-      user_metadata: { ...existingMeta, app_role: newRole },
+      user_metadata: { ...cleanMeta, app_role: newRole },
     });
 
     if (metaErr) {
