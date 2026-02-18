@@ -141,6 +141,7 @@ Deno.serve(async (req) => {
     }
 
     // Read Microsoft token from database table (NOT user_metadata)
+    console.log("[fetch-employees] Looking up token for userId:", userId);
     const { data: tokenRow, error: tokenErr } = await supabaseAdmin
       .from("microsoft_tokens")
       .select("*")
