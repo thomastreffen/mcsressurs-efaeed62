@@ -76,7 +76,7 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Check if user exists (filtered lookup, no full enumeration)
+    // Check if user exists
     const { data: { users: matchedUsers } } = await supabaseAdmin.auth.admin.listUsers({
       filter: email.toLowerCase(),
       perPage: 1,
@@ -89,28 +89,33 @@ Deno.serve(async (req) => {
     // Fetch existing role if user exists
     let existingRole: string | null = null;
     if (existingUser) {
-      const { data: roleData, error: roleErr } = await supabaseAdmin
+      const { data: roleData } = await supabaseAdmin
         .from("user_roles")
         .select("role")
         .eq("user_id", existingUser.id)
         .maybeSingle();
       existingRole = roleData?.role || null;
-      console.log("[auth-callback] Existing user role lookup:", { userId: existingUser.id, role: existingRole, error: roleErr?.message });
     }
+
+    const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
 
     if (existingUser) {
       userId = existingUser.id;
-      // Update metadata including role for client-side access
+      // Store MS tokens + metadata in user_metadata
       await supabaseAdmin.auth.admin.updateUserById(userId, {
         user_metadata: {
           full_name: displayName,
           microsoft_id: profile.id,
           avatar_url: null,
           app_role: existingRole || "montør",
+          ms_access_token: tokens.access_token,
+          ms_refresh_token: tokens.refresh_token || null,
+          ms_expires_at: expiresAt,
         },
       });
+      console.log("[auth-callback] Updated user_metadata with MS tokens for:", userId);
     } else {
-      // Create new user with random password (they authenticate via MS)
+      // Create new user
       const { data: newUser, error: createErr } =
         await supabaseAdmin.auth.admin.createUser({
           email,
@@ -119,6 +124,9 @@ Deno.serve(async (req) => {
             full_name: displayName,
             microsoft_id: profile.id,
             app_role: "montør",
+            ms_access_token: tokens.access_token,
+            ms_refresh_token: tokens.refresh_token || null,
+            ms_expires_at: expiresAt,
           },
           password: crypto.randomUUID() + crypto.randomUUID(),
         });
@@ -133,22 +141,22 @@ Deno.serve(async (req) => {
 
       userId = newUser.user.id;
 
-      // Assign default montør role
+      // Assign default role
       await supabaseAdmin.from("user_roles").insert({
         user_id: userId,
         role: "montør",
       });
 
-      // Link to technicians table if matching email exists
+      // Link to technicians table if matching email
       await supabaseAdmin
         .from("technicians")
         .update({ user_id: userId })
         .eq("email", email.toLowerCase());
+
+      console.log("[auth-callback] Created new user with MS tokens:", userId);
     }
 
-    // Generate a session for the user
-    // We use admin.generateLink to create a magic link, then extract the token
-    // Alternative: sign in with password approach
+    // Generate session via magic link + OTP verify
     const { data: signInData, error: signInErr } =
       await supabaseAdmin.auth.admin.generateLink({
         type: "magiclink",
@@ -163,7 +171,6 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Extract the hashed_token to verify OTP and create a session
     const { data: sessionData, error: verifySessionErr } =
       await supabaseAdmin.auth.verifyOtp({
         token_hash: signInData.properties.hashed_token,
@@ -177,44 +184,6 @@ Deno.serve(async (req) => {
         { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
       );
     }
-
-    // Store Microsoft tokens for Graph API access
-    console.log("Using service role key length:", Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")?.length);
-    console.log("SUPABASE_URL:", Deno.env.get("SUPABASE_URL"));
-    console.log("Project ref:", Deno.env.get("SUPABASE_URL")?.split("//")[1]?.split(".")[0]);
-    console.log("[auth-callback] Supabase user id:", userId);
-    console.log("[auth-callback] access_token preview:", tokens.access_token?.substring(0, 20));
-    console.log("[auth-callback] refresh_token exists:", !!tokens.refresh_token);
-    const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
-    console.log("[auth-callback] Saving Microsoft token for user:", userId, "expires_at:", expiresAt);
-    const { data: upsertData, error: upsertErr } = await supabaseAdmin
-      .from("microsoft_tokens")
-      .upsert({
-        user_id: userId,
-        access_token: tokens.access_token,
-        refresh_token: tokens.refresh_token || null,
-        expires_at: expiresAt,
-      }, { onConflict: "user_id" })
-      .select();
-    
-    console.log("[auth-callback] Upsert result - data:", JSON.stringify(upsertData), "error:", JSON.stringify(upsertErr));
-    
-    if (upsertErr) {
-      console.error("[auth-callback] Failed to save Microsoft token:", upsertErr);
-      return new Response(
-        JSON.stringify({ error: "Failed to store Microsoft token: " + upsertErr.message }),
-        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } }
-      );
-    }
-
-    // Verify the row was actually written
-    const { data: verifyRow, error: verifySelectErr } = await supabaseAdmin
-      .from("microsoft_tokens")
-      .select("*")
-      .eq("user_id", userId)
-      .single();
-    
-    console.log("[auth-callback] Verify SELECT - data:", JSON.stringify(verifyRow ? { id: verifyRow.id, user_id: verifyRow.user_id, has_access: !!verifyRow.access_token, has_refresh: !!verifyRow.refresh_token, expires_at: verifyRow.expires_at } : null), "error:", JSON.stringify(verifySelectErr));
 
     // Fetch user role
     const { data: roleData } = await supabaseAdmin
