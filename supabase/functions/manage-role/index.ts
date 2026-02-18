@@ -100,6 +100,7 @@ Deno.serve(async (req) => {
     // 2. Update ONLY app_role in user_metadata (preserve all other fields)
     const { data: targetUserData } = await supabaseAdmin.auth.admin.getUserById(targetUserId);
     const existingMeta = targetUserData?.user?.user_metadata || {};
+    console.log("[manage-role] Metadata before role update:", Object.keys(existingMeta));
     const { error: metaErr } = await supabaseAdmin.auth.admin.updateUserById(targetUserId, {
       user_metadata: { ...existingMeta, app_role: newRole },
     });
