@@ -10,7 +10,7 @@ async function refreshMicrosoftToken(
   supabaseAdmin: any,
   userId: string,
   refreshToken: string
-): Promise<{ access_token: string; expires_at: string } | null> {
+): Promise<{ access_token: string; refresh_token: string; expires_at: string } | null> {
   const clientId = Deno.env.get("AZURE_CLIENT_ID")!;
   const clientSecret = Deno.env.get("AZURE_CLIENT_SECRET")!;
   const tenantId = Deno.env.get("AZURE_TENANT_ID")!;
@@ -41,17 +41,21 @@ async function refreshMicrosoftToken(
   const tokens = await tokenRes.json();
   const expiresAt = new Date(Date.now() + (tokens.expires_in || 3600) * 1000).toISOString();
 
-  await supabaseAdmin
-    .from("microsoft_tokens")
-    .update({
-      access_token: tokens.access_token,
-      refresh_token: tokens.refresh_token || refreshToken,
-      expires_at: expiresAt,
-    })
-    .eq("user_id", userId);
+  // Update user_metadata with refreshed tokens
+  const { data: userData } = await supabaseAdmin.auth.admin.getUserById(userId);
+  const existingMeta = userData?.user?.user_metadata || {};
 
-  console.log("[fetch-employees] Token refreshed and stored, expires_at:", expiresAt);
-  return { access_token: tokens.access_token, expires_at: expiresAt };
+  await supabaseAdmin.auth.admin.updateUserById(userId, {
+    user_metadata: {
+      ...existingMeta,
+      ms_access_token: tokens.access_token,
+      ms_refresh_token: tokens.refresh_token || refreshToken,
+      ms_expires_at: expiresAt,
+    },
+  });
+
+  console.log("[fetch-employees] Token refreshed and stored in user_metadata, expires_at:", expiresAt);
+  return { access_token: tokens.access_token, refresh_token: tokens.refresh_token || refreshToken, expires_at: expiresAt };
 }
 
 Deno.serve(async (req) => {
@@ -108,38 +112,33 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Read Microsoft token from DB
-    const { data: tokenData, error: tokenErr } = await supabaseAdmin
-      .from("microsoft_tokens")
-      .select("access_token, refresh_token, expires_at")
-      .eq("user_id", userId)
-      .maybeSingle();
+    // Read Microsoft token from user_metadata via admin API
+    const { data: adminUserData } = await supabaseAdmin.auth.admin.getUserById(userId);
+    const meta = adminUserData?.user?.user_metadata;
 
-    console.log("[fetch-employees] microsoft_tokens SELECT result - data:", tokenData ? { user_id: tokenData.user_id, has_access: !!tokenData.access_token, has_refresh: !!tokenData.refresh_token, expires_at: tokenData.expires_at } : null, "error:", tokenErr?.message);
-
-    if (tokenErr || !tokenData) {
-      return new Response(JSON.stringify({ error: "No token row found for userId: " + userId + (tokenErr ? " (DB error: " + tokenErr.message + ")" : " (no row exists)") }), {
+    if (!meta?.ms_access_token) {
+      return new Response(JSON.stringify({ error: "No Microsoft token found in user metadata. Please log out and log in again." }), {
         status: 401,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
 
-    let accessToken = tokenData.access_token;
+    let accessToken = meta.ms_access_token;
 
     // Check expiration and refresh if needed
     const now = new Date();
-    const expiresAt = tokenData.expires_at ? new Date(tokenData.expires_at) : null;
+    const expiresAt = meta.ms_expires_at ? new Date(meta.ms_expires_at) : null;
     const isExpired = !expiresAt || expiresAt <= now;
 
     if (isExpired) {
       console.log("[fetch-employees] Token expired, attempting refresh...");
-      if (!tokenData.refresh_token) {
+      if (!meta.ms_refresh_token) {
         return new Response(JSON.stringify({ error: "Microsoft token expired and no refresh token available. Please log out and log in again." }), {
           status: 401,
           headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
-      const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, tokenData.refresh_token);
+      const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, meta.ms_refresh_token);
       if (!refreshed) {
         return new Response(JSON.stringify({ error: "Failed to refresh Microsoft token. Please log out and log in again." }), {
           status: 401,
@@ -148,7 +147,7 @@ Deno.serve(async (req) => {
       }
       accessToken = refreshed.access_token;
     } else {
-      console.log("[fetch-employees] Using stored token, expires_at:", tokenData.expires_at);
+      console.log("[fetch-employees] Using stored token, expires_at:", meta.ms_expires_at);
     }
 
     // Fetch employees from Microsoft Graph
@@ -161,10 +160,9 @@ Deno.serve(async (req) => {
       const errText = await graphRes.text();
       console.error("[fetch-employees] Graph API error:", graphRes.status, errText);
 
-      // If 401 from Graph, try refresh once
-      if (graphRes.status === 401 && tokenData.refresh_token) {
+      if (graphRes.status === 401 && meta.ms_refresh_token) {
         console.log("[fetch-employees] Graph returned 401, attempting token refresh...");
-        const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, tokenData.refresh_token);
+        const refreshed = await refreshMicrosoftToken(supabaseAdmin, userId, meta.ms_refresh_token);
         if (refreshed) {
           const retryRes = await fetch(
             "https://graph.microsoft.com/v1.0/users?$select=id,displayName,mail,userPrincipalName,jobTitle,department&$top=999",
@@ -172,8 +170,6 @@ Deno.serve(async (req) => {
           );
           if (retryRes.ok) {
             const retryData = await retryRes.json();
-            console.log("[fetch-employees] Retry succeeded after refresh");
-            // Continue with retryData below
             const { data: existingTechs } = await supabaseAdmin
               .from("technicians")
               .select("email, microsoft_user_id");
