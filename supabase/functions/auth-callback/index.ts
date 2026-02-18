@@ -85,9 +85,16 @@ Deno.serve(async (req) => {
     let userId: string;
 
     // Fetch existing role if user exists
-    const existingRole = existingUser
-      ? (await supabaseAdmin.from("user_roles").select("role").eq("user_id", existingUser.id).single())?.data?.role
-      : null;
+    let existingRole: string | null = null;
+    if (existingUser) {
+      const { data: roleData, error: roleErr } = await supabaseAdmin
+        .from("user_roles")
+        .select("role")
+        .eq("user_id", existingUser.id)
+        .maybeSingle();
+      existingRole = roleData?.role || null;
+      console.log("[auth-callback] Existing user role lookup:", { userId: existingUser.id, role: existingRole, error: roleErr?.message });
+    }
 
     if (existingUser) {
       userId = existingUser.id;
