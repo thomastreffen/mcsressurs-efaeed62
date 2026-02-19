@@ -7,7 +7,8 @@ import { TopBar } from "@/components/TopBar";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
 import { AuditInfo } from "@/components/AuditInfo";
-import { EventLogList } from "@/components/EventLogList";
+import { EditJobDialog } from "@/components/EditJobDialog";
+import { ImageLightbox } from "@/components/ImageLightbox";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -32,6 +33,7 @@ import {
   Image as ImageIcon,
   Download,
   Trash2,
+  Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -53,6 +55,9 @@ export default function JobDetail() {
   const [technicianNames, setTechnicianNames] = useState<string[]>([]);
   const [logs, setLogs] = useState<EventLog[]>([]);
   const [statusUpdating, setStatusUpdating] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
+  const [lightboxOpen, setLightboxOpen] = useState(false);
+  const [lightboxIndex, setLightboxIndex] = useState(0);
 
   const fetchJob = useCallback(async () => {
     if (!id) return;
@@ -63,18 +68,13 @@ export default function JobDetail() {
         *,
         event_technicians (
           technician_id,
-          technicians (
-            id,
-            name,
-            color
-          )
+          technicians ( id, name, color )
         )
       `)
       .eq("id", id)
       .single();
 
     if (error || !data) {
-      console.error("[JobDetail] Failed to fetch:", error);
       setJob(null);
       setLoading(false);
       return;
@@ -109,7 +109,6 @@ export default function JobDetail() {
     setLoading(false);
   }, [id]);
 
-  // Fetch event logs from DB
   const fetchLogs = useCallback(async () => {
     if (!id) return;
     const { data } = await supabase
@@ -117,7 +116,6 @@ export default function JobDetail() {
       .select("*")
       .eq("event_id", id)
       .order("timestamp", { ascending: false });
-
     if (data) setLogs(data);
   }, [id]);
 
@@ -128,8 +126,7 @@ export default function JobDetail() {
 
   const handleStatusChange = async (newStatus: JobStatus) => {
     if (!job || !user) return;
-    const role = user.role;
-    if (!canSetStatus(role, newStatus)) {
+    if (!canSetStatus(user.role, newStatus)) {
       toast.error("Du har ikke tilgang til å sette denne statusen");
       return;
     }
@@ -137,27 +134,20 @@ export default function JobDetail() {
     setStatusUpdating(true);
     const { error } = await supabase
       .from("events")
-      .update({
-        status: newStatus,
-        updated_by: user.id,
-      })
+      .update({ status: newStatus, updated_by: user.id })
       .eq("id", job.id);
 
     if (error) {
       toast.error("Kunne ikke oppdatere status", { description: error.message });
     } else {
-      // Log the change
       await supabase.from("event_logs").insert({
         event_id: job.id,
         action_type: "status_changed",
         performed_by: user.id,
         change_summary: `Status endret fra "${JOB_STATUS_CONFIG[job.status].label}" til "${JOB_STATUS_CONFIG[newStatus].label}"`,
       });
-
       setJob((prev) => prev ? { ...prev, status: newStatus } : null);
-      toast.success("Status oppdatert", {
-        description: `${JOB_STATUS_CONFIG[newStatus].label}`,
-      });
+      toast.success("Status oppdatert", { description: JOB_STATUS_CONFIG[newStatus].label });
       fetchLogs();
     }
     setStatusUpdating(false);
@@ -197,9 +187,7 @@ export default function JobDetail() {
         <div className="flex flex-1 items-center justify-center">
           <div className="text-center space-y-2">
             <p className="text-lg font-medium">Jobb ikke funnet</p>
-            <Button variant="outline" onClick={() => navigate("/")}>
-              Tilbake til kalender
-            </Button>
+            <Button variant="outline" onClick={() => navigate("/")}>Tilbake til kalender</Button>
           </div>
         </div>
       </div>
@@ -209,12 +197,8 @@ export default function JobDetail() {
   const displayNumber = getDisplayNumber(job.jobNumber ?? null, job.internalNumber ?? null);
   const role = user?.role ?? "montør";
   const attachments = job.attachments ?? [];
-  const imageAttachments = attachments.filter((a) =>
-    /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name)
-  );
-  const docAttachments = attachments.filter(
-    (a) => !/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name)
-  );
+  const imageAttachments = attachments.filter((a) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name));
+  const docAttachments = attachments.filter((a) => !/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name));
 
   return (
     <div className="flex h-screen flex-col">
@@ -222,10 +206,18 @@ export default function JobDetail() {
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5 -ml-2">
-            <ArrowLeft className="h-4 w-4" />
-            Tilbake
-          </Button>
+          <div className="flex items-center justify-between">
+            <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5 -ml-2">
+              <ArrowLeft className="h-4 w-4" />
+              Tilbake
+            </Button>
+            {isAdmin && (
+              <Button variant="outline" size="sm" onClick={() => setEditOpen(true)} className="gap-1.5">
+                <Pencil className="h-3.5 w-3.5" />
+                Rediger
+              </Button>
+            )}
+          </div>
 
           <header className="space-y-4">
             <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-4">
@@ -257,9 +249,7 @@ export default function JobDetail() {
                   </SelectTrigger>
                   <SelectContent>
                     {ALL_STATUSES.filter((s) => canSetStatus(role, s)).map((s) => (
-                      <SelectItem key={s} value={s}>
-                        {JOB_STATUS_CONFIG[s].label}
-                      </SelectItem>
+                      <SelectItem key={s} value={s}>{JOB_STATUS_CONFIG[s].label}</SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
@@ -281,19 +271,17 @@ export default function JobDetail() {
                     <Button
                       size="sm"
                       onClick={async () => {
-                        await supabase
-                          .from("events")
-                          .update({
-                            start_time: job.proposedStart!.toISOString(),
-                            end_time: job.proposedEnd!.toISOString(),
-                            proposed_start: null,
-                            proposed_end: null,
-                            status: "scheduled",
-                            updated_by: user?.id,
-                          })
-                          .eq("id", job.id);
+                        await supabase.from("events").update({
+                          start_time: job.proposedStart!.toISOString(),
+                          end_time: job.proposedEnd!.toISOString(),
+                          proposed_start: null,
+                          proposed_end: null,
+                          status: "scheduled",
+                          updated_by: user?.id,
+                        }).eq("id", job.id);
                         toast.success("Nytt tidspunkt godkjent");
                         fetchJob();
+                        fetchLogs();
                       }}
                     >
                       Godkjenn
@@ -302,17 +290,15 @@ export default function JobDetail() {
                       size="sm"
                       variant="outline"
                       onClick={async () => {
-                        await supabase
-                          .from("events")
-                          .update({
-                            proposed_start: null,
-                            proposed_end: null,
-                            status: "scheduled",
-                            updated_by: user?.id,
-                          })
-                          .eq("id", job.id);
+                        await supabase.from("events").update({
+                          proposed_start: null,
+                          proposed_end: null,
+                          status: "scheduled",
+                          updated_by: user?.id,
+                        }).eq("id", job.id);
                         toast.success("Foreslått endring avvist");
                         fetchJob();
+                        fetchLogs();
                       }}
                     >
                       Avvis
@@ -375,12 +361,10 @@ export default function JobDetail() {
                   <p className="text-sm text-muted-foreground whitespace-pre-wrap">{job.description}</p>
                 </div>
               )}
-
               <div className="rounded-lg border bg-card p-4 space-y-3">
                 <h3 className="text-sm font-medium">Montørstatus</h3>
                 <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
               </div>
-
               <div className="rounded-lg border bg-card p-4">
                 <AuditInfo job={job} />
               </div>
@@ -391,23 +375,13 @@ export default function JobDetail() {
                 {docAttachments.length > 0 ? (
                   <div className="space-y-2">
                     {docAttachments.map((att, i) => (
-                      <div
-                        key={i}
-                        className="flex items-center gap-3 rounded-lg border p-3 hover:bg-secondary transition-colors"
-                      >
+                      <div key={i} className="flex items-center gap-3 rounded-lg border p-3 hover:bg-secondary transition-colors">
                         <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                        <a
-                          href={att.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="text-sm font-medium flex-1 truncate hover:underline"
-                        >
+                        <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium flex-1 truncate hover:underline">
                           {att.name}
                         </a>
                         {att.size && (
-                          <span className="text-xs text-muted-foreground shrink-0">
-                            {(att.size / 1024).toFixed(0)} KB
-                          </span>
+                          <span className="text-xs text-muted-foreground shrink-0">{(att.size / 1024).toFixed(0)} KB</span>
                         )}
                         <a href={att.url} download className="shrink-0">
                           <Download className="h-4 w-4 text-muted-foreground hover:text-foreground" />
@@ -432,11 +406,9 @@ export default function JobDetail() {
                   <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                     {imageAttachments.map((att, i) => (
                       <div key={i} className="group relative">
-                        <a
-                          href={att.url}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="block aspect-square rounded-lg overflow-hidden border bg-muted"
+                        <button
+                          onClick={() => { setLightboxIndex(i); setLightboxOpen(true); }}
+                          className="block w-full aspect-square rounded-lg overflow-hidden border bg-muted cursor-pointer"
                         >
                           <img
                             src={att.url}
@@ -444,7 +416,7 @@ export default function JobDetail() {
                             className="h-full w-full object-cover transition-transform group-hover:scale-105"
                             loading="lazy"
                           />
-                        </a>
+                        </button>
                         <div className="mt-1 flex items-center justify-between">
                           <p className="text-xs text-muted-foreground truncate flex-1">{att.name}</p>
                           {isAdmin && (
@@ -486,6 +458,26 @@ export default function JobDetail() {
           </Tabs>
         </div>
       </main>
+
+      {/* Edit dialog */}
+      {id && (
+        <EditJobDialog
+          open={editOpen}
+          onOpenChange={setEditOpen}
+          jobId={id}
+          onSaved={() => { fetchJob(); fetchLogs(); }}
+        />
+      )}
+
+      {/* Image lightbox */}
+      <ImageLightbox
+        images={imageAttachments}
+        initialIndex={lightboxIndex}
+        open={lightboxOpen}
+        onOpenChange={setLightboxOpen}
+        canDelete={isAdmin}
+        onDelete={handleDeleteAttachment}
+      />
     </div>
   );
 }

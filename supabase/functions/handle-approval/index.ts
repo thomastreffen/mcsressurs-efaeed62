@@ -347,6 +347,42 @@ Deno.serve(async (req) => {
       });
     }
 
+    // --- Create notifications for admins ---
+    // Fetch job title for notification message
+    const { data: jobForNotif } = await supabaseAdmin
+      .from("events")
+      .select("title, internal_number, job_number")
+      .eq("id", approval.job_id)
+      .single();
+
+    const notifTitle = jobForNotif?.job_number || jobForNotif?.internal_number || jobForNotif?.title || "Jobb";
+
+    // Get all admin user IDs to notify
+    const { data: adminRoles } = await supabaseAdmin
+      .from("user_roles")
+      .select("user_id")
+      .in("role", ["admin", "super_admin"]);
+
+    if (adminRoles && adminRoles.length > 0) {
+      const notificationType = action === "approve" ? "approval_pending" :
+                               action === "reject" ? "rejected" :
+                               "time_change_proposed";
+
+      const notifMessage = action === "approve" ? `${techName} godkjente ${notifTitle}` :
+                           action === "reject" ? `${techName} avslo ${notifTitle}: ${comment || ""}` :
+                           `${techName} foreslo nytt tidspunkt for ${notifTitle}`;
+
+      const notifInserts = adminRoles.map((r: any) => ({
+        user_id: r.user_id,
+        event_id: approval.job_id,
+        type: notificationType,
+        title: notifTitle,
+        message: notifMessage,
+      }));
+
+      await supabaseAdmin.from("notifications").insert(notifInserts);
+    }
+
     const responseBody: any = {
       success: true,
       message: action === "approve" ? "Jobben er godkjent!" :

@@ -1,4 +1,4 @@
-import { useState, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
+import { useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -13,10 +13,10 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { TechnicianMultiSelect } from "./TechnicianMultiSelect";
 import { FileUpload } from "./FileUpload";
-import { ConflictWarning } from "./ConflictWarning";
-import { getConflicts } from "@/lib/mock-data";
 import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
+import { format } from "date-fns";
+import { AlertTriangle } from "lucide-react";
 
 interface CreateJobDialogProps {
   open: boolean;
@@ -49,6 +49,13 @@ class CreateJobErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundary
   }
 }
 
+interface ConflictInfo {
+  technicianName: string;
+  jobTitle: string;
+  start: string;
+  end: string;
+}
+
 function CreateJobDialogInner({
   open,
   onOpenChange,
@@ -67,15 +74,48 @@ function CreateJobDialogInner({
   const [techIds, setTechIds] = useState<string[]>(preselectedTechId ? [preselectedTechId] : []);
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
+  const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
 
-  const conflicts = useMemo(() => {
+  // DB-based conflict check
+  const checkConflicts = useCallback(async () => {
     const ids = Array.isArray(techIds) ? techIds : [];
-    if (!startDate || !startTime || !endDate || !endTime || ids.length === 0) return [];
-    const start = new Date(`${startDate}T${startTime}`);
-    const end = new Date(`${endDate}T${endTime}`);
-    if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
-    return getConflicts(ids, start, end);
+    if (!startDate || !startTime || !endDate || !endTime || ids.length === 0) {
+      setConflicts([]);
+      return;
+    }
+    const startISO = new Date(`${startDate}T${startTime}`).toISOString();
+    const endISO = new Date(`${endDate}T${endTime}`).toISOString();
+
+    const { data: overlapping } = await supabase
+      .from("event_technicians")
+      .select(`
+        technician_id,
+        technicians ( name ),
+        events:event_id ( id, title, start_time, end_time )
+      `)
+      .in("technician_id", ids);
+
+    if (!overlapping) { setConflicts([]); return; }
+
+    const found: ConflictInfo[] = [];
+    for (const row of overlapping as any[]) {
+      const ev = row.events;
+      if (!ev) continue;
+      if (ev.start_time < endISO && ev.end_time > startISO) {
+        found.push({
+          technicianName: row.technicians?.name ?? "Ukjent",
+          jobTitle: ev.title?.replace("SERVICE – ", "") ?? "",
+          start: format(new Date(ev.start_time), "HH:mm"),
+          end: format(new Date(ev.end_time), "HH:mm"),
+        });
+      }
+    }
+    setConflicts(found);
   }, [techIds, startDate, startTime, endDate, endTime]);
+
+  useEffect(() => {
+    if (open) checkConflicts();
+  }, [open, checkConflicts]);
 
   const safeTechIds = Array.isArray(techIds) ? techIds : [];
 
@@ -325,7 +365,23 @@ function CreateJobDialogInner({
             </div>
           </div>
 
-          <ConflictWarning conflicts={conflicts} />
+          {/* Conflict warning */}
+          {conflicts.length > 0 && (
+            <div className="rounded-lg border-2 border-destructive/30 bg-destructive/5 p-3 space-y-2">
+              <div className="flex items-center gap-2 text-destructive">
+                <AlertTriangle className="h-4 w-4" />
+                <p className="text-sm font-medium">Overlappende jobber</p>
+              </div>
+              <div className="space-y-1">
+                {conflicts.map((c, i) => (
+                  <p key={i} className="text-xs text-muted-foreground">
+                    <span className="font-medium text-foreground">{c.technicianName}</span> har allerede{" "}
+                    <span className="font-medium">"{c.jobTitle}"</span> {c.start}–{c.end}
+                  </p>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <Label htmlFor="description">Beskrivelse</Label>
