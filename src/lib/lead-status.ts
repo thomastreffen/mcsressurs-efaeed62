@@ -7,16 +7,15 @@ export interface LeadStatusConfig {
 }
 
 export const LEAD_STATUS_CONFIG: Record<LeadStatus, LeadStatusConfig> = {
-  new: { label: "Ny", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
-  contacted: { label: "Kontaktet", className: "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200" },
-  qualified: { label: "Kvalifisert", className: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" },
-  lost: { label: "Tapt", className: "bg-destructive/15 text-destructive" },
-  won: { label: "Vunnet", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+  new: { label: "Ny", className: "bg-primary/15 text-primary border border-primary/20" },
+  contacted: { label: "Kontaktet", className: "bg-amber-100 text-amber-800 border border-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:border-amber-800" },
+  qualified: { label: "Kvalifisert", className: "bg-violet-100 text-violet-800 border border-violet-200 dark:bg-violet-900/30 dark:text-violet-300 dark:border-violet-800" },
+  lost: { label: "Tapt", className: "bg-destructive/10 text-destructive border border-destructive/20" },
+  won: { label: "Vunnet", className: "bg-emerald-100 text-emerald-800 border border-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:border-emerald-800" },
 };
 
 export const ALL_LEAD_STATUSES: LeadStatus[] = ["new", "contacted", "qualified", "lost", "won"];
 
-// Pipeline columns map lead status + calculation/offer status to pipeline stages
 export type PipelineStage = "new" | "qualified" | "calculation" | "offer_sent" | "negotiation" | "won" | "lost";
 
 export const PIPELINE_STAGES: { key: PipelineStage; label: string; color: string }[] = [

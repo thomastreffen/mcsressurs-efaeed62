@@ -159,6 +159,81 @@ export type Database = {
           },
         ]
       }
+      company_settings: {
+        Row: {
+          address: string | null
+          bank_account: string | null
+          city: string | null
+          company_name: string
+          country: string | null
+          created_at: string
+          default_offer_conditions: string | null
+          default_offer_footer: string | null
+          default_offer_valid_days: number | null
+          default_payment_terms: string | null
+          email: string | null
+          iban: string | null
+          id: string
+          logo_url: string | null
+          org_number: string | null
+          phone: string | null
+          postal_code: string | null
+          primary_color: string | null
+          secondary_color: string | null
+          swift: string | null
+          updated_at: string
+          website: string | null
+        }
+        Insert: {
+          address?: string | null
+          bank_account?: string | null
+          city?: string | null
+          company_name?: string
+          country?: string | null
+          created_at?: string
+          default_offer_conditions?: string | null
+          default_offer_footer?: string | null
+          default_offer_valid_days?: number | null
+          default_payment_terms?: string | null
+          email?: string | null
+          iban?: string | null
+          id?: string
+          logo_url?: string | null
+          org_number?: string | null
+          phone?: string | null
+          postal_code?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          swift?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Update: {
+          address?: string | null
+          bank_account?: string | null
+          city?: string | null
+          company_name?: string
+          country?: string | null
+          created_at?: string
+          default_offer_conditions?: string | null
+          default_offer_footer?: string | null
+          default_offer_valid_days?: number | null
+          default_payment_terms?: string | null
+          email?: string | null
+          iban?: string | null
+          id?: string
+          logo_url?: string | null
+          org_number?: string | null
+          phone?: string | null
+          postal_code?: string | null
+          primary_color?: string | null
+          secondary_color?: string | null
+          swift?: string | null
+          updated_at?: string
+          website?: string | null
+        }
+        Relationships: []
+      }
       event_logs: {
         Row: {
           action_type: string
@@ -395,10 +470,12 @@ export type Database = {
           created_at: string
           email: string | null
           estimated_value: number | null
+          expected_close_date: string | null
           id: string
           notes: string | null
           owner_id: string | null
           phone: string | null
+          probability: number | null
           source: string | null
           status: Database["public"]["Enums"]["lead_status"]
           updated_at: string
@@ -409,10 +486,12 @@ export type Database = {
           created_at?: string
           email?: string | null
           estimated_value?: number | null
+          expected_close_date?: string | null
           id?: string
           notes?: string | null
           owner_id?: string | null
           phone?: string | null
+          probability?: number | null
           source?: string | null
           status?: Database["public"]["Enums"]["lead_status"]
           updated_at?: string
@@ -423,10 +502,12 @@ export type Database = {
           created_at?: string
           email?: string | null
           estimated_value?: number | null
+          expected_close_date?: string | null
           id?: string
           notes?: string | null
           owner_id?: string | null
           phone?: string | null
+          probability?: number | null
           source?: string | null
           status?: Database["public"]["Enums"]["lead_status"]
           updated_at?: string

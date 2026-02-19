@@ -25,6 +25,7 @@ import LeadsPage from "./pages/LeadsPage";
 import PipelinePage from "./pages/PipelinePage";
 import SalesDashboard from "./pages/SalesDashboard";
 import OfferAcceptPage from "./pages/OfferAcceptPage";
+import CompanySettings from "./pages/CompanySettings";
 
 const queryClient = new QueryClient();
 
@@ -111,6 +112,14 @@ const App = () => (
               <Route path="/calculations/new" element={<NewCalculation />} />
               <Route path="/calculations/:id" element={<CalculationDetail />} />
 
+              <Route
+                path="/admin/company"
+                element={
+                  <ProtectedRoute requiredRoles={["super_admin"]}>
+                    <CompanySettings />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/admin/users"
                 element={
