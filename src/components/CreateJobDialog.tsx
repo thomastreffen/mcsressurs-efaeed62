@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, Component, type ReactNode, type ErrorInfo } from "react";
 import {
   Dialog,
   DialogContent,
@@ -6,6 +6,7 @@ import {
   DialogTitle,
   DialogFooter,
 } from "@/components/ui/dialog";
+import { DialogDescription } from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -22,7 +23,19 @@ interface CreateJobDialogProps {
   preselectedTechId?: string;
 }
 
-export function CreateJobDialog({
+class CreateJobErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("CreateJobDialog crashed:", error, info);
+  }
+  render() {
+    if (this.state.hasError) return <p className="p-4 text-sm text-destructive">Noe gikk galt. Prøv å lukke og åpne dialogen på nytt.</p>;
+    return this.props.children;
+  }
+}
+
+function CreateJobDialogInner({
   open,
   onOpenChange,
   preselectedTechId,
@@ -73,6 +86,7 @@ export function CreateJobDialog({
       <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Ny jobb</DialogTitle>
+          <DialogDescription className="sr-only">Opprett en ny jobb for montører</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
@@ -187,5 +201,13 @@ export function CreateJobDialog({
         </form>
       </DialogContent>
     </Dialog>
+  );
+}
+
+export function CreateJobDialog(props: CreateJobDialogProps) {
+  return (
+    <CreateJobErrorBoundary>
+      <CreateJobDialogInner {...props} />
+    </CreateJobErrorBoundary>
   );
 }
