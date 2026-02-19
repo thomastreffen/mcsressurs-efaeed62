@@ -20,3 +20,6 @@ verify_jwt = false
 
 [functions.handle-approval]
 verify_jwt = false
+
+[functions.outlook-sync]
+verify_jwt = false

@@ -102,6 +102,9 @@ export type Database = {
           internal_number: string | null
           job_number: string | null
           microsoft_event_id: string | null
+          outlook_deleted_at: string | null
+          outlook_last_synced_at: string | null
+          outlook_sync_status: string
           proposed_end: string | null
           proposed_start: string | null
           start_time: string
@@ -127,6 +130,9 @@ export type Database = {
           internal_number?: string | null
           job_number?: string | null
           microsoft_event_id?: string | null
+          outlook_deleted_at?: string | null
+          outlook_last_synced_at?: string | null
+          outlook_sync_status?: string
           proposed_end?: string | null
           proposed_start?: string | null
           start_time: string
@@ -152,6 +158,9 @@ export type Database = {
           internal_number?: string | null
           job_number?: string | null
           microsoft_event_id?: string | null
+          outlook_deleted_at?: string | null
+          outlook_last_synced_at?: string | null
+          outlook_sync_status?: string
           proposed_end?: string | null
           proposed_start?: string | null
           start_time?: string
