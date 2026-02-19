@@ -16,11 +16,13 @@ import { FileUpload } from "./FileUpload";
 import { ConflictWarning } from "./ConflictWarning";
 import { getConflicts } from "@/lib/mock-data";
 import { toast } from "sonner";
+import { supabase } from "@/integrations/supabase/client";
 
 interface CreateJobDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   preselectedTechId?: string;
+  onJobCreated?: () => void;
 }
 
 interface ErrorBoundaryProps { children: ReactNode; onReset: () => void }
@@ -51,6 +53,7 @@ function CreateJobDialogInner({
   open,
   onOpenChange,
   preselectedTechId,
+  onJobCreated,
 }: CreateJobDialogProps) {
   const [title, setTitle] = useState("");
   const [customer, setCustomer] = useState("");
@@ -63,6 +66,7 @@ function CreateJobDialogInner({
   const [endTime, setEndTime] = useState("16:00");
   const [techIds, setTechIds] = useState<string[]>(preselectedTechId ? [preselectedTechId] : []);
   const [files, setFiles] = useState<File[]>([]);
+  const [submitting, setSubmitting] = useState(false);
 
   const conflicts = useMemo(() => {
     const ids = Array.isArray(techIds) ? techIds : [];
@@ -75,15 +79,93 @@ function CreateJobDialogInner({
 
   const safeTechIds = Array.isArray(techIds) ? techIds : [];
 
-  const handleSubmit = (e: React.FormEvent) => {
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (safeTechIds.length === 0) return;
+    setSubmitting(true);
 
-    toast.success("Jobb opprettet", {
-      description: `SERVICE – ${title} er lagt til for ${safeTechIds.length} montør(er).`,
-    });
-    onOpenChange(false);
-    resetForm();
+    try {
+      // 1. Insert event
+      const startISO = new Date(`${startDate}T${startTime}`).toISOString();
+      const endISO = new Date(`${endDate}T${endTime}`).toISOString();
+
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+
+      const { data: createdEvent, error: eventError } = await supabase
+        .from("events")
+        .insert({
+          title: `SERVICE – ${title}`,
+          customer,
+          address,
+          description,
+          job_number: jobNumber || null,
+          start_time: startISO,
+          end_time: endISO,
+          technician_id: safeTechIds[0],
+          status: "requested",
+          created_by: userId || null,
+        })
+        .select("id")
+        .single();
+
+      if (eventError || !createdEvent) {
+        console.error("[CreateJob] Event insert failed:", eventError);
+        toast.error("Kunne ikke opprette jobb", { description: eventError?.message });
+        setSubmitting(false);
+        return;
+      }
+
+      console.log("[CreateJob] Event created:", createdEvent.id);
+
+      // 2. Insert event_technicians
+      const techInserts = safeTechIds.map((techId) => ({
+        event_id: createdEvent.id,
+        technician_id: techId,
+      }));
+
+      const { error: techError } = await supabase
+        .from("event_technicians")
+        .insert(techInserts);
+
+      if (techError) {
+        console.error("[CreateJob] Technician assignment failed:", techError);
+        toast.error("Jobb opprettet, men montørtilknytning feilet", { description: techError.message });
+      }
+
+      // 3. Call create-approval
+      console.log("[CreateJob] Calling create-approval for job:", createdEvent.id);
+      const { data: approvalData, error: approvalError } = await supabase.functions.invoke(
+        "create-approval",
+        { body: { job_id: createdEvent.id } }
+      );
+
+      if (approvalError) {
+        console.error("[CreateJob] create-approval invocation failed:", approvalError);
+        toast.error("Jobb opprettet, men godkjenningsforespørsel feilet", {
+          description: approvalError.message,
+        });
+      } else if (approvalData?.error) {
+        console.error("[CreateJob] create-approval returned error:", approvalData.error);
+        toast.error("Jobb opprettet, men godkjenningsforespørsel feilet", {
+          description: approvalData.error,
+        });
+      } else {
+        console.log("[CreateJob] create-approval success:", approvalData);
+        toast.success("Jobb opprettet og godkjenning sendt", {
+          description: `SERVICE – ${title} er sendt til ${safeTechIds.length} montør(er).`,
+        });
+      }
+
+      onOpenChange(false);
+      resetForm();
+      onJobCreated?.();
+    } catch (err: any) {
+      console.error("[CreateJob] Unexpected error:", err);
+      toast.error("Noe gikk galt", { description: err?.message || "Ukjent feil" });
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const resetForm = () => {
@@ -223,8 +305,8 @@ function CreateJobDialogInner({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Avbryt
             </Button>
-            <Button type="submit" disabled={safeTechIds.length === 0}>
-              Opprett jobb
+            <Button type="submit" disabled={safeTechIds.length === 0 || submitting}>
+              {submitting ? "Oppretter..." : "Opprett jobb"}
             </Button>
           </DialogFooter>
         </form>
