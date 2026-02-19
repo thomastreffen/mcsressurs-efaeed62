@@ -203,7 +203,7 @@ export default function NewCalculation() {
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-6 space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate("/calculations")} className="gap-1.5 -ml-2">
+      <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
         <ArrowLeft className="h-4 w-4" /> Tilbake
       </Button>
 
@@ -437,7 +437,7 @@ export default function NewCalculation() {
                 Gå til kalkulasjonsdetaljer for å gjennomgå og redigere kalkylelinjer, generere tilbud og konvertere til prosjekt.
               </p>
             </div>
-            <Button onClick={() => navigate(`/calculations/${calcId}`)} className="gap-1.5">
+            <Button onClick={() => navigate(`/sales/calculations/${calcId}`)} className="gap-1.5">
               Åpne kalkulasjon <ArrowRight className="h-4 w-4" />
             </Button>
           </div>

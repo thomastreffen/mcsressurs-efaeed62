@@ -8,6 +8,9 @@ import {
   Settings,
   Wrench,
   ReceiptText,
+  TrendingUp,
+  UserPlus,
+  BarChart3,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -26,15 +29,24 @@ import {
 
 const mainNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
-  { title: "Jobber", url: "/jobs", icon: FolderKanban },
-  { title: "Kalkuler jobb", url: "/calculations", icon: Calculator },
+];
+
+const salesNav = [
+  { title: "Salgsdashboard", url: "/sales", icon: BarChart3 },
+  { title: "Pipeline", url: "/sales/pipeline", icon: TrendingUp },
+  { title: "Leads", url: "/sales/leads", icon: UserPlus },
+  { title: "Kalkulasjoner", url: "/sales/calculations", icon: Calculator },
+  { title: "Tilbud", url: "/sales/offers", icon: ReceiptText },
+];
+
+const projectNav = [
+  { title: "Alle jobber", url: "/jobs", icon: FolderKanban },
   { title: "Ressursplan", url: "/resource-plan", icon: CalendarDays },
 ];
 
 const adminNav = [
-  { title: "Tilbud", url: "/admin/offers", icon: ReceiptText, requireAdmin: true },
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
-  { title: "Administrasjon", url: "/admin/settings", icon: Settings, requireAdmin: true },
+  { title: "Innstillinger", url: "/admin/settings", icon: Settings, requireAdmin: true },
 ];
 
 export function AppSidebar() {
@@ -42,6 +54,9 @@ export function AppSidebar() {
   const collapsed = state === "collapsed";
   const { isAdmin, isSuperAdmin } = useAuth();
   const location = useLocation();
+
+  const isActive = (url: string) =>
+    url === "/" ? location.pathname === "/" : location.pathname.startsWith(url);
 
   return (
     <Sidebar collapsible="icon">
@@ -53,28 +68,20 @@ export function AppSidebar() {
           {!collapsed && (
             <div>
               <h1 className="text-sm font-semibold leading-tight">MCS Service</h1>
-              <p className="text-[11px] text-muted-foreground">Ressursplanlegger</p>
+              <p className="text-[11px] text-muted-foreground">Salg & Prosjekt</p>
             </div>
           )}
         </div>
       </SidebarHeader>
 
       <SidebarContent>
+        {/* Main */}
         <SidebarGroup>
-          <SidebarGroupLabel>Hovedmeny</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
               {mainNav.map((item) => (
                 <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={
-                      item.url === "/"
-                        ? location.pathname === "/"
-                        : location.pathname.startsWith(item.url)
-                    }
-                    tooltip={item.title}
-                  >
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
                     <NavLink to={item.url} end={item.url === "/"}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
@@ -86,9 +93,50 @@ export function AppSidebar() {
           </SidebarGroupContent>
         </SidebarGroup>
 
+        {/* Sales */}
         {isAdmin && (
           <SidebarGroup>
-            <SidebarGroupLabel>Admin</SidebarGroupLabel>
+            <SidebarGroupLabel>Salg</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {salesNav.map((item) => (
+                  <SidebarMenuItem key={item.url}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                      <NavLink to={item.url} end={item.url === "/sales"}>
+                        <item.icon className="h-4 w-4" />
+                        <span>{item.title}</span>
+                      </NavLink>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+
+        {/* Projects */}
+        <SidebarGroup>
+          <SidebarGroupLabel>Prosjekter</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {projectNav.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                    <NavLink to={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Admin */}
+        {isAdmin && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Administrasjon</SidebarGroupLabel>
             <SidebarGroupContent>
               <SidebarMenu>
                 {adminNav
@@ -99,11 +147,7 @@ export function AppSidebar() {
                   })
                   .map((item) => (
                     <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton
-                        asChild
-                        isActive={location.pathname.startsWith(item.url)}
-                        tooltip={item.title}
-                      >
+                      <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
                         <NavLink to={item.url}>
                           <item.icon className="h-4 w-4" />
                           <span>{item.title}</span>

@@ -21,6 +21,10 @@ import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 import ApprovalPage from "./pages/ApprovalPage";
 import OffersPage from "./pages/OffersPage";
+import LeadsPage from "./pages/LeadsPage";
+import PipelinePage from "./pages/PipelinePage";
+import SalesDashboard from "./pages/SalesDashboard";
+import OfferAcceptPage from "./pages/OfferAcceptPage";
 
 const queryClient = new QueryClient();
 
@@ -35,6 +39,7 @@ const App = () => (
             <Route path="/login" element={<Login />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/approval/:token" element={<ApprovalPage />} />
+            <Route path="/offer/accept/:token" element={<OfferAcceptPage />} />
 
             {/* App layout with sidebar */}
             <Route
@@ -48,18 +53,64 @@ const App = () => (
               <Route path="/jobs" element={<JobsPage />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/resource-plan" element={<ResourcePlan />} />
-              <Route path="/calculations" element={<CalculationsPage />} />
-              <Route path="/calculations/new" element={<NewCalculation />} />
-              <Route path="/calculations/:id" element={<CalculationDetail />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+
+              {/* Sales module - admin only */}
               <Route
-                path="/admin/offers"
+                path="/sales"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <SalesDashboard />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sales/pipeline"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <PipelinePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sales/leads"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <LeadsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sales/calculations"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <CalculationsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sales/calculations/new"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <NewCalculation />
+                  </ProtectedRoute>
+                }
+              />
+              <Route path="/sales/calculations/:id" element={<CalculationDetail />} />
+              <Route
+                path="/sales/offers"
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <OffersPage />
                   </ProtectedRoute>
                 }
               />
+
+              {/* Legacy routes redirect */}
+              <Route path="/calculations" element={<CalculationsPage />} />
+              <Route path="/calculations/new" element={<NewCalculation />} />
+              <Route path="/calculations/:id" element={<CalculationDetail />} />
+
               <Route
                 path="/admin/users"
                 element={

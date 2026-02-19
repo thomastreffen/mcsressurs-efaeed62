@@ -111,7 +111,7 @@ export default function OffersPage() {
                 </TableCell>
               </TableRow>
             ) : filtered.map((offer) => (
-              <TableRow key={offer.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/calculations/${offer.calculation_id}`)}>
+              <TableRow key={offer.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/calculations/${offer.calculation_id}`)}>
                 <TableCell className="font-mono text-sm font-medium">{offer.offer_number}</TableCell>
                 <TableCell className="text-sm">{offer.calculations?.customer_name || "—"}</TableCell>
                 <TableCell className="text-sm">{offer.calculations?.project_title || "—"}</TableCell>

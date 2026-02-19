@@ -69,6 +69,9 @@ serve(async (req) => {
     });
 
     // Create offer record
+    const validUntilDate = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const validUntilStr = validUntilDate.toISOString().split('T')[0];
+    
     const { data: offer, error: offerErr } = await supabase
       .from("offers")
       .insert({
@@ -80,6 +83,8 @@ serve(async (req) => {
         total_inc_vat: totalIncVat,
         generated_html_snapshot: html,
         created_by: created_by || calc.created_by,
+        valid_until: validUntilStr,
+        lead_id: calc.lead_id || null,
       })
       .select()
       .single();
