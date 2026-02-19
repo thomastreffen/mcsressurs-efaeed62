@@ -168,6 +168,56 @@ export type Database = {
           },
         ]
       }
+      job_approvals: {
+        Row: {
+          comment: string | null
+          created_at: string
+          expires_at: string
+          id: string
+          job_id: string
+          proposed_end: string | null
+          proposed_start: string | null
+          responded_at: string | null
+          status: string
+          technician_user_id: string
+          token: string
+        }
+        Insert: {
+          comment?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          job_id: string
+          proposed_end?: string | null
+          proposed_start?: string | null
+          responded_at?: string | null
+          status?: string
+          technician_user_id: string
+          token?: string
+        }
+        Update: {
+          comment?: string | null
+          created_at?: string
+          expires_at?: string
+          id?: string
+          job_id?: string
+          proposed_end?: string | null
+          proposed_start?: string | null
+          responded_at?: string | null
+          status?: string
+          technician_user_id?: string
+          token?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_approvals_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       microsoft_tokens: {
         Row: {
           access_token: string
