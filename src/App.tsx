@@ -5,9 +5,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
-import Dashboard from "./pages/Dashboard";
+import { AppLayout } from "@/components/AppLayout";
+import KpiDashboard from "./pages/KpiDashboard";
+import JobsPage from "./pages/JobsPage";
+import ResourcePlan from "./pages/ResourcePlan";
 import JobDetail from "./pages/JobDetail";
 import AdminUsers from "./pages/AdminUsers";
+import AdminSettings from "./pages/AdminSettings";
+import NotificationsPage from "./pages/NotificationsPage";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
@@ -25,31 +30,39 @@ const App = () => (
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
-            <Route
-              path="/"
-              element={
-                <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                  <Dashboard />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/jobs/:id"
-              element={
-                <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                  <JobDetail />
-                </ProtectedRoute>
-              }
-            />
-            <Route
-              path="/admin/users"
-              element={
-                <ProtectedRoute requiredRoles={["super_admin"]}>
-                  <AdminUsers />
-                </ProtectedRoute>
-              }
-            />
             <Route path="/approval/:token" element={<ApprovalPage />} />
+
+            {/* App layout with sidebar */}
+            <Route
+              element={
+                <ProtectedRoute requiredRoles={["admin", "super_admin", "montør"]}>
+                  <AppLayout />
+                </ProtectedRoute>
+              }
+            >
+              <Route path="/" element={<KpiDashboard />} />
+              <Route path="/jobs" element={<JobsPage />} />
+              <Route path="/jobs/:id" element={<JobDetail />} />
+              <Route path="/resource-plan" element={<ResourcePlan />} />
+              <Route path="/notifications" element={<NotificationsPage />} />
+              <Route
+                path="/admin/users"
+                element={
+                  <ProtectedRoute requiredRoles={["super_admin"]}>
+                    <AdminUsers />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/settings"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <AdminSettings />
+                  </ProtectedRoute>
+                }
+              />
+            </Route>
+
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

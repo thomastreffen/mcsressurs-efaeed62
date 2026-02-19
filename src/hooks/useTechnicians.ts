@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 
-interface TechnicianInfo {
+export interface TechnicianInfo {
   id: string;
   name: string;
   email: string;
+  color?: string;
 }
 
 let cachedTechnicians: TechnicianInfo[] | null = null;
@@ -17,7 +18,7 @@ export function useTechnicians() {
     if (cachedTechnicians) return;
     supabase
       .from("technicians")
-      .select("id, name, email")
+      .select("id, name, email, color")
       .order("name")
       .then(({ data }) => {
         const result = data || [];
