@@ -203,6 +203,7 @@ export type Database = {
           internal_number: string | null
           job_number: string | null
           microsoft_event_id: string | null
+          offer_id: string | null
           outlook_deleted_at: string | null
           outlook_last_synced_at: string | null
           outlook_sync_status: string
@@ -231,6 +232,7 @@ export type Database = {
           internal_number?: string | null
           job_number?: string | null
           microsoft_event_id?: string | null
+          offer_id?: string | null
           outlook_deleted_at?: string | null
           outlook_last_synced_at?: string | null
           outlook_sync_status?: string
@@ -259,6 +261,7 @@ export type Database = {
           internal_number?: string | null
           job_number?: string | null
           microsoft_event_id?: string | null
+          offer_id?: string | null
           outlook_deleted_at?: string | null
           outlook_last_synced_at?: string | null
           outlook_sync_status?: string
@@ -272,6 +275,13 @@ export type Database = {
           updated_by?: string | null
         }
         Relationships: [
+          {
+            foreignKeyName: "events_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "events_technician_id_fkey"
             columns: ["technician_id"]
@@ -402,6 +412,62 @@ export type Database = {
           },
         ]
       }
+      offers: {
+        Row: {
+          calculation_id: string
+          created_at: string
+          created_by: string
+          generated_html_snapshot: string | null
+          generated_pdf_url: string | null
+          id: string
+          offer_number: string
+          sent_at: string | null
+          sent_to_email: string | null
+          status: Database["public"]["Enums"]["offer_status"]
+          total_ex_vat: number
+          total_inc_vat: number
+          version: number
+        }
+        Insert: {
+          calculation_id: string
+          created_at?: string
+          created_by: string
+          generated_html_snapshot?: string | null
+          generated_pdf_url?: string | null
+          id?: string
+          offer_number: string
+          sent_at?: string | null
+          sent_to_email?: string | null
+          status?: Database["public"]["Enums"]["offer_status"]
+          total_ex_vat?: number
+          total_inc_vat?: number
+          version?: number
+        }
+        Update: {
+          calculation_id?: string
+          created_at?: string
+          created_by?: string
+          generated_html_snapshot?: string | null
+          generated_pdf_url?: string | null
+          id?: string
+          offer_number?: string
+          sent_at?: string | null
+          sent_to_email?: string | null
+          status?: Database["public"]["Enums"]["offer_status"]
+          total_ex_vat?: number
+          total_inc_vat?: number
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "offers_calculation_id_fkey"
+            columns: ["calculation_id"]
+            isOneToOne: false
+            referencedRelation: "calculations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       settings: {
         Row: {
           id: string
@@ -509,6 +575,7 @@ export type Database = {
         | "completed"
         | "ready_for_invoicing"
         | "invoiced"
+      offer_status: "draft" | "sent" | "accepted" | "rejected" | "expired"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -658,6 +725,7 @@ export const Constants = {
         "ready_for_invoicing",
         "invoiced",
       ],
+      offer_status: ["draft", "sent", "accepted", "rejected", "expired"],
     },
   },
 } as const

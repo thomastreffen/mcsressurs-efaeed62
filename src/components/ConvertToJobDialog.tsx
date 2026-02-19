@@ -22,12 +22,13 @@ interface Props {
   open: boolean;
   onOpenChange: (open: boolean) => void;
   calculationId: string;
+  offerId?: string;
   defaultTitle?: string;
   defaultCustomer?: string;
   defaultDescription?: string;
 }
 
-export function ConvertToJobDialog({ open, onOpenChange, calculationId, defaultTitle, defaultCustomer, defaultDescription }: Props) {
+export function ConvertToJobDialog({ open, onOpenChange, calculationId, offerId, defaultTitle, defaultCustomer, defaultDescription }: Props) {
   const navigate = useNavigate();
   const { user } = useAuth();
   const [creating, setCreating] = useState(false);
@@ -61,6 +62,7 @@ export function ConvertToJobDialog({ open, onOpenChange, calculationId, defaultT
       status: "scheduled",
       technician_id: selectedTechs[0],
       created_by: user?.id,
+      offer_id: offerId || null,
     }).select("id").single();
 
     if (error) {

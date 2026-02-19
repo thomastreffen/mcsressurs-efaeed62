@@ -20,6 +20,7 @@ import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 import ApprovalPage from "./pages/ApprovalPage";
+import OffersPage from "./pages/OffersPage";
 
 const queryClient = new QueryClient();
 
@@ -51,6 +52,14 @@ const App = () => (
               <Route path="/calculations/new" element={<NewCalculation />} />
               <Route path="/calculations/:id" element={<CalculationDetail />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route
+                path="/admin/offers"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <OffersPage />
+                  </ProtectedRoute>
+                }
+              />
               <Route
                 path="/admin/users"
                 element={

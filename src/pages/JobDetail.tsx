@@ -3,6 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
@@ -78,6 +79,7 @@ export default function JobDetail() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [syncLoading, setSyncLoading] = useState<string | null>(null);
+  const [offerData, setOfferData] = useState<any>(null);
 
   const handleOutlookAction = async (syncAction: string) => {
     if (!job || !user) return;
@@ -170,7 +172,17 @@ export default function JobDetail() {
   useEffect(() => {
     fetchJob();
     fetchLogs();
-  }, [fetchJob, fetchLogs]);
+    // Fetch linked offer
+    if (id) {
+      supabase.from("events").select("offer_id").eq("id", id).single().then(({ data }) => {
+        if (data?.offer_id) {
+          supabase.from("offers").select("*, calculations(customer_name, project_title)").eq("id", data.offer_id).single().then(({ data: offer }) => {
+            if (offer) setOfferData(offer);
+          });
+        }
+      });
+    }
+  }, [fetchJob, fetchLogs, id]);
 
   const handleStatusChange = async (newStatus: JobStatus) => {
     if (!job || !user) return;
@@ -407,6 +419,45 @@ export default function JobDetail() {
               <div className="rounded-lg border bg-card p-4">
                 <AuditInfo job={job} />
               </div>
+
+              {/* Linked Offer */}
+              {offerData && (
+                <div className="rounded-lg border bg-card p-4 space-y-3">
+                  <h3 className="text-sm font-medium flex items-center gap-2">
+                    <FileText className="h-4 w-4" />
+                    Tilbud
+                  </h3>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Tilbudsnr:</span>{" "}
+                      <span className="font-mono font-medium">{offerData.offer_number}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Versjon:</span> v{offerData.version}
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Status:</span>{" "}
+                      <Badge className={OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.className}>
+                        {OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.label}
+                      </Badge>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Sum inkl. MVA:</span>{" "}
+                      <span className="font-mono">kr {Number(offerData.total_inc_vat).toLocaleString("nb-NO")}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2">
+                    {offerData.generated_pdf_url && (
+                      <Button variant="outline" size="sm" className="gap-1.5" onClick={() => window.open(offerData.generated_pdf_url, "_blank")}>
+                        <FileText className="h-3.5 w-3.5" /> Åpne tilbud
+                      </Button>
+                    )}
+                    <Button variant="outline" size="sm" className="gap-1.5" onClick={() => navigate(`/calculations/${offerData.calculation_id}`)}>
+                      Gå til kalkulasjon
+                    </Button>
+                  </div>
+                </div>
+              )}
 
               {/* Outlook Sync Section – Admin only */}
               {isAdmin && (

@@ -18,11 +18,12 @@ import {
   ALL_CALCULATION_STATUSES,
   type CalculationStatus,
 } from "@/lib/calculation-status";
+import { OFFER_STATUS_CONFIG, ALL_OFFER_STATUSES, type OfferStatus } from "@/lib/offer-status";
 import { ConvertToJobDialog } from "@/components/ConvertToJobDialog";
 import {
   ArrowLeft, Loader2, Sparkles, FileDown, ArrowRightLeft, Plus, Trash2, Save,
   Building2, Mail, FileText, Brain, Package, Upload, X, Image as ImageIcon,
-  AlertTriangle, Paperclip, Eye, EyeOff,
+  AlertTriangle, Paperclip, Eye, EyeOff, ExternalLink, AlertCircle, ReceiptText,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -55,6 +56,19 @@ interface Calculation {
   updated_at: string;
 }
 
+interface Offer {
+  id: string;
+  offer_number: string;
+  version: number;
+  status: OfferStatus;
+  total_ex_vat: number;
+  total_inc_vat: number;
+  generated_pdf_url: string | null;
+  sent_at: string | null;
+  sent_to_email: string | null;
+  created_at: string;
+}
+
 export default function CalculationDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -62,6 +76,7 @@ export default function CalculationDetail() {
 
   const [calc, setCalc] = useState<Calculation | null>(null);
   const [items, setItems] = useState<CalcItem[]>([]);
+  const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
@@ -69,6 +84,7 @@ export default function CalculationDetail() {
   const [settings, setSettings] = useState({ material_multiplier: 2.0, default_hour_rate: 1080 });
   const [showCost, setShowCost] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
+  const [calcChangedSinceOffer, setCalcChangedSinceOffer] = useState(false);
 
   // File upload
   const [files, setFiles] = useState<File[]>([]);
@@ -78,13 +94,15 @@ export default function CalculationDetail() {
   const fetchCalc = useCallback(async () => {
     if (!id) return;
     setLoading(true);
-    const [calcRes, itemsRes, settingsRes] = await Promise.all([
+    const [calcRes, itemsRes, settingsRes, offersRes] = await Promise.all([
       supabase.from("calculations").select("*").eq("id", id).single(),
       supabase.from("calculation_items").select("*").eq("calculation_id", id).order("type").order("title"),
       supabase.from("settings").select("key, value"),
+      supabase.from("offers").select("*").eq("calculation_id", id).order("created_at", { ascending: false }),
     ]);
     if (calcRes.data) setCalc(calcRes.data as unknown as Calculation);
     if (itemsRes.data) setItems(itemsRes.data as CalcItem[]);
+    if (offersRes.data) setOffers(offersRes.data as unknown as Offer[]);
     if (settingsRes.data) {
       const s: any = { material_multiplier: 2.0, default_hour_rate: 1080 };
       settingsRes.data.forEach((row: any) => {
@@ -92,6 +110,15 @@ export default function CalculationDetail() {
         if (row.key === "default_hour_rate") s.default_hour_rate = Number(row.value);
       });
       setSettings(s);
+    }
+    // Check if calc changed since last offer
+    if (calcRes.data && offersRes.data && offersRes.data.length > 0) {
+      const lastOffer = offersRes.data[0];
+      const calcUpdated = new Date(calcRes.data.updated_at);
+      const offerCreated = new Date(lastOffer.created_at);
+      setCalcChangedSinceOffer(calcUpdated > offerCreated);
+    } else {
+      setCalcChangedSinceOffer(false);
     }
     setLoading(false);
   }, [id]);
@@ -238,18 +265,29 @@ export default function CalculationDetail() {
     setPdfLoading(true);
     try {
       const { data, error } = await supabase.functions.invoke("generate-offer-pdf", {
-        body: { calculation_id: calc.id },
+        body: { calculation_id: calc.id, created_by: user?.id },
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-      const blob = new Blob([data.html], { type: "text/html" });
-      window.open(URL.createObjectURL(blob), "_blank");
-      setCalc((prev) => prev ? { ...prev, status: "generated" as CalculationStatus } : null);
-      toast.success("Tilbud generert – skriv ut som PDF fra nettleseren");
+      toast.success(`Tilbud ${data.offer_number || ""} v${data.version} opprettet`, {
+        description: "Du finner det under Tilbud-fanen",
+      });
+      fetchCalc();
     } catch (err: any) {
       toast.error("Kunne ikke generere tilbud", { description: err.message });
     }
     setPdfLoading(false);
+  };
+
+  const handleOfferStatusChange = async (offerId: string, status: OfferStatus) => {
+    await supabase.from("offers").update({ status }).eq("id", offerId);
+    setOffers((prev) => prev.map((o) => o.id === offerId ? { ...o, status } : o));
+    toast.success(`Tilbudsstatus endret til ${OFFER_STATUS_CONFIG[status].label}`);
+    // If accepted, also update calculation
+    if (status === "accepted") {
+      await supabase.from("calculations").update({ status: "accepted" }).eq("id", calc!.id);
+      setCalc((prev) => prev ? { ...prev, status: "accepted" as CalculationStatus } : null);
+    }
   };
 
   // File upload
@@ -317,6 +355,8 @@ export default function CalculationDetail() {
     return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
   };
 
+  const latestAcceptedOffer = offers.find((o) => o.status === "accepted");
+
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 pb-24 space-y-6">
       <div className="flex items-center justify-between">
@@ -352,6 +392,21 @@ export default function CalculationDetail() {
           </Badge>
         </div>
 
+        {/* Version warning */}
+        {calcChangedSinceOffer && offers.length > 0 && isAdmin && (
+          <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">Kalkylen er endret siden siste tilbud</p>
+              <p className="text-xs text-orange-700 dark:text-orange-300">Generer ny versjon for å oppdatere tilbudet.</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={handleGenerateOffer} disabled={pdfLoading} className="gap-1.5 shrink-0">
+              {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+              Ny versjon
+            </Button>
+          </div>
+        )}
+
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" className="gap-1.5">
@@ -365,7 +420,7 @@ export default function CalculationDetail() {
               {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
               Generer tilbud
             </Button>
-            {calc.status === "accepted" && (
+            {(calc.status === "accepted" || latestAcceptedOffer) && (
               <Button onClick={() => setConvertOpen(true)} className="gap-1.5">
                 <ArrowRightLeft className="h-4 w-4" /> Konverter til prosjekt
               </Button>
@@ -417,8 +472,10 @@ export default function CalculationDetail() {
           <TabsTrigger value="attachments" className="gap-1.5"><Paperclip className="h-3.5 w-3.5" />Vedlegg {attachments.length > 0 && `(${attachments.length})`}</TabsTrigger>
           <TabsTrigger value="ai" className="gap-1.5"><Brain className="h-3.5 w-3.5" />AI Analyse</TabsTrigger>
           <TabsTrigger value="items" className="gap-1.5"><Package className="h-3.5 w-3.5" />Kalkylelinjer ({items.length})</TabsTrigger>
+          <TabsTrigger value="offers" className="gap-1.5"><ReceiptText className="h-3.5 w-3.5" />Tilbud ({offers.length})</TabsTrigger>
         </TabsList>
 
+        {/* ===== Overview Tab ===== */}
         <TabsContent value="overview" className="space-y-4 pt-4">
           {calc.description && (
             <div className="rounded-lg border bg-card p-4">
@@ -437,6 +494,7 @@ export default function CalculationDetail() {
           </div>
         </TabsContent>
 
+        {/* ===== Attachments Tab ===== */}
         <TabsContent value="attachments" className="space-y-4 pt-4">
           {isAdmin && (
             <div className="flex items-center gap-2">
@@ -497,6 +555,7 @@ export default function CalculationDetail() {
           )}
         </TabsContent>
 
+        {/* ===== AI Analysis Tab ===== */}
         <TabsContent value="ai" className="space-y-4 pt-4">
           {!analysis ? (
             <div className="rounded-lg border border-dashed bg-card p-8 text-center space-y-3">
@@ -602,6 +661,7 @@ export default function CalculationDetail() {
           )}
         </TabsContent>
 
+        {/* ===== Calculation Lines Tab ===== */}
         <TabsContent value="items" className="space-y-6 pt-4">
           {isAdmin && items.length > 0 && (
             <div className="flex items-center gap-3">
@@ -703,6 +763,75 @@ export default function CalculationDetail() {
             </div>
           </div>
         </TabsContent>
+
+        {/* ===== Offers Tab ===== */}
+        <TabsContent value="offers" className="space-y-4 pt-4">
+          {offers.length === 0 ? (
+            <div className="rounded-lg border border-dashed bg-card p-8 text-center space-y-3">
+              <ReceiptText className="h-10 w-10 mx-auto text-muted-foreground" />
+              <h3 className="text-lg font-medium">Ingen tilbud generert</h3>
+              <p className="text-sm text-muted-foreground max-w-md mx-auto">
+                Klikk "Generer tilbud" for å opprette et formelt tilbudsdokument basert på kalkylen.
+              </p>
+              {isAdmin && (
+                <Button onClick={handleGenerateOffer} disabled={pdfLoading || items.length === 0} className="gap-1.5">
+                  {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
+                  Generer tilbud
+                </Button>
+              )}
+            </div>
+          ) : (
+            <div className="rounded-lg border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>Tilbudsnr</TableHead>
+                    <TableHead>Versjon</TableHead>
+                    <TableHead>Dato</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="text-right">Eks. MVA</TableHead>
+                    <TableHead className="text-right">Inkl. MVA</TableHead>
+                    <TableHead>Handling</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {offers.map((offer) => (
+                    <TableRow key={offer.id}>
+                      <TableCell className="font-mono text-sm font-medium">{offer.offer_number}</TableCell>
+                      <TableCell className="text-sm">v{offer.version}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground">{format(new Date(offer.created_at), "d. MMM yyyy HH:mm", { locale: nb })}</TableCell>
+                      <TableCell>
+                        {isAdmin ? (
+                          <Select value={offer.status} onValueChange={(v) => handleOfferStatusChange(offer.id, v as OfferStatus)}>
+                            <SelectTrigger className="h-7 w-[120px] text-xs"><SelectValue /></SelectTrigger>
+                            <SelectContent>
+                              {ALL_OFFER_STATUSES.map((s) => (
+                                <SelectItem key={s} value={s}>{OFFER_STATUS_CONFIG[s].label}</SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className}>{OFFER_STATUS_CONFIG[offer.status]?.label}</Badge>
+                        )}
+                      </TableCell>
+                      <TableCell className="text-right font-mono text-sm">kr {Number(offer.total_ex_vat).toLocaleString("nb-NO")}</TableCell>
+                      <TableCell className="text-right font-mono text-sm">kr {Number(offer.total_inc_vat).toLocaleString("nb-NO")}</TableCell>
+                      <TableCell>
+                        <div className="flex gap-1">
+                          {offer.generated_pdf_url && (
+                            <Button variant="ghost" size="sm" className="gap-1 h-7 text-xs" onClick={() => window.open(offer.generated_pdf_url!, "_blank")}>
+                              <ExternalLink className="h-3 w-3" /> Åpne
+                            </Button>
+                          )}
+                        </div>
+                      </TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </TabsContent>
       </Tabs>
 
       {/* Sticky save bar */}
@@ -722,6 +851,7 @@ export default function CalculationDetail() {
         open={convertOpen}
         onOpenChange={setConvertOpen}
         calculationId={calc.id}
+        offerId={latestAcceptedOffer?.id}
         defaultTitle={calc.project_title}
         defaultCustomer={calc.customer_name}
         defaultDescription={calc.description || undefined}
