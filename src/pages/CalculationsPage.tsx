@@ -17,12 +17,6 @@ import {
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
-import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter,
-} from "@/components/ui/dialog";
-import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
-import { toast } from "sonner";
 
 interface CalcRow {
   id: string;
@@ -38,20 +32,12 @@ const PAGE_SIZE = 20;
 
 export default function CalculationsPage() {
   const navigate = useNavigate();
-  const { isAdmin, user } = useAuth();
+  const { isAdmin } = useAuth();
   const [calcs, setCalcs] = useState<CalcRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [page, setPage] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
-
-  // Create form state
-  const [customerName, setCustomerName] = useState("");
-  const [customerEmail, setCustomerEmail] = useState("");
-  const [projectTitle, setProjectTitle] = useState("");
-  const [description, setDescription] = useState("");
-  const [creating, setCreating] = useState(false);
 
   const fetchCalcs = async () => {
     setLoading(true);
@@ -83,35 +69,6 @@ export default function CalculationsPage() {
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
-  const handleCreate = async () => {
-    if (!customerName.trim() || !projectTitle.trim()) {
-      toast.error("Kundenavn og prosjekttittel er påkrevd");
-      return;
-    }
-    setCreating(true);
-    const { data, error } = await supabase.from("calculations").insert({
-      customer_name: customerName.trim(),
-      customer_email: customerEmail.trim() || null,
-      project_title: projectTitle.trim(),
-      description: description.trim() || null,
-      created_by: user!.id,
-    }).select("id").single();
-
-    if (error) {
-      toast.error("Kunne ikke opprette kalkulasjon", { description: error.message });
-      setCreating(false);
-      return;
-    }
-
-    setCreateOpen(false);
-    setCustomerName("");
-    setCustomerEmail("");
-    setProjectTitle("");
-    setDescription("");
-    setCreating(false);
-    navigate(`/calculations/${data.id}`);
-  };
-
   return (
     <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
@@ -123,7 +80,7 @@ export default function CalculationsPage() {
           <p className="text-sm text-muted-foreground">{filtered.length} kalkulasjoner totalt</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5 self-start">
+          <Button onClick={() => navigate("/calculations/new")} className="gap-1.5 self-start">
             <Plus className="h-4 w-4" />
             Ny kalkulasjon
           </Button>
@@ -228,40 +185,6 @@ export default function CalculationsPage() {
           )}
         </>
       )}
-
-      {/* Create Dialog */}
-      <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Ny kalkulasjon</DialogTitle>
-          </DialogHeader>
-          <div className="space-y-4 py-2">
-            <div className="space-y-1.5">
-              <Label>Kundenavn *</Label>
-              <Input value={customerName} onChange={(e) => setCustomerName(e.target.value)} placeholder="Firma eller person" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Kunde e-post</Label>
-              <Input value={customerEmail} onChange={(e) => setCustomerEmail(e.target.value)} placeholder="epost@eksempel.no" type="email" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Prosjekttittel *</Label>
-              <Input value={projectTitle} onChange={(e) => setProjectTitle(e.target.value)} placeholder="Beskrivende tittel" />
-            </div>
-            <div className="space-y-1.5">
-              <Label>Beskrivelse</Label>
-              <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Beskriv arbeidet som skal utføres..." rows={4} />
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setCreateOpen(false)}>Avbryt</Button>
-            <Button onClick={handleCreate} disabled={creating}>
-              {creating && <Loader2 className="h-4 w-4 mr-1.5 animate-spin" />}
-              Opprett
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
     </div>
   );
 }

@@ -33,6 +33,14 @@ serve(async (req) => {
       .order("type", { ascending: true })
       .order("title", { ascending: true });
 
+    const { data: settingsRows } = await supabase.from("settings").select("key, value");
+    let materialMultiplier = 2.0;
+    if (settingsRows) {
+      settingsRows.forEach((r: any) => {
+        if (r.key === "material_multiplier") materialMultiplier = Number(r.value);
+      });
+    }
+
     const materials = (items || []).filter((i: any) => i.type === "material");
     const labor = (items || []).filter((i: any) => i.type === "labor");
     const today = new Date();
@@ -41,7 +49,10 @@ serve(async (req) => {
     const formatDate = (d: Date) => `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}.${d.getFullYear()}`;
     const formatPrice = (n: number) => n.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
-    // Generate HTML-based offer document
+    const analysis = calc.ai_analysis as any;
+    const assumptions = analysis?.assumptions || [];
+    const riskNotes = analysis?.risk_notes || [];
+
     const html = `<!DOCTYPE html>
 <html lang="no">
 <head>
@@ -51,6 +62,7 @@ serve(async (req) => {
   .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 3px solid #2563eb; padding-bottom: 20px; }
   .company { font-size: 22px; font-weight: 700; color: #2563eb; }
   .company-sub { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .company-info { font-size: 10px; color: #94a3b8; margin-top: 8px; line-height: 1.6; }
   .offer-title { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
   .offer-number { font-size: 18px; font-weight: 600; margin-top: 4px; }
   .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
@@ -69,6 +81,16 @@ serve(async (req) => {
   .terms h4 { margin: 0 0 8px; color: #334155; font-size: 12px; }
   .terms p { margin: 4px 0; }
   .description { margin-bottom: 24px; background: #f0f9ff; padding: 16px; border-radius: 8px; border-left: 4px solid #2563eb; }
+  .assumptions { margin-top: 20px; padding: 16px; background: #eff6ff; border-radius: 8px; border-left: 4px solid #3b82f6; font-size: 11px; }
+  .assumptions h4 { margin: 0 0 8px; color: #1e40af; font-size: 12px; }
+  .assumptions p { margin: 3px 0; color: #3b82f6; }
+  .exclusions { margin-top: 16px; padding: 16px; background: #fefce8; border-radius: 8px; border-left: 4px solid #eab308; font-size: 11px; }
+  .exclusions h4 { margin: 0 0 8px; color: #854d0e; font-size: 12px; }
+  .exclusions p { margin: 3px 0; color: #a16207; }
+  .signature-section { margin-top: 60px; display: grid; grid-template-columns: 1fr 1fr; gap: 60px; }
+  .signature-box { border-top: 1px solid #cbd5e1; padding-top: 8px; }
+  .signature-box p { margin: 4px 0; font-size: 11px; color: #64748b; }
+  .footer { margin-top: 40px; text-align: center; font-size: 10px; color: #94a3b8; border-top: 1px solid #e2e8f0; padding-top: 12px; }
 </style>
 </head>
 <body>
@@ -77,11 +99,16 @@ serve(async (req) => {
   <div>
     <div class="company">MCS Service AS</div>
     <div class="company-sub">Elektro • VVS • Kulde</div>
+    <div class="company-info">
+      Org.nr: 000 000 000<br>
+      Kontaktperson: [Saksbehandler]
+    </div>
   </div>
   <div style="text-align:right">
     <div class="offer-title">Tilbud</div>
     <div class="offer-number">#${calculation_id.slice(0, 8).toUpperCase()}</div>
     <div style="font-size:11px;color:#64748b;margin-top:4px">Dato: ${formatDate(today)}</div>
+    <div style="font-size:11px;color:#64748b">Gyldig til: ${formatDate(validUntil)}</div>
   </div>
 </div>
 
@@ -126,19 +153,52 @@ ${labor.length > 0 ? `
   <div class="total-row grand"><span>Totalt inkl. MVA</span><span>kr ${formatPrice(Number(calc.total_price) * 1.25)}</span></div>
 </div>
 
+${assumptions.length > 0 ? `
+<div class="assumptions">
+  <h4>Forutsetninger</h4>
+  ${assumptions.map((a: string) => `<p>• ${a}</p>`).join("")}
+</div>
+` : ""}
+
+<div class="exclusions">
+  <h4>Eksklusjoner</h4>
+  <p>• Graving og grunnarbeid er ikke inkludert med mindre spesifisert.</p>
+  <p>• Bygningsmessige tilpasninger (hulltaking, branntetning etc.) utføres av andre med mindre avtalt.</p>
+  <p>• Strømforsyning fram til tilkoblingspunkt forutsettes levert av netteier/andre.</p>
+  <p>• Dokumentasjon ut over standard FDV er ikke inkludert.</p>
+</div>
+
 <div class="terms">
   <h4>Vilkår og forbehold</h4>
-  <p>• Tilbudet er gyldig til ${formatDate(validUntil)}.</p>
+  <p>• Tilbudet er gyldig til ${formatDate(validUntil)} (30 dager).</p>
   <p>• Priser er eks. MVA med mindre annet er oppgitt.</p>
   <p>• Arbeid utføres i henhold til gjeldende forskrifter (NEK 400, FEK).</p>
   <p>• Uforutsette forhold kan medføre tillegg etter medgått tid og materiell.</p>
   <p>• Betalingsbetingelser: 14 dager netto.</p>
+  <p>• Estimert leveringstid: 2-4 uker etter bestilling, avhengig av materialtilgang.</p>
+  ${riskNotes.length > 0 ? riskNotes.map((r: string) => `<p>• ${r}</p>`).join("") : ""}
+</div>
+
+<div class="signature-section">
+  <div class="signature-box">
+    <p><strong>For MCS Service AS</strong></p>
+    <p>Dato: _______________</p>
+    <p>Signatur: _______________</p>
+  </div>
+  <div class="signature-box">
+    <p><strong>For ${calc.customer_name}</strong></p>
+    <p>Dato: _______________</p>
+    <p>Signatur: _______________</p>
+  </div>
+</div>
+
+<div class="footer">
+  MCS Service AS • Org.nr: 000 000 000 • mcs-service.no
 </div>
 
 </body>
 </html>`;
 
-    // Update calculation status to generated
     await supabase
       .from("calculations")
       .update({ status: "generated" })
