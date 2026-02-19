@@ -6,6 +6,7 @@ import { BrowserRouter, Routes, Route } from "react-router-dom";
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import Dashboard from "./pages/Dashboard";
+import JobDetail from "./pages/JobDetail";
 import AdminUsers from "./pages/AdminUsers";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
@@ -28,6 +29,14 @@ const App = () => (
               element={
                 <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                   <Dashboard />
+                </ProtectedRoute>
+              }
+            />
+            <Route
+              path="/jobs/:id"
+              element={
+                <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                  <JobDetail />
                 </ProtectedRoute>
               }
             />

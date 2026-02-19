@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { User, Loader2 } from "lucide-react";
+import { User, Loader2, Search } from "lucide-react";
+import { ScrollArea } from "@/components/ui/scroll-area";
 
 interface DBTech {
   id: string;
@@ -19,6 +21,7 @@ interface TechnicianMultiSelectProps {
 export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMultiSelectProps) {
   const [technicians, setTechnicians] = useState<DBTech[]>([]);
   const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState("");
 
   useEffect(() => {
     supabase
@@ -50,41 +53,59 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
   if (!Array.isArray(technicians)) return null;
 
   const safeTechnicians = technicians.filter((t) => t?.id && t?.user_id);
+  const filtered = search
+    ? safeTechnicians.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
+    : safeTechnicians;
 
   return (
     <div className="space-y-1.5">
       <Label>Montør(er)</Label>
-      <div className="rounded-md border bg-background p-2 space-y-1 max-h-40 overflow-y-auto">
-        {loading ? (
-          <div className="flex items-center justify-center py-3">
-            <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      <div className="rounded-md border bg-background">
+        <div className="flex items-center gap-2 px-2 py-1.5 border-b">
+          <Search className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+          <Input
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            placeholder="Søk montør..."
+            className="h-7 border-0 p-0 text-sm shadow-none focus-visible:ring-0"
+          />
+        </div>
+        <ScrollArea className="h-40">
+          <div className="p-1 space-y-0.5">
+            {loading ? (
+              <div className="flex items-center justify-center py-3">
+                <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+              </div>
+            ) : filtered.length === 0 ? (
+              <p className="text-xs text-muted-foreground text-center py-3">Ingen treff</p>
+            ) : (
+              filtered.map((tech) => {
+                const checked = selectedIds.includes(tech.id);
+                return (
+                  <button
+                    type="button"
+                    key={tech.id}
+                    onClick={() => toggle(tech.id)}
+                    className={cn(
+                      "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors",
+                      checked ? "bg-accent" : "hover:bg-secondary"
+                    )}
+                  >
+                    <Checkbox
+                      checked={checked}
+                      onCheckedChange={() => toggle(tech.id)}
+                      onClick={(e) => e.stopPropagation()}
+                    />
+                    <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
+                      <User className="h-3 w-3" />
+                    </div>
+                    <span className="text-sm">{tech.name ?? "Ukjent"}</span>
+                  </button>
+                );
+              })
+            )}
           </div>
-        ) : (
-          safeTechnicians.map((tech) => {
-            const checked = selectedIds.includes(tech.id);
-            return (
-              <button
-                type="button"
-                key={tech.id}
-                onClick={() => toggle(tech.id)}
-                className={cn(
-                  "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors",
-                  checked ? "bg-accent" : "hover:bg-secondary"
-                )}
-              >
-                <Checkbox
-                  checked={checked}
-                  onCheckedChange={() => toggle(tech.id)}
-                  onClick={(e) => e.stopPropagation()}
-                />
-                <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
-                  <User className="h-3 w-3" />
-                </div>
-                <span className="text-sm">{tech.name ?? "Ukjent"}</span>
-              </button>
-            );
-          })
-        )}
+        </ScrollArea>
       </div>
       {selectedIds.length === 0 && (
         <p className="text-xs text-destructive">Velg minst én montør</p>

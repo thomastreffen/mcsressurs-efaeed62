@@ -84,7 +84,7 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
 
   if (!job) return null;
 
-  const hasChangeRequest = job.attendeeStatuses.some((a) => a.status === "change-request");
+  const hasChangeRequest = job.attendeeStatuses.some((a) => a.status === "time_change_proposed");
   const logs = getEventLogs(job.id);
   const hasEditLock = job.editingByName && job.editingStartedAt &&
     (Date.now() - job.editingStartedAt.getTime()) < 10 * 60 * 1000;
@@ -184,11 +184,11 @@ export function JobDetailSheet({ job, open, onOpenChange, onDuplicate }: JobDeta
               {hasChangeRequest && (
                 <div className="space-y-2">
                   {job.attendeeStatuses
-                    .filter((a) => a.status === "change-request" && a.proposedStart && a.proposedEnd)
+                    .filter((a) => a.status === "time_change_proposed" && a.proposedStart && a.proposedEnd)
                     .map((att) => {
                       const tech = technicians.find((t) => t.id === att.technicianId);
                       return (
-                        <div key={att.technicianId} className="rounded-lg border-2 border-status-change-request/30 bg-status-change-request/5 p-3 space-y-2">
+                        <div key={att.technicianId} className="rounded-lg border-2 border-status-time-change-proposed/30 bg-status-time-change-proposed/5 p-3 space-y-2">
                           <p className="text-sm font-medium">
                             {tech?.name} foreslår nytt tidspunkt
                           </p>

@@ -1,30 +1,21 @@
 import { useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { TopBar } from "@/components/TopBar";
 import { TechnicianList } from "@/components/TechnicianList";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
-import { JobDetailSheet } from "@/components/JobDetailSheet";
 import { StatusLegend } from "@/components/StatusLegend";
 import { type Job } from "@/lib/mock-data";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
-import { toast } from "sonner";
 
 export default function Dashboard() {
+  const navigate = useNavigate();
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [createJobOpen, setCreateJobOpen] = useState(false);
-  const [selectedJob, setSelectedJob] = useState<Job | null>(null);
-  const [jobSheetOpen, setJobSheetOpen] = useState(false);
 
   const handleJobClick = (job: Job) => {
-    setSelectedJob(job);
-    setJobSheetOpen(true);
-  };
-
-  const handleDuplicate = (job: Job) => {
-    toast.success("Jobb duplisert", {
-      description: `Kopi av "${job.title}" opprettet.`,
-    });
+    navigate(`/jobs/${job.id}`);
   };
 
   return (
@@ -56,13 +47,6 @@ export default function Dashboard() {
         open={createJobOpen}
         onOpenChange={setCreateJobOpen}
         preselectedTechId={selectedTechId}
-      />
-
-      <JobDetailSheet
-        job={selectedJob}
-        open={jobSheetOpen}
-        onOpenChange={setJobSheetOpen}
-        onDuplicate={handleDuplicate}
       />
     </div>
   );

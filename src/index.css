@@ -35,14 +35,24 @@
     --radius: 0.5rem;
 
     /* Status colors */
-    --status-accepted: 152 60% 42%;
-    --status-accepted-foreground: 0 0% 100%;
-    --status-pending: 40 85% 50%;
-    --status-pending-foreground: 0 0% 100%;
-    --status-declined: 0 72% 51%;
-    --status-declined-foreground: 0 0% 100%;
-    --status-change-request: 213 60% 50%;
-    --status-change-request-foreground: 0 0% 100%;
+    --status-requested: 40 85% 50%;
+    --status-requested-foreground: 0 0% 100%;
+    --status-approved: 152 60% 42%;
+    --status-approved-foreground: 0 0% 100%;
+    --status-time-change-proposed: 213 60% 50%;
+    --status-time-change-proposed-foreground: 0 0% 100%;
+    --status-rejected: 0 72% 51%;
+    --status-rejected-foreground: 0 0% 100%;
+    --status-scheduled: 262 55% 55%;
+    --status-scheduled-foreground: 0 0% 100%;
+    --status-in-progress: 185 60% 40%;
+    --status-in-progress-foreground: 0 0% 100%;
+    --status-completed: 152 65% 32%;
+    --status-completed-foreground: 0 0% 100%;
+    --status-ready-for-invoicing: 28 80% 52%;
+    --status-ready-for-invoicing-foreground: 0 0% 100%;
+    --status-invoiced: 215 15% 55%;
+    --status-invoiced-foreground: 0 0% 100%;
 
     --sidebar-background: 0 0% 100%;
     --sidebar-foreground: 215 25% 25%;
