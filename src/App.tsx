@@ -13,6 +13,8 @@ import JobDetail from "./pages/JobDetail";
 import AdminUsers from "./pages/AdminUsers";
 import AdminSettings from "./pages/AdminSettings";
 import NotificationsPage from "./pages/NotificationsPage";
+import CalculationsPage from "./pages/CalculationsPage";
+import CalculationDetail from "./pages/CalculationDetail";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
@@ -44,6 +46,8 @@ const App = () => (
               <Route path="/jobs" element={<JobsPage />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/resource-plan" element={<ResourcePlan />} />
+              <Route path="/calculations" element={<CalculationsPage />} />
+              <Route path="/calculations/:id" element={<CalculationDetail />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route
                 path="/admin/users"

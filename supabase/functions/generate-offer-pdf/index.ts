@@ -1,0 +1,156 @@
+import { serve } from "https://deno.land/std@0.168.0/http/server.ts";
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2.49.1";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type, x-supabase-client-platform, x-supabase-client-platform-version, x-supabase-client-runtime, x-supabase-client-runtime-version",
+};
+
+serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const { calculation_id } = await req.json();
+    if (!calculation_id) throw new Error("calculation_id is required");
+
+    const supabase = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+
+    const { data: calc, error: calcErr } = await supabase
+      .from("calculations")
+      .select("*")
+      .eq("id", calculation_id)
+      .single();
+
+    if (calcErr || !calc) throw new Error("Kalkulasjon ikke funnet");
+
+    const { data: items } = await supabase
+      .from("calculation_items")
+      .select("*")
+      .eq("calculation_id", calculation_id)
+      .order("type", { ascending: true })
+      .order("title", { ascending: true });
+
+    const materials = (items || []).filter((i: any) => i.type === "material");
+    const labor = (items || []).filter((i: any) => i.type === "labor");
+    const today = new Date();
+    const validUntil = new Date(today.getTime() + 30 * 24 * 60 * 60 * 1000);
+
+    const formatDate = (d: Date) => `${d.getDate().toString().padStart(2, "0")}.${(d.getMonth() + 1).toString().padStart(2, "0")}.${d.getFullYear()}`;
+    const formatPrice = (n: number) => n.toLocaleString("nb-NO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+    // Generate HTML-based offer document
+    const html = `<!DOCTYPE html>
+<html lang="no">
+<head>
+<meta charset="UTF-8">
+<style>
+  body { font-family: 'Helvetica Neue', Arial, sans-serif; color: #1a1a2e; margin: 0; padding: 40px; font-size: 13px; line-height: 1.5; }
+  .header { display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 40px; border-bottom: 3px solid #2563eb; padding-bottom: 20px; }
+  .company { font-size: 22px; font-weight: 700; color: #2563eb; }
+  .company-sub { font-size: 11px; color: #64748b; margin-top: 4px; }
+  .offer-title { font-size: 11px; color: #64748b; text-transform: uppercase; letter-spacing: 1px; }
+  .offer-number { font-size: 18px; font-weight: 600; margin-top: 4px; }
+  .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; margin-bottom: 32px; }
+  .meta-box { background: #f8fafc; border-radius: 8px; padding: 16px; }
+  .meta-label { font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #94a3b8; font-weight: 600; margin-bottom: 6px; }
+  .meta-value { font-size: 14px; font-weight: 500; }
+  .section-title { font-size: 14px; font-weight: 700; margin: 28px 0 12px; padding-bottom: 6px; border-bottom: 1px solid #e2e8f0; text-transform: uppercase; letter-spacing: 0.5px; color: #334155; }
+  table { width: 100%; border-collapse: collapse; margin-bottom: 16px; }
+  th { text-align: left; font-size: 10px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; padding: 8px 12px; background: #f1f5f9; font-weight: 600; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f1f5f9; font-size: 13px; }
+  .num { text-align: right; }
+  .total-section { margin-top: 24px; border-top: 2px solid #2563eb; padding-top: 16px; }
+  .total-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 14px; }
+  .total-row.grand { font-size: 20px; font-weight: 700; color: #2563eb; border-top: 2px solid #e2e8f0; padding-top: 12px; margin-top: 8px; }
+  .terms { margin-top: 40px; padding: 20px; background: #f8fafc; border-radius: 8px; font-size: 11px; color: #64748b; }
+  .terms h4 { margin: 0 0 8px; color: #334155; font-size: 12px; }
+  .terms p { margin: 4px 0; }
+  .description { margin-bottom: 24px; background: #f0f9ff; padding: 16px; border-radius: 8px; border-left: 4px solid #2563eb; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div>
+    <div class="company">MCS Service AS</div>
+    <div class="company-sub">Elektro • VVS • Kulde</div>
+  </div>
+  <div style="text-align:right">
+    <div class="offer-title">Tilbud</div>
+    <div class="offer-number">#${calculation_id.slice(0, 8).toUpperCase()}</div>
+    <div style="font-size:11px;color:#64748b;margin-top:4px">Dato: ${formatDate(today)}</div>
+  </div>
+</div>
+
+<div class="meta-grid">
+  <div class="meta-box">
+    <div class="meta-label">Kunde</div>
+    <div class="meta-value">${calc.customer_name}</div>
+    ${calc.customer_email ? `<div style="font-size:12px;color:#64748b;margin-top:2px">${calc.customer_email}</div>` : ""}
+  </div>
+  <div class="meta-box">
+    <div class="meta-label">Prosjekt</div>
+    <div class="meta-value">${calc.project_title}</div>
+  </div>
+</div>
+
+${calc.description ? `<div class="description"><strong>Beskrivelse:</strong><br>${calc.description}</div>` : ""}
+
+${materials.length > 0 ? `
+<div class="section-title">Materialer</div>
+<table>
+  <thead><tr><th>Beskrivelse</th><th class="num">Antall</th><th class="num">Enhet</th><th class="num">Pris</th><th class="num">Sum</th></tr></thead>
+  <tbody>
+  ${materials.map((m: any) => `<tr><td>${m.title}${m.description ? `<br><span style="font-size:11px;color:#94a3b8">${m.description}</span>` : ""}</td><td class="num">${m.quantity}</td><td class="num">${m.unit}</td><td class="num">${formatPrice(m.unit_price)}</td><td class="num"><strong>${formatPrice(m.total_price)}</strong></td></tr>`).join("")}
+  </tbody>
+</table>
+` : ""}
+
+${labor.length > 0 ? `
+<div class="section-title">Arbeid</div>
+<table>
+  <thead><tr><th>Beskrivelse</th><th class="num">Timer</th><th class="num">Timepris</th><th class="num">Sum</th></tr></thead>
+  <tbody>
+  ${labor.map((l: any) => `<tr><td>${l.title}${l.description ? `<br><span style="font-size:11px;color:#94a3b8">${l.description}</span>` : ""}</td><td class="num">${l.quantity}</td><td class="num">${formatPrice(l.unit_price)}</td><td class="num"><strong>${formatPrice(l.total_price)}</strong></td></tr>`).join("")}
+  </tbody>
+</table>
+` : ""}
+
+<div class="total-section">
+  <div class="total-row"><span>Materialer</span><span>${formatPrice(Number(calc.total_material))}</span></div>
+  <div class="total-row"><span>Arbeid</span><span>${formatPrice(Number(calc.total_labor))}</span></div>
+  <div class="total-row"><span>MVA (25%)</span><span>${formatPrice(Number(calc.total_price) * 0.25)}</span></div>
+  <div class="total-row grand"><span>Totalt inkl. MVA</span><span>kr ${formatPrice(Number(calc.total_price) * 1.25)}</span></div>
+</div>
+
+<div class="terms">
+  <h4>Vilkår og forbehold</h4>
+  <p>• Tilbudet er gyldig til ${formatDate(validUntil)}.</p>
+  <p>• Priser er eks. MVA med mindre annet er oppgitt.</p>
+  <p>• Arbeid utføres i henhold til gjeldende forskrifter (NEK 400, FEK).</p>
+  <p>• Uforutsette forhold kan medføre tillegg etter medgått tid og materiell.</p>
+  <p>• Betalingsbetingelser: 14 dager netto.</p>
+</div>
+
+</body>
+</html>`;
+
+    // Update calculation status to generated
+    await supabase
+      .from("calculations")
+      .update({ status: "generated" })
+      .eq("id", calculation_id);
+
+    return new Response(JSON.stringify({ html, filename: `Tilbud-${calculation_id.slice(0, 8).toUpperCase()}.html` }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (e) {
+    console.error("generate-offer-pdf error:", e);
+    return new Response(JSON.stringify({ error: e instanceof Error ? e.message : "Ukjent feil" }), {
+      status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
