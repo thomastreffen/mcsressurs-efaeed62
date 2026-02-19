@@ -29,6 +29,8 @@ export interface EventLog {
   changeSummary: string;
 }
 
+export type OutlookSyncStatus = "not_synced" | "synced" | "missing_in_outlook" | "failed" | "cancelled" | "restored";
+
 export interface Job {
   id: string;
   microsoftEventId: string;
@@ -58,6 +60,9 @@ export interface Job {
   editingBy?: string;
   editingByName?: string;
   editingStartedAt?: Date;
+  outlookSyncStatus?: OutlookSyncStatus;
+  outlookLastSyncedAt?: Date;
+  outlookDeletedAt?: Date;
 }
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });

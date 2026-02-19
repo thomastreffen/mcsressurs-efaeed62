@@ -31,11 +31,30 @@ import {
   Loader2,
   FileText,
   Image as ImageIcon,
+  RefreshCw,
+  Unplug,
+  CalendarCheck,
   Download,
   Trash2,
   Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
+import { Badge } from "@/components/ui/badge";
+import type { OutlookSyncStatus } from "@/lib/mock-data";
+
+const SYNC_STATUS_MAP: Record<string, { label: string; className: string }> = {
+  not_synced: { label: "Ikke synkronisert", className: "bg-muted text-muted-foreground" },
+  synced: { label: "Synkronisert", className: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200" },
+  missing_in_outlook: { label: "Mangler i Outlook", className: "bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200" },
+  failed: { label: "Feilet", className: "bg-destructive/10 text-destructive" },
+  cancelled: { label: "Kansellert", className: "bg-muted text-muted-foreground" },
+  restored: { label: "Gjenopprettet", className: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+};
+
+function SyncStatusBadge({ status }: { status?: OutlookSyncStatus }) {
+  const config = SYNC_STATUS_MAP[status || "not_synced"] || SYNC_STATUS_MAP.not_synced;
+  return <Badge className={config.className}>{config.label}</Badge>;
+}
 
 interface EventLog {
   id: string;
@@ -58,6 +77,32 @@ export default function JobDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
+  const [syncLoading, setSyncLoading] = useState<string | null>(null);
+
+  const handleOutlookAction = async (syncAction: string) => {
+    if (!job || !user) return;
+    setSyncLoading(syncAction);
+    try {
+      const res = await supabase.functions.invoke("outlook-sync", {
+        body: { action: syncAction, event_id: job.id, performed_by: user.id },
+      });
+      if (res.error) {
+        toast.error("Outlook-handling feilet", { description: String(res.error) });
+      } else {
+        const msg = syncAction === "resync" ? "Outlook resynkronisert"
+          : syncAction === "delete_outlook" ? "Outlook-event slettet"
+          : syncAction === "disconnect" ? "Outlook-kobling fjernet"
+          : syncAction === "check_and_restore" ? "Sync-sjekk fullført"
+          : "Handling utført";
+        toast.success(msg);
+        fetchJob();
+        fetchLogs();
+      }
+    } catch (err) {
+      toast.error("Feil ved Outlook-handling");
+    }
+    setSyncLoading(null);
+  };
 
   const fetchJob = useCallback(async () => {
     if (!id) return;
@@ -105,6 +150,9 @@ export default function JobDetail() {
       createdAt: data.created_at ? new Date(data.created_at) : undefined,
       updatedAt: data.updated_at ? new Date(data.updated_at) : undefined,
       attachments: Array.isArray(data.attachments) ? (data.attachments as unknown as Attachment[]) : [],
+      outlookSyncStatus: (data.outlook_sync_status as OutlookSyncStatus) || "not_synced",
+      outlookLastSyncedAt: data.outlook_last_synced_at ? new Date(data.outlook_last_synced_at) : undefined,
+      outlookDeletedAt: data.outlook_deleted_at ? new Date(data.outlook_deleted_at) : undefined,
     });
     setLoading(false);
   }, [id]);
@@ -368,6 +416,83 @@ export default function JobDetail() {
               <div className="rounded-lg border bg-card p-4">
                 <AuditInfo job={job} />
               </div>
+
+              {/* Outlook Sync Section – Admin only */}
+              {isAdmin && (
+                <div className="rounded-lg border bg-card p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h3 className="text-sm font-medium flex items-center gap-2">
+                      <CalendarCheck className="h-4 w-4" />
+                      Outlook Sync
+                    </h3>
+                    <SyncStatusBadge status={job.outlookSyncStatus} />
+                  </div>
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-muted-foreground">Outlook Event ID:</span>{" "}
+                      <span className="font-mono text-xs">{job.microsoftEventId ? job.microsoftEventId.slice(0, 20) + "…" : "Ikke koblet"}</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground">Sist synkronisert:</span>{" "}
+                      <span>{job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}</span>
+                    </div>
+                    {job.outlookDeletedAt && (
+                      <div className="col-span-full">
+                        <span className="text-muted-foreground">Slettet fra Outlook:</span>{" "}
+                        <span className="text-destructive">{format(job.outlookDeletedAt, "d. MMM yyyy HH:mm", { locale: nb })}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  <div className="flex flex-wrap gap-2 pt-1">
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!!syncLoading}
+                      onClick={() => handleOutlookAction("check_and_restore")}
+                      className="gap-1.5"
+                    >
+                      {syncLoading === "check_and_restore" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Sjekk sync
+                    </Button>
+                    <Button
+                      size="sm"
+                      variant="outline"
+                      disabled={!!syncLoading}
+                      onClick={() => handleOutlookAction("resync")}
+                      className="gap-1.5"
+                    >
+                      {syncLoading === "resync" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                      Resync Outlook
+                    </Button>
+                    {job.microsoftEventId && (
+                      <>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!!syncLoading}
+                          onClick={() => handleOutlookAction("delete_outlook")}
+                          className="gap-1.5 text-destructive hover:text-destructive"
+                        >
+                          {syncLoading === "delete_outlook" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
+                          Slett Outlook-event
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          disabled={!!syncLoading}
+                          onClick={() => handleOutlookAction("disconnect")}
+                          className="gap-1.5"
+                        >
+                          {syncLoading === "disconnect" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
+                          Koble fra Outlook
+                        </Button>
+                      </>
+                    )}
+                  </div>
+                </div>
+              )}
             </TabsContent>
 
             <TabsContent value="documents" className="pt-4">
