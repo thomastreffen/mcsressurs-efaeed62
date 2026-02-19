@@ -4,8 +4,18 @@ import { startOfWeek, endOfWeek, differenceInMinutes } from "date-fns";
 import type { JobStatus } from "@/lib/job-status";
 import type { Job } from "@/lib/mock-data";
 
+export interface TechnicianInfo {
+  id: string;
+  name: string;
+  color: string | null;
+}
+
+export interface CalendarEvent extends Job {
+  technicians: TechnicianInfo[];
+}
+
 export function useCalendarEvents(technicianId: string | null) {
-  const [events, setEvents] = useState<Job[]>([]);
+  const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
 
   const weekStart = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
@@ -14,14 +24,8 @@ export function useCalendarEvents(technicianId: string | null) {
   const weekEndISO = weekEnd.toISOString();
 
   const fetchEvents = useCallback(async () => {
-    if (!technicianId) {
-      setEvents([]);
-      return;
-    }
-
     setLoading(true);
     try {
-      // Single join query – events is root, event_technicians is join only
       const { data, error } = await supabase
         .from("events")
         .select(`
@@ -40,8 +44,14 @@ export function useCalendarEvents(technicianId: string | null) {
           proposed_end,
           created_at,
           updated_at,
+          attachments,
           event_technicians (
-            technician_id
+            technician_id,
+            technicians (
+              id,
+              name,
+              color
+            )
           )
         `)
         .gte("start_time", weekStartISO)
@@ -55,38 +65,54 @@ export function useCalendarEvents(technicianId: string | null) {
         return;
       }
 
-      // Filter to only events where this technician is assigned
-      const filtered = (data ?? []).filter((e) =>
-        e.event_technicians?.some((et: { technician_id: string }) => et.technician_id === technicianId)
-      );
+      const allEvents = data ?? [];
 
-      // Deduplicate by event.id (safety net)
+      // Filter by technician if one is selected
+      const filtered = technicianId
+        ? allEvents.filter((e: any) =>
+            e.event_technicians?.some((et: any) => et.technician_id === technicianId)
+          )
+        : allEvents;
+
+      // Deduplicate by event.id
       const uniqueMap = new Map<string, (typeof filtered)[0]>();
       for (const e of filtered) {
         uniqueMap.set(e.id, e);
       }
 
-      const mapped: Job[] = Array.from(uniqueMap.values()).map((e) => ({
-        id: e.id,
-        microsoftEventId: e.microsoft_event_id ?? "",
-        technicianIds: (e.event_technicians ?? []).map((et: { technician_id: string }) => et.technician_id),
-        attendeeStatuses: [],
-        title: e.title,
-        customer: e.customer ?? "",
-        address: e.address ?? "",
-        description: e.description ?? "",
-        start: new Date(e.start_time),
-        end: new Date(e.end_time),
-        status: e.status as JobStatus,
-        jobNumber: e.job_number,
-        internalNumber: e.internal_number,
-        proposedStart: e.proposed_start ? new Date(e.proposed_start) : undefined,
-        proposedEnd: e.proposed_end ? new Date(e.proposed_end) : undefined,
-        createdAt: e.created_at ? new Date(e.created_at) : undefined,
-        updatedAt: e.updated_at ? new Date(e.updated_at) : undefined,
-      }));
+      const mapped: CalendarEvent[] = Array.from(uniqueMap.values()).map((e: any) => {
+        const technicians: TechnicianInfo[] = (e.event_technicians ?? [])
+          .filter((et: any) => et.technicians)
+          .map((et: any) => ({
+            id: et.technicians.id,
+            name: et.technicians.name,
+            color: et.technicians.color,
+          }));
 
-      console.log(`[Calendar] Fetched ${mapped.length} unique events for technician ${technicianId}`);
+        return {
+          id: e.id,
+          microsoftEventId: e.microsoft_event_id ?? "",
+          technicianIds: (e.event_technicians ?? []).map((et: any) => et.technician_id),
+          attendeeStatuses: [],
+          title: e.title,
+          customer: e.customer ?? "",
+          address: e.address ?? "",
+          description: e.description ?? "",
+          start: new Date(e.start_time),
+          end: new Date(e.end_time),
+          status: e.status as JobStatus,
+          jobNumber: e.job_number,
+          internalNumber: e.internal_number,
+          proposedStart: e.proposed_start ? new Date(e.proposed_start) : undefined,
+          proposedEnd: e.proposed_end ? new Date(e.proposed_end) : undefined,
+          createdAt: e.created_at ? new Date(e.created_at) : undefined,
+          updatedAt: e.updated_at ? new Date(e.updated_at) : undefined,
+          attachments: e.attachments ?? [],
+          technicians,
+        };
+      });
+
+      console.log(`[Calendar] Fetched ${mapped.length} unique events (tech: ${technicianId ?? "ALL"})`);
       setEvents(mapped);
     } catch (err) {
       console.error("[Calendar] Fetch exception:", err);
@@ -108,7 +134,7 @@ export function useCalendarEvents(technicianId: string | null) {
         "postgres_changes",
         { event: "*", schema: "public", table: "events" },
         () => {
-          console.log("[Calendar] Realtime update triggered (events)");
+          console.log("[Calendar] Realtime update triggered");
           fetchEvents();
         }
       )
@@ -120,7 +146,7 @@ export function useCalendarEvents(technicianId: string | null) {
   }, [fetchEvents]);
 
   const getJobsForDay = useCallback(
-    (date: Date): Job[] =>
+    (date: Date): CalendarEvent[] =>
       events.filter((j) => j.start.toDateString() === date.toDateString()),
     [events]
   );

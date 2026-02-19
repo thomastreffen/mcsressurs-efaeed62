@@ -6,13 +6,12 @@ import { supabase } from "@/integrations/supabase/client";
 import { TopBar } from "@/components/TopBar";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
-import { AttachmentList } from "@/components/AttachmentList";
 import { AuditInfo } from "@/components/AuditInfo";
 import { EventLogList } from "@/components/EventLogList";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { getEventLogs, type Job } from "@/lib/mock-data";
+import { getEventLogs, type Job, type Attachment } from "@/lib/mock-data";
 import {
   JOB_STATUS_CONFIG,
   ALL_STATUSES,
@@ -29,6 +28,8 @@ import {
   Hash,
   Users,
   Loader2,
+  FileText,
+  Image as ImageIcon,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -39,6 +40,7 @@ export default function JobDetail() {
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
+  const [technicianNames, setTechnicianNames] = useState<string[]>([]);
 
   useEffect(() => {
     if (!id) return;
@@ -50,7 +52,12 @@ export default function JobDetail() {
         .select(`
           *,
           event_technicians (
-            technician_id
+            technician_id,
+            technicians (
+              id,
+              name,
+              color
+            )
           )
         `)
         .eq("id", id)
@@ -63,10 +70,16 @@ export default function JobDetail() {
         return;
       }
 
+      const techs = (data.event_technicians ?? [])
+        .filter((et: any) => et.technicians)
+        .map((et: any) => et.technicians);
+
+      setTechnicianNames(techs.map((t: any) => t.name));
+
       setJob({
         id: data.id,
         microsoftEventId: data.microsoft_event_id ?? "",
-        technicianIds: (data.event_technicians ?? []).map((et: { technician_id: string }) => et.technician_id),
+        technicianIds: (data.event_technicians ?? []).map((et: any) => et.technician_id),
         attendeeStatuses: [],
         title: data.title,
         customer: data.customer ?? "",
@@ -81,6 +94,7 @@ export default function JobDetail() {
         proposedEnd: data.proposed_end ? new Date(data.proposed_end) : undefined,
         createdAt: data.created_at ? new Date(data.created_at) : undefined,
         updatedAt: data.updated_at ? new Date(data.updated_at) : undefined,
+        attachments: Array.isArray(data.attachments) ? (data.attachments as unknown as Attachment[]) : [],
       });
       setLoading(false);
     };
@@ -118,6 +132,13 @@ export default function JobDetail() {
   const displayNumber = getDisplayNumber(job.jobNumber ?? null, job.internalNumber ?? null);
   const logs = getEventLogs(job.id);
   const role = user?.role ?? "montør";
+  const attachments = job.attachments ?? [];
+  const imageAttachments = attachments.filter((a) =>
+    /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name)
+  );
+  const docAttachments = attachments.filter(
+    (a) => !/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name)
+  );
 
   const handleStatusChange = (newStatus: JobStatus) => {
     if (!canSetStatus(role, newStatus)) {
@@ -204,7 +225,7 @@ export default function JobDetail() {
                   Montører
                 </div>
                 <p className="text-sm font-medium">
-                  {job.technicianIds.length} tildelt
+                  {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
                 </p>
               </div>
             </div>
@@ -213,9 +234,14 @@ export default function JobDetail() {
           <Tabs defaultValue="overview">
             <TabsList>
               <TabsTrigger value="overview">Oversikt</TabsTrigger>
-              <TabsTrigger value="documents">Dokumenter</TabsTrigger>
-              <TabsTrigger value="images">Bilder</TabsTrigger>
-              <TabsTrigger value="communication">Kommunikasjon</TabsTrigger>
+              <TabsTrigger value="documents" className="gap-1.5">
+                <FileText className="h-3.5 w-3.5" />
+                Dokumenter {docAttachments.length > 0 && `(${docAttachments.length})`}
+              </TabsTrigger>
+              <TabsTrigger value="images" className="gap-1.5">
+                <ImageIcon className="h-3.5 w-3.5" />
+                Bilder {imageAttachments.length > 0 && `(${imageAttachments.length})`}
+              </TabsTrigger>
               <TabsTrigger value="history">Historikk</TabsTrigger>
             </TabsList>
 
@@ -239,8 +265,21 @@ export default function JobDetail() {
 
             <TabsContent value="documents" className="pt-4">
               <div className="rounded-lg border bg-card p-4">
-                {job.attachments && job.attachments.length > 0 ? (
-                  <AttachmentList attachments={job.attachments} />
+                {docAttachments.length > 0 ? (
+                  <div className="space-y-2">
+                    {docAttachments.map((att, i) => (
+                      <a
+                        key={i}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="flex items-center gap-3 rounded-lg border p-3 hover:bg-secondary transition-colors"
+                      >
+                        <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
+                        <span className="text-sm font-medium">{att.name}</span>
+                      </a>
+                    ))}
+                  </div>
                 ) : (
                   <p className="text-sm text-muted-foreground">Ingen dokumenter lastet opp.</p>
                 )}
@@ -248,14 +287,32 @@ export default function JobDetail() {
             </TabsContent>
 
             <TabsContent value="images" className="pt-4">
-              <div className="rounded-lg border bg-card p-6 text-center">
-                <p className="text-sm text-muted-foreground">Bildeopplasting kommer snart.</p>
-              </div>
-            </TabsContent>
-
-            <TabsContent value="communication" className="pt-4">
-              <div className="rounded-lg border bg-card p-6 text-center">
-                <p className="text-sm text-muted-foreground">Kommunikasjonsmodul kommer snart.</p>
+              <div className="rounded-lg border bg-card p-4">
+                {imageAttachments.length > 0 ? (
+                  <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
+                    {imageAttachments.map((att, i) => (
+                      <a
+                        key={i}
+                        href={att.url}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="group relative aspect-square rounded-lg overflow-hidden border bg-muted"
+                      >
+                        <img
+                          src={att.url}
+                          alt={att.name}
+                          className="h-full w-full object-cover transition-transform group-hover:scale-105"
+                          loading="lazy"
+                        />
+                        <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/60 to-transparent p-2">
+                          <p className="text-xs text-white truncate">{att.name}</p>
+                        </div>
+                      </a>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">Ingen bilder lastet opp.</p>
+                )}
               </div>
             </TabsContent>
 

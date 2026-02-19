@@ -1,7 +1,9 @@
 import { Button } from "@/components/ui/button";
-import { Plus, Wrench, ShieldCheck, LogOut } from "lucide-react";
+import { Plus, Wrench, ShieldCheck, LogOut, Bell } from "lucide-react";
 import { useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { useActionRequired } from "@/hooks/useActionRequired";
+import { cn } from "@/lib/utils";
 
 interface TopBarProps {
   onNewJob: () => void;
@@ -10,6 +12,7 @@ interface TopBarProps {
 export function TopBar({ onNewJob }: TopBarProps) {
   const navigate = useNavigate();
   const { user, isSuperAdmin, signOut } = useAuth();
+  const actionCount = useActionRequired();
 
   return (
     <header className="flex items-center justify-between border-b bg-card px-6 py-3">
@@ -25,6 +28,12 @@ export function TopBar({ onNewJob }: TopBarProps) {
         </div>
       </div>
       <div className="flex items-center gap-2">
+        {actionCount > 0 && (
+          <div className="flex items-center gap-1.5 rounded-full bg-status-time-change-proposed/15 px-3 py-1.5 text-xs font-medium text-status-time-change-proposed">
+            <Bell className="h-3.5 w-3.5" />
+            {actionCount} handling{actionCount !== 1 ? "er" : ""} krever oppmerksomhet
+          </div>
+        )}
         {user && (
           <span className="text-sm text-muted-foreground mr-2">
             {user.name}
