@@ -23,14 +23,26 @@ interface CreateJobDialogProps {
   preselectedTechId?: string;
 }
 
-class CreateJobErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
-  state = { hasError: false };
-  static getDerivedStateFromError() { return { hasError: true }; }
+interface ErrorBoundaryProps { children: ReactNode; onReset: () => void }
+interface ErrorBoundaryState { hasError: boolean; errorMsg: string }
+
+class CreateJobErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
+  state: ErrorBoundaryState = { hasError: false, errorMsg: "" };
+  static getDerivedStateFromError(error: Error) {
+    return { hasError: true, errorMsg: error?.message || "Unknown error" };
+  }
   componentDidCatch(error: Error, info: ErrorInfo) {
-    console.error("CreateJobDialog crashed:", error, info);
+    console.error("CreateJobDialog crashed:", error?.message, error?.stack, info?.componentStack);
+    this.props.onReset();
   }
   render() {
-    if (this.state.hasError) return <p className="p-4 text-sm text-destructive">Noe gikk galt. Prøv å lukke og åpne dialogen på nytt.</p>;
+    if (this.state.hasError) {
+      return (
+        <p className="p-4 text-sm text-destructive">
+          Noe gikk galt: {this.state.errorMsg}. Prøv å lukke og åpne dialogen på nytt.
+        </p>
+      );
+    }
     return this.props.children;
   }
 }
@@ -53,19 +65,22 @@ function CreateJobDialogInner({
   const [files, setFiles] = useState<File[]>([]);
 
   const conflicts = useMemo(() => {
-    if (!startDate || !startTime || !endDate || !endTime || techIds.length === 0) return [];
+    const ids = Array.isArray(techIds) ? techIds : [];
+    if (!startDate || !startTime || !endDate || !endTime || ids.length === 0) return [];
     const start = new Date(`${startDate}T${startTime}`);
     const end = new Date(`${endDate}T${endTime}`);
     if (isNaN(start.getTime()) || isNaN(end.getTime())) return [];
-    return getConflicts(techIds, start, end);
+    return getConflicts(ids, start, end);
   }, [techIds, startDate, startTime, endDate, endTime]);
+
+  const safeTechIds = Array.isArray(techIds) ? techIds : [];
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (techIds.length === 0) return;
+    if (safeTechIds.length === 0) return;
 
     toast.success("Jobb opprettet", {
-      description: `SERVICE – ${title} er lagt til for ${techIds.length} montør(er).`,
+      description: `SERVICE – ${title} er lagt til for ${safeTechIds.length} montør(er).`,
     });
     onOpenChange(false);
     resetForm();
@@ -208,7 +223,7 @@ function CreateJobDialogInner({
             <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Avbryt
             </Button>
-            <Button type="submit" disabled={techIds.length === 0}>
+            <Button type="submit" disabled={safeTechIds.length === 0}>
               Opprett jobb
             </Button>
           </DialogFooter>
@@ -219,8 +234,11 @@ function CreateJobDialogInner({
 }
 
 export function CreateJobDialog(props: CreateJobDialogProps) {
+  const resetOnError = () => {
+    props.onOpenChange(false);
+  };
   return (
-    <CreateJobErrorBoundary>
+    <CreateJobErrorBoundary onReset={resetOnError}>
       <CreateJobDialogInner {...props} />
     </CreateJobErrorBoundary>
   );

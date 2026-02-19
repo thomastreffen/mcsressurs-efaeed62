@@ -42,19 +42,21 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
       });
   }, []);
 
+  const safeSelectedIds = Array.isArray(selectedIds) ? selectedIds : [];
+
   const toggle = (id: string) => {
-    if (selectedIds.includes(id)) {
-      onChange(selectedIds.filter((s) => s !== id));
+    if (safeSelectedIds.includes(id)) {
+      onChange(safeSelectedIds.filter((s) => s !== id));
     } else {
-      onChange([...selectedIds, id]);
+      onChange([...safeSelectedIds, id]);
     }
   };
 
-  if (!Array.isArray(technicians)) return null;
-
-  const safeTechnicians = technicians.filter((t) => t?.id && t?.user_id);
+  const safeTechnicians = Array.isArray(technicians)
+    ? technicians.filter((t) => t?.id && t?.user_id)
+    : [];
   const filtered = search
-    ? safeTechnicians.filter((t) => t.name.toLowerCase().includes(search.toLowerCase()))
+    ? safeTechnicians.filter((t) => t.name?.toLowerCase().includes(search.toLowerCase()))
     : safeTechnicians;
 
   return (
@@ -80,7 +82,7 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
               <p className="text-xs text-muted-foreground text-center py-3">Ingen treff</p>
             ) : (
               filtered.map((tech) => {
-                const checked = selectedIds.includes(tech.id);
+                const checked = safeSelectedIds.includes(tech.id);
                 return (
                   <button
                     type="button"
@@ -107,7 +109,7 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
           </div>
         </ScrollArea>
       </div>
-      {selectedIds.length === 0 && (
+      {safeSelectedIds.length === 0 && (
         <p className="text-xs text-destructive">Velg minst én montør</p>
       )}
     </div>
