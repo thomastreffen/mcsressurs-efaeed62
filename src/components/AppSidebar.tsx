@@ -7,6 +7,7 @@ import {
   Users,
   Settings,
   Wrench,
+  ReceiptText,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -31,6 +32,7 @@ const mainNav = [
 ];
 
 const adminNav = [
+  { title: "Tilbud", url: "/admin/offers", icon: ReceiptText, requireAdmin: true },
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
   { title: "Administrasjon", url: "/admin/settings", icon: Settings, requireAdmin: true },
 ];
