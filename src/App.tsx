@@ -11,6 +11,7 @@ import AdminUsers from "./pages/AdminUsers";
 import Login from "./pages/Login";
 import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
+import ApprovalPage from "./pages/ApprovalPage";
 
 const queryClient = new QueryClient();
 
@@ -48,6 +49,7 @@ const App = () => (
                 </ProtectedRoute>
               }
             />
+            <Route path="/approval/:token" element={<ApprovalPage />} />
             <Route path="*" element={<NotFound />} />
           </Routes>
         </AuthProvider>

@@ -14,3 +14,9 @@ verify_jwt = false
 
 [functions.manage-role]
 verify_jwt = false
+
+[functions.create-approval]
+verify_jwt = false
+
+[functions.handle-approval]
+verify_jwt = false
