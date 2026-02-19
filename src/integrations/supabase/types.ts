@@ -14,6 +14,107 @@ export type Database = {
   }
   public: {
     Tables: {
+      calculation_items: {
+        Row: {
+          calculation_id: string
+          created_at: string
+          description: string | null
+          id: string
+          quantity: number
+          suggested_by_ai: boolean | null
+          title: string
+          total_price: number
+          type: Database["public"]["Enums"]["calculation_item_type"]
+          unit: string | null
+          unit_price: number
+        }
+        Insert: {
+          calculation_id: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          quantity?: number
+          suggested_by_ai?: boolean | null
+          title: string
+          total_price?: number
+          type: Database["public"]["Enums"]["calculation_item_type"]
+          unit?: string | null
+          unit_price?: number
+        }
+        Update: {
+          calculation_id?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          quantity?: number
+          suggested_by_ai?: boolean | null
+          title?: string
+          total_price?: number
+          type?: Database["public"]["Enums"]["calculation_item_type"]
+          unit?: string | null
+          unit_price?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "calculation_items_calculation_id_fkey"
+            columns: ["calculation_id"]
+            isOneToOne: false
+            referencedRelation: "calculations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      calculations: {
+        Row: {
+          ai_analysis: Json | null
+          attachments: Json | null
+          created_at: string
+          created_by: string
+          customer_email: string | null
+          customer_name: string
+          description: string | null
+          id: string
+          project_title: string
+          status: Database["public"]["Enums"]["calculation_status"]
+          total_labor: number | null
+          total_material: number | null
+          total_price: number | null
+          updated_at: string
+        }
+        Insert: {
+          ai_analysis?: Json | null
+          attachments?: Json | null
+          created_at?: string
+          created_by: string
+          customer_email?: string | null
+          customer_name: string
+          description?: string | null
+          id?: string
+          project_title: string
+          status?: Database["public"]["Enums"]["calculation_status"]
+          total_labor?: number | null
+          total_material?: number | null
+          total_price?: number | null
+          updated_at?: string
+        }
+        Update: {
+          ai_analysis?: Json | null
+          attachments?: Json | null
+          created_at?: string
+          created_by?: string
+          customer_email?: string | null
+          customer_name?: string
+          description?: string | null
+          id?: string
+          project_title?: string
+          status?: Database["public"]["Enums"]["calculation_status"]
+          total_labor?: number | null
+          total_material?: number | null
+          total_price?: number | null
+          updated_at?: string
+        }
+        Relationships: []
+      }
       event_logs: {
         Row: {
           action_type: string
@@ -301,6 +402,30 @@ export type Database = {
           },
         ]
       }
+      settings: {
+        Row: {
+          id: string
+          key: string
+          updated_at: string
+          updated_by: string | null
+          value: Json
+        }
+        Insert: {
+          id?: string
+          key: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Update: {
+          id?: string
+          key?: string
+          updated_at?: string
+          updated_by?: string | null
+          value?: Json
+        }
+        Relationships: []
+      }
       technicians: {
         Row: {
           color: string | null
@@ -365,6 +490,14 @@ export type Database = {
     }
     Enums: {
       app_role: "admin" | "montør" | "super_admin"
+      calculation_item_type: "material" | "labor"
+      calculation_status:
+        | "draft"
+        | "generated"
+        | "sent"
+        | "accepted"
+        | "rejected"
+        | "converted"
       event_status: "pending" | "accepted" | "declined" | "change_request"
       job_status:
         | "requested"
@@ -504,6 +637,15 @@ export const Constants = {
   public: {
     Enums: {
       app_role: ["admin", "montør", "super_admin"],
+      calculation_item_type: ["material", "labor"],
+      calculation_status: [
+        "draft",
+        "generated",
+        "sent",
+        "accepted",
+        "rejected",
+        "converted",
+      ],
       event_status: ["pending", "accepted", "declined", "change_request"],
       job_status: [
         "requested",

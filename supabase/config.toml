@@ -23,3 +23,9 @@ verify_jwt = false
 
 [functions.outlook-sync]
 verify_jwt = false
+
+[functions.generate-calculation-ai]
+verify_jwt = false
+
+[functions.generate-offer-pdf]
+verify_jwt = false

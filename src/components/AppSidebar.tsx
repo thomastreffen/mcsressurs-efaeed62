@@ -3,6 +3,7 @@ import {
   LayoutDashboard,
   FolderKanban,
   CalendarDays,
+  Calculator,
   Users,
   Settings,
   Wrench,
@@ -25,6 +26,7 @@ import {
 const mainNav = [
   { title: "Dashboard", url: "/", icon: LayoutDashboard },
   { title: "Jobber", url: "/jobs", icon: FolderKanban },
+  { title: "Kalkuler jobb", url: "/calculations", icon: Calculator },
   { title: "Ressursplan", url: "/resource-plan", icon: CalendarDays },
 ];
 
