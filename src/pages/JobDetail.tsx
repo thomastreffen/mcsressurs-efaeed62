@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { TopBar } from "@/components/TopBar";
+
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
 import { AuditInfo } from "@/components/AuditInfo";
@@ -219,24 +219,18 @@ export default function JobDetail() {
 
   if (loading) {
     return (
-      <div className="flex h-screen flex-col">
-        <TopBar onNewJob={() => {}} />
-        <div className="flex flex-1 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
+      <div className="flex items-center justify-center p-12">
+        <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
       </div>
     );
   }
 
   if (!job) {
     return (
-      <div className="flex h-screen flex-col">
-        <TopBar onNewJob={() => {}} />
-        <div className="flex flex-1 items-center justify-center">
-          <div className="text-center space-y-2">
-            <p className="text-lg font-medium">Jobb ikke funnet</p>
-            <Button variant="outline" onClick={() => navigate("/")}>Tilbake til kalender</Button>
-          </div>
+      <div className="flex items-center justify-center p-12">
+        <div className="text-center space-y-2">
+          <p className="text-lg font-medium">Jobb ikke funnet</p>
+          <Button variant="outline" onClick={() => navigate("/jobs")}>Tilbake til jobber</Button>
         </div>
       </div>
     );
@@ -249,11 +243,8 @@ export default function JobDetail() {
   const docAttachments = attachments.filter((a) => !/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name));
 
   return (
-    <div className="flex h-screen flex-col">
-      <TopBar onNewJob={() => {}} />
-
-      <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
+    <>
+    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
           <div className="flex items-center justify-between">
             <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5 -ml-2">
               <ArrowLeft className="h-4 w-4" />
@@ -581,8 +572,7 @@ export default function JobDetail() {
               </div>
             </TabsContent>
           </Tabs>
-        </div>
-      </main>
+      </div>
 
       {/* Edit dialog */}
       {id && (
@@ -603,6 +593,6 @@ export default function JobDetail() {
         canDelete={isAdmin}
         onDelete={handleDeleteAttachment}
       />
-    </div>
+    </>
   );
 }

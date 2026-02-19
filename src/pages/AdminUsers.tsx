@@ -75,19 +75,12 @@ export default function AdminUsers() {
   };
 
   return (
-    <div className="flex h-screen flex-col">
-      <header className="flex items-center gap-3 border-b bg-card px-6 py-3">
-        <Button size="icon" variant="ghost" onClick={() => navigate("/")} className="h-8 w-8">
-          <ArrowLeft className="h-4 w-4" />
-        </Button>
-        <div className="flex items-center gap-2">
+    <div className="p-4 sm:p-6">
+      <div className="max-w-3xl mx-auto">
+        <div className="flex items-center gap-2 mb-4">
           <ShieldCheck className="h-5 w-5 text-primary" />
-          <h1 className="text-base font-semibold">Administrer brukere</h1>
+          <h1 className="text-xl sm:text-2xl font-bold">Administrer brukere</h1>
         </div>
-      </header>
-
-      <main className="flex-1 overflow-y-auto p-6">
-        <div className="max-w-3xl mx-auto">
           <p className="text-sm text-muted-foreground mb-4">
             Kun super_admin kan endre roller.
           </p>
@@ -154,7 +147,6 @@ export default function AdminUsers() {
             <EmployeeImport />
           </div>
         </div>
-      </main>
-    </div>
+      </div>
   );
 }
