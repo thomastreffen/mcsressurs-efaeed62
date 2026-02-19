@@ -1,6 +1,7 @@
 import { addDays, format, startOfWeek, isSameDay } from "date-fns";
 import { nb } from "date-fns/locale";
-import { getJobsForDay, getBookedMinutesForDay, type Job, type JobStatus } from "@/lib/mock-data";
+import { getJobsForDay, getBookedMinutesForDay, type Job } from "@/lib/mock-data";
+import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { cn } from "@/lib/utils";
 import { JobStatusBadge } from "./JobStatusBadge";
 
@@ -8,13 +9,6 @@ interface WeekCalendarProps {
   technicianId: string;
   onJobClick?: (job: Job) => void;
 }
-
-const statusBorder: Record<JobStatus, string> = {
-  accepted: "border-l-status-accepted",
-  pending: "border-l-status-pending",
-  declined: "border-l-status-declined",
-  "change-request": "border-l-status-change-request",
-};
 
 function formatHours(minutes: number): string {
   const h = Math.floor(minutes / 60);
@@ -26,7 +20,7 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
-  const WORK_DAY_MINUTES = 480; // 8 hours
+  const WORK_DAY_MINUTES = 480;
 
   return (
     <div className="grid grid-cols-7 gap-px rounded-xl border bg-border overflow-hidden">
@@ -59,7 +53,6 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
               </p>
             </div>
 
-            {/* Daily hours summary */}
             {!isWeekend && bookedMinutes > 0 && (
               <div className="px-2 pt-1.5 pb-0.5">
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
@@ -71,8 +64,8 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
                     className={cn(
                       "h-full rounded-full transition-all",
                       utilizationPct >= 100 ? "bg-destructive" :
-                      utilizationPct >= 75 ? "bg-status-pending" :
-                      "bg-status-accepted"
+                      utilizationPct >= 75 ? "bg-status-requested" :
+                      "bg-status-approved"
                     )}
                     style={{ width: `${utilizationPct}%` }}
                   />
@@ -81,26 +74,29 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
             )}
 
             <div className="flex-1 p-1.5 space-y-1">
-              {dayJobs.map((job) => (
-                <button
-                  key={job.id}
-                  onClick={() => onJobClick?.(job)}
-                  className={cn(
-                    "w-full rounded-md border-l-[3px] bg-secondary/60 p-2 text-left transition-colors hover:bg-secondary",
-                    statusBorder[job.status]
-                  )}
-                >
-                  <p className="text-xs font-medium leading-tight truncate">
-                    {job.title.replace("SERVICE – ", "")}
-                  </p>
-                  <p className="mt-0.5 text-[10px] text-muted-foreground">
-                    {format(job.start, "HH:mm")} – {format(job.end, "HH:mm")}
-                  </p>
-                  <div className="mt-1">
-                    <JobStatusBadge status={job.status} />
-                  </div>
-                </button>
-              ))}
+              {dayJobs.map((job) => {
+                const statusConfig = JOB_STATUS_CONFIG[job.status];
+                return (
+                  <button
+                    key={job.id}
+                    onClick={() => onJobClick?.(job)}
+                    className={cn(
+                      "w-full rounded-md border-l-[3px] bg-secondary/60 p-2 text-left transition-colors hover:bg-secondary",
+                      statusConfig?.borderClass
+                    )}
+                  >
+                    <p className="text-xs font-medium leading-tight truncate">
+                      {job.title.replace("SERVICE – ", "")}
+                    </p>
+                    <p className="mt-0.5 text-[10px] text-muted-foreground">
+                      {format(job.start, "HH:mm")} – {format(job.end, "HH:mm")}
+                    </p>
+                    <div className="mt-1">
+                      <JobStatusBadge status={job.status} />
+                    </div>
+                  </button>
+                );
+              })}
             </div>
           </div>
         );

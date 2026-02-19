@@ -1,6 +1,8 @@
 import { addDays, setHours, setMinutes, startOfWeek, differenceInMinutes } from "date-fns";
+import type { JobStatus } from "@/lib/job-status";
 
-export type JobStatus = "accepted" | "pending" | "declined" | "change-request";
+// Re-export for backward compat
+export type { JobStatus } from "@/lib/job-status";
 
 export interface AttendeeStatus {
   technicianId: string;
@@ -12,7 +14,7 @@ export interface AttendeeStatus {
 export interface Attachment {
   name: string;
   url: string;
-  size?: number; // bytes
+  size?: number;
 }
 
 export type AppRole = "super_admin" | "admin" | "montør";
@@ -20,8 +22,8 @@ export type AppRole = "super_admin" | "admin" | "montør";
 export interface EventLog {
   id: string;
   eventId: string;
-  actionType: "created" | "updated" | "cancelled" | "attendee_added" | "attendee_removed";
-  performedBy: string; // admin user id
+  actionType: "created" | "updated" | "cancelled" | "attendee_added" | "attendee_removed" | "status_changed";
+  performedBy: string;
   performedByName: string;
   timestamp: Date;
   changeSummary: string;
@@ -39,10 +41,11 @@ export interface Job {
   start: Date;
   end: Date;
   status: JobStatus;
+  jobNumber?: string | null;
+  internalNumber?: string | null;
   proposedStart?: Date;
   proposedEnd?: Date;
   attachments?: Attachment[];
-  // Audit fields
   createdBy?: string;
   createdByName?: string;
   createdAt?: Date;
@@ -52,14 +55,12 @@ export interface Job {
   cancelledBy?: string;
   cancelledByName?: string;
   cancelledAt?: Date;
-  // Soft-lock
   editingBy?: string;
   editingByName?: string;
   editingStartedAt?: Date;
 }
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
-
 
 export const eventLogs: EventLog[] = [
   { id: "l1", eventId: "j1", actionType: "created", performedBy: "a1", performedByName: "Thomas Berg", timestamp: addDays(weekStart, -1), changeSummary: "Jobb opprettet" },
@@ -77,14 +78,15 @@ export const jobs: Job[] = [
     id: "j1",
     microsoftEventId: "ms-1",
     technicianIds: ["1"],
-    attendeeStatuses: [{ technicianId: "1", status: "accepted" }],
+    attendeeStatuses: [{ technicianId: "1", status: "approved" }],
     title: "SERVICE – Varmepumpe vedlikehold",
     customer: "Norsk Bolig AS",
     address: "Storgata 15, 0182 Oslo",
     description: "Årlig vedlikehold av varmepumpe",
     start: setMinutes(setHours(addDays(weekStart, 0), 9), 0),
     end: setMinutes(setHours(addDays(weekStart, 0), 12), 0),
-    status: "accepted",
+    status: "approved",
+    internalNumber: "JOB-000001",
     createdBy: "a1",
     createdByName: "Thomas Berg",
     createdAt: addDays(weekStart, -1),
@@ -100,27 +102,29 @@ export const jobs: Job[] = [
     id: "j2",
     microsoftEventId: "ms-2",
     technicianIds: ["1"],
-    attendeeStatuses: [{ technicianId: "1", status: "pending" }],
+    attendeeStatuses: [{ technicianId: "1", status: "requested" }],
     title: "SERVICE – Ventilasjon inspeksjon",
     customer: "Fjord Eiendom",
     address: "Havnegata 8, 0150 Oslo",
     description: "Inspeksjon av ventilasjonsanlegg",
     start: setMinutes(setHours(addDays(weekStart, 1), 10), 0),
     end: setMinutes(setHours(addDays(weekStart, 1), 14), 0),
-    status: "pending",
+    status: "requested",
+    internalNumber: "JOB-000002",
   },
   {
     id: "j3",
     microsoftEventId: "ms-3",
     technicianIds: ["2"],
-    attendeeStatuses: [{ technicianId: "2", status: "accepted" }],
+    attendeeStatuses: [{ technicianId: "2", status: "approved" }],
     title: "SERVICE – Kjøling reparasjon",
     customer: "Bergen Handelshus",
     address: "Bryggen 22, 5003 Bergen",
     description: "Reparasjon av kjøleanlegg i serverrom",
     start: setMinutes(setHours(addDays(weekStart, 0), 8), 0),
     end: setMinutes(setHours(addDays(weekStart, 0), 11), 0),
-    status: "accepted",
+    status: "approved",
+    internalNumber: "JOB-000003",
   },
   {
     id: "j4",
@@ -129,7 +133,7 @@ export const jobs: Job[] = [
     attendeeStatuses: [
       {
         technicianId: "2",
-        status: "change-request",
+        status: "time_change_proposed",
         proposedStart: setMinutes(setHours(addDays(weekStart, 3), 9), 0),
         proposedEnd: setMinutes(setHours(addDays(weekStart, 3), 12), 0),
       },
@@ -140,7 +144,8 @@ export const jobs: Job[] = [
     description: "Feilsøking varmeanlegg",
     start: setMinutes(setHours(addDays(weekStart, 2), 13), 0),
     end: setMinutes(setHours(addDays(weekStart, 2), 16), 0),
-    status: "change-request",
+    status: "time_change_proposed",
+    internalNumber: "JOB-000004",
     proposedStart: setMinutes(setHours(addDays(weekStart, 3), 9), 0),
     proposedEnd: setMinutes(setHours(addDays(weekStart, 3), 12), 0),
   },
@@ -149,8 +154,8 @@ export const jobs: Job[] = [
     microsoftEventId: "ms-5",
     technicianIds: ["1", "3"],
     attendeeStatuses: [
-      { technicianId: "1", status: "accepted" },
-      { technicianId: "3", status: "pending" },
+      { technicianId: "1", status: "approved" },
+      { technicianId: "3", status: "requested" },
     ],
     title: "SERVICE – Installasjon varmepumpe",
     customer: "Privatkunde Nilsen",
@@ -158,46 +163,50 @@ export const jobs: Job[] = [
     description: "Ny installasjon luft-til-luft",
     start: setMinutes(setHours(addDays(weekStart, 1), 8), 0),
     end: setMinutes(setHours(addDays(weekStart, 1), 16), 0),
-    status: "accepted",
+    status: "approved",
+    internalNumber: "JOB-000005",
   },
   {
     id: "j6",
     microsoftEventId: "ms-6",
     technicianIds: ["3"],
-    attendeeStatuses: [{ technicianId: "3", status: "declined" }],
+    attendeeStatuses: [{ technicianId: "3", status: "rejected" }],
     title: "SERVICE – Akutt lekkasje",
     customer: "Hotell Nordlys",
     address: "Sjøgata 12, 8006 Bodø",
     description: "Akutt lekkasje i kjølerør",
     start: setMinutes(setHours(addDays(weekStart, 3), 9), 0),
     end: setMinutes(setHours(addDays(weekStart, 3), 12), 0),
-    status: "declined",
+    status: "rejected",
+    internalNumber: "JOB-000006",
   },
   {
     id: "j7",
     microsoftEventId: "ms-7",
     technicianIds: ["4"],
-    attendeeStatuses: [{ technicianId: "4", status: "pending" }],
+    attendeeStatuses: [{ technicianId: "4", status: "requested" }],
     title: "SERVICE – Preventiv vedlikehold",
     customer: "Kommunale bygg",
     address: "Rådhusplassen 1, 0037 Oslo",
     description: "Kvartalsvis vedlikehold HVAC",
     start: setMinutes(setHours(addDays(weekStart, 0), 7), 30),
     end: setMinutes(setHours(addDays(weekStart, 0), 15), 30),
-    status: "pending",
+    status: "requested",
+    internalNumber: "JOB-000007",
   },
   {
     id: "j8",
     microsoftEventId: "ms-8",
     technicianIds: ["4"],
-    attendeeStatuses: [{ technicianId: "4", status: "accepted" }],
+    attendeeStatuses: [{ technicianId: "4", status: "approved" }],
     title: "SERVICE – Garanti inspeksjon",
     customer: "Nybygg Prosjekt AS",
     address: "Ensjøveien 34, 0661 Oslo",
     description: "Garantiinspeksjon varmepumpe installert 2024",
     start: setMinutes(setHours(addDays(weekStart, 4), 10), 0),
     end: setMinutes(setHours(addDays(weekStart, 4), 13), 0),
-    status: "accepted",
+    status: "approved",
+    internalNumber: "JOB-000008",
   },
 ];
 
@@ -213,13 +222,11 @@ export function getJobsForDay(techId: string, date: Date): Job[] {
   );
 }
 
-/** Get total booked minutes for a technician on a given day */
 export function getBookedMinutesForDay(techId: string, date: Date): number {
   const dayJobs = getJobsForDay(techId, date);
   return dayJobs.reduce((sum, job) => sum + differenceInMinutes(job.end, job.start), 0);
 }
 
-/** Check for overlapping jobs for given technician ids in a time range, excluding a specific job */
 export function getConflicts(
   techIds: string[],
   start: Date,

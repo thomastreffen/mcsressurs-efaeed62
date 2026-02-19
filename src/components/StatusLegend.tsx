@@ -1,20 +1,14 @@
 import { StatusDot } from "./StatusDot";
+import { ALL_STATUSES, JOB_STATUS_CONFIG } from "@/lib/job-status";
 
 export function StatusLegend() {
   return (
-    <div className="flex items-center gap-4 text-xs text-muted-foreground">
-      <span className="flex items-center gap-1.5">
-        <StatusDot status="accepted" /> Godtatt
-      </span>
-      <span className="flex items-center gap-1.5">
-        <StatusDot status="pending" /> Ikke svart
-      </span>
-      <span className="flex items-center gap-1.5">
-        <StatusDot status="declined" /> Avvist
-      </span>
-      <span className="flex items-center gap-1.5">
-        <StatusDot status="change-request" /> Endringsforespørsel
-      </span>
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      {ALL_STATUSES.map((s) => (
+        <span key={s} className="flex items-center gap-1.5">
+          <StatusDot status={s} /> {JOB_STATUS_CONFIG[s].label}
+        </span>
+      ))}
     </div>
   );
 }

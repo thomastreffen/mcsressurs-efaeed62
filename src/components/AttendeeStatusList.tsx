@@ -29,11 +29,11 @@ export function AttendeeStatusList({ attendeeStatuses }: AttendeeStatusListProps
               <JobStatusBadge status={att.status} />
             </div>
 
-            {att.status === "change-request" && att.proposedStart && att.proposedEnd && (
-              <div className="ml-8 rounded bg-status-change-request/10 px-2.5 py-1.5 text-xs space-y-0.5">
-                <p className="font-medium text-status-change-request">Foreslått nytt tidspunkt:</p>
+            {att.status === "time_change_proposed" && att.proposedStart && att.proposedEnd && (
+              <div className="ml-8 rounded bg-status-time-change-proposed/10 px-2.5 py-1.5 text-xs space-y-0.5">
+                <p className="font-medium text-status-time-change-proposed">Foreslått nytt tidspunkt:</p>
                 <div className="flex items-center gap-1.5 text-foreground">
-                  <Clock className="h-3 w-3 text-status-change-request" />
+                  <Clock className="h-3 w-3 text-status-time-change-proposed" />
                   <span>
                     {format(att.proposedStart, "EEEE d. MMM", { locale: nb })},{" "}
                     {format(att.proposedStart, "HH:mm")} – {format(att.proposedEnd, "HH:mm")}

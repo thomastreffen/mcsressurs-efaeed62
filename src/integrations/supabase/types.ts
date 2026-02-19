@@ -98,11 +98,13 @@ export type Database = {
           editing_started_at: string | null
           end_time: string
           id: string
+          internal_number: string | null
+          job_number: string | null
           microsoft_event_id: string | null
           proposed_end: string | null
           proposed_start: string | null
           start_time: string
-          status: Database["public"]["Enums"]["event_status"]
+          status: Database["public"]["Enums"]["job_status"]
           technician_id: string
           title: string
           updated_at: string
@@ -120,11 +122,13 @@ export type Database = {
           editing_started_at?: string | null
           end_time: string
           id?: string
+          internal_number?: string | null
+          job_number?: string | null
           microsoft_event_id?: string | null
           proposed_end?: string | null
           proposed_start?: string | null
           start_time: string
-          status?: Database["public"]["Enums"]["event_status"]
+          status?: Database["public"]["Enums"]["job_status"]
           technician_id: string
           title: string
           updated_at?: string
@@ -142,11 +146,13 @@ export type Database = {
           editing_started_at?: string | null
           end_time?: string
           id?: string
+          internal_number?: string | null
+          job_number?: string | null
           microsoft_event_id?: string | null
           proposed_end?: string | null
           proposed_start?: string | null
           start_time?: string
-          status?: Database["public"]["Enums"]["event_status"]
+          status?: Database["public"]["Enums"]["job_status"]
           technician_id?: string
           title?: string
           updated_at?: string
@@ -251,6 +257,16 @@ export type Database = {
     Enums: {
       app_role: "admin" | "montør" | "super_admin"
       event_status: "pending" | "accepted" | "declined" | "change_request"
+      job_status:
+        | "requested"
+        | "approved"
+        | "time_change_proposed"
+        | "rejected"
+        | "scheduled"
+        | "in_progress"
+        | "completed"
+        | "ready_for_invoicing"
+        | "invoiced"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -380,6 +396,17 @@ export const Constants = {
     Enums: {
       app_role: ["admin", "montør", "super_admin"],
       event_status: ["pending", "accepted", "declined", "change_request"],
+      job_status: [
+        "requested",
+        "approved",
+        "time_change_proposed",
+        "rejected",
+        "scheduled",
+        "in_progress",
+        "completed",
+        "ready_for_invoicing",
+        "invoiced",
+      ],
     },
   },
 } as const

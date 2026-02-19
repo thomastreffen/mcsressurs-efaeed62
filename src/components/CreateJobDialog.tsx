@@ -44,6 +44,7 @@ function CreateJobDialogInner({
   const [customer, setCustomer] = useState("");
   const [address, setAddress] = useState("");
   const [description, setDescription] = useState("");
+  const [jobNumber, setJobNumber] = useState("");
   const [startDate, setStartDate] = useState("");
   const [startTime, setStartTime] = useState("08:00");
   const [endDate, setEndDate] = useState("");
@@ -75,6 +76,7 @@ function CreateJobDialogInner({
     setCustomer("");
     setAddress("");
     setDescription("");
+    setJobNumber("");
     setStartDate("");
     setEndDate("");
     setTechIds(preselectedTechId ? [preselectedTechId] : []);
@@ -83,24 +85,36 @@ function CreateJobDialogInner({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-lg max-h-[90vh] overflow-y-auto">
+      <DialogContent className="sm:max-w-[720px] max-h-[90vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle>Ny jobb</DialogTitle>
           <DialogDescription className="sr-only">Opprett en ny jobb for montører</DialogDescription>
         </DialogHeader>
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <Label htmlFor="title">Tittel</Label>
-            <div className="flex items-center gap-2 mt-1">
-              <span className="text-sm text-muted-foreground whitespace-nowrap">
-                SERVICE –
-              </span>
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <Label htmlFor="title">Tittel</Label>
+              <div className="flex items-center gap-2 mt-1">
+                <span className="text-sm text-muted-foreground whitespace-nowrap">
+                  SERVICE –
+                </span>
+                <Input
+                  id="title"
+                  value={title}
+                  onChange={(e) => setTitle(e.target.value)}
+                  placeholder="Beskrivelse av jobb"
+                  required
+                />
+              </div>
+            </div>
+            <div>
+              <Label htmlFor="jobNumber">Jobbnummer (valgfritt)</Label>
               <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Beskrivelse av jobb"
-                required
+                id="jobNumber"
+                value={jobNumber}
+                onChange={(e) => setJobNumber(e.target.value)}
+                placeholder="F.eks. P-12345"
+                className="mt-1"
               />
             </div>
           </div>
