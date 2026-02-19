@@ -1,7 +1,8 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
+import { supabase } from "@/integrations/supabase/client";
 import { TopBar } from "@/components/TopBar";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
@@ -11,7 +12,7 @@ import { EventLogList } from "@/components/EventLogList";
 import { Button } from "@/components/ui/button";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { jobs, getEventLogs, type Job } from "@/lib/mock-data";
+import { getEventLogs, type Job } from "@/lib/mock-data";
 import {
   JOB_STATUS_CONFIG,
   ALL_STATUSES,
@@ -27,6 +28,7 @@ import {
   Clock,
   Hash,
   Users,
+  Loader2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -35,7 +37,67 @@ export default function JobDetail() {
   const navigate = useNavigate();
   const { user } = useAuth();
 
-  const job = useMemo(() => jobs.find((j) => j.id === id), [id]);
+  const [job, setJob] = useState<Job | null>(null);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (!id) return;
+
+    const fetchJob = async () => {
+      setLoading(true);
+      const { data, error } = await supabase
+        .from("events")
+        .select(`
+          *,
+          event_technicians (
+            technician_id
+          )
+        `)
+        .eq("id", id)
+        .single();
+
+      if (error || !data) {
+        console.error("[JobDetail] Failed to fetch:", error);
+        setJob(null);
+        setLoading(false);
+        return;
+      }
+
+      setJob({
+        id: data.id,
+        microsoftEventId: data.microsoft_event_id ?? "",
+        technicianIds: (data.event_technicians ?? []).map((et: { technician_id: string }) => et.technician_id),
+        attendeeStatuses: [],
+        title: data.title,
+        customer: data.customer ?? "",
+        address: data.address ?? "",
+        description: data.description ?? "",
+        start: new Date(data.start_time),
+        end: new Date(data.end_time),
+        status: data.status as JobStatus,
+        jobNumber: data.job_number,
+        internalNumber: data.internal_number,
+        proposedStart: data.proposed_start ? new Date(data.proposed_start) : undefined,
+        proposedEnd: data.proposed_end ? new Date(data.proposed_end) : undefined,
+        createdAt: data.created_at ? new Date(data.created_at) : undefined,
+        updatedAt: data.updated_at ? new Date(data.updated_at) : undefined,
+      });
+      setLoading(false);
+    };
+
+    fetchJob();
+  }, [id]);
+
+  if (loading) {
+    return (
+      <div className="flex h-screen flex-col">
+        <TopBar onNewJob={() => {}} />
+        <div className="flex flex-1 items-center justify-center">
+          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
+        </div>
+      </div>
+    );
+  }
 
   if (!job) {
     return (
@@ -73,13 +135,11 @@ export default function JobDetail() {
 
       <main className="flex-1 overflow-y-auto">
         <div className="mx-auto max-w-5xl p-6 space-y-6">
-          {/* Back button */}
           <Button variant="ghost" size="sm" onClick={() => navigate("/")} className="gap-1.5 -ml-2">
             <ArrowLeft className="h-4 w-4" />
             Tilbake
           </Button>
 
-          {/* Header */}
           <header className="space-y-4">
             <div className="flex items-start justify-between gap-4">
               <div className="space-y-1">
@@ -99,7 +159,6 @@ export default function JobDetail() {
                 </div>
               </div>
 
-              {/* Status change */}
               <div className="shrink-0 w-52">
                 <Select
                   value={job.status}
@@ -119,7 +178,6 @@ export default function JobDetail() {
               </div>
             </div>
 
-            {/* Key info cards */}
             <div className="grid grid-cols-3 gap-4">
               <div className="rounded-lg border bg-card p-4 space-y-1">
                 <div className="flex items-center gap-2 text-xs text-muted-foreground">
@@ -152,7 +210,6 @@ export default function JobDetail() {
             </div>
           </header>
 
-          {/* Tabs */}
           <Tabs defaultValue="overview">
             <TabsList>
               <TabsTrigger value="overview">Oversikt</TabsTrigger>
@@ -163,7 +220,6 @@ export default function JobDetail() {
             </TabsList>
 
             <TabsContent value="overview" className="space-y-6 pt-4">
-              {/* Description */}
               {job.description && (
                 <div className="rounded-lg border bg-card p-4">
                   <h3 className="text-sm font-medium mb-2">Beskrivelse</h3>
@@ -171,13 +227,11 @@ export default function JobDetail() {
                 </div>
               )}
 
-              {/* Attendee statuses */}
               <div className="rounded-lg border bg-card p-4 space-y-3">
                 <h3 className="text-sm font-medium">Montørstatus</h3>
                 <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
               </div>
 
-              {/* Audit */}
               <div className="rounded-lg border bg-card p-4">
                 <AuditInfo job={job} />
               </div>
