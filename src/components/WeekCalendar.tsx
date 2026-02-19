@@ -1,14 +1,14 @@
 import { addDays, format, startOfWeek, isSameDay } from "date-fns";
 import { nb } from "date-fns/locale";
-import { useCalendarEvents } from "@/hooks/useCalendarEvents";
+import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { cn } from "@/lib/utils";
 import { JobStatusBadge } from "./JobStatusBadge";
-import type { Job } from "@/lib/mock-data";
+import { AlertTriangle } from "lucide-react";
 
 interface WeekCalendarProps {
-  technicianId: string;
-  onJobClick?: (job: Job) => void;
+  technicianId: string | null;
+  onJobClick?: (job: CalendarEvent) => void;
 }
 
 function formatHours(minutes: number): string {
@@ -78,21 +78,40 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
             <div className="flex-1 p-1.5 space-y-1">
               {dayJobs.map((job) => {
                 const statusConfig = JOB_STATUS_CONFIG[job.status];
+                const isTimeChange = job.status === "time_change_proposed";
+                // Use primary technician color for left border
+                const techColor = job.technicians?.[0]?.color;
+
                 return (
                   <button
                     key={job.id}
                     onClick={() => onJobClick?.(job)}
                     className={cn(
-                      "w-full rounded-md border-l-[3px] bg-secondary/60 p-2 text-left transition-colors hover:bg-secondary",
-                      statusConfig?.borderClass
+                      "w-full rounded-md border-l-[3px] p-2 text-left transition-colors",
+                      isTimeChange
+                        ? "bg-status-time-change-proposed/15 ring-1 ring-status-time-change-proposed/40 hover:bg-status-time-change-proposed/25"
+                        : "bg-secondary/60 hover:bg-secondary",
+                      !techColor && statusConfig?.borderClass
                     )}
+                    style={techColor ? { borderLeftColor: techColor } : undefined}
                   >
-                    <p className="text-xs font-medium leading-tight truncate">
-                      {job.title.replace("SERVICE – ", "")}
-                    </p>
+                    <div className="flex items-center gap-1">
+                      {isTimeChange && (
+                        <AlertTriangle className="h-3 w-3 shrink-0 text-status-time-change-proposed" />
+                      )}
+                      <p className="text-xs font-medium leading-tight truncate">
+                        {job.title.replace("SERVICE – ", "")}
+                      </p>
+                    </div>
                     <p className="mt-0.5 text-[10px] text-muted-foreground">
                       {format(job.start, "HH:mm")} – {format(job.end, "HH:mm")}
                     </p>
+                    {/* Show technician names in global view */}
+                    {!technicianId && job.technicians.length > 0 && (
+                      <p className="mt-0.5 text-[10px] text-muted-foreground truncate">
+                        {job.technicians.map((t) => t.name.split(" ")[0]).join(", ")}
+                      </p>
+                    )}
                     <div className="mt-1">
                       <JobStatusBadge status={job.status} />
                     </div>

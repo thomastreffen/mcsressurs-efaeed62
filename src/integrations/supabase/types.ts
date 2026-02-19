@@ -88,6 +88,7 @@ export type Database = {
       events: {
         Row: {
           address: string | null
+          attachments: Json | null
           cancelled_at: string | null
           cancelled_by: string | null
           created_at: string
@@ -112,6 +113,7 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          attachments?: Json | null
           cancelled_at?: string | null
           cancelled_by?: string | null
           created_at?: string
@@ -136,6 +138,7 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          attachments?: Json | null
           cancelled_at?: string | null
           cancelled_by?: string | null
           created_at?: string
@@ -250,6 +253,7 @@ export type Database = {
       }
       technicians: {
         Row: {
+          color: string | null
           created_at: string
           email: string
           id: string
@@ -258,6 +262,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          color?: string | null
           created_at?: string
           email: string
           id?: string
@@ -266,6 +271,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          color?: string | null
           created_at?: string
           email?: string
           id?: string
