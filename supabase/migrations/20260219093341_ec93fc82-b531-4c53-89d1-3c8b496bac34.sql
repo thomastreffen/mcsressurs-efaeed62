@@ -1,0 +1,1 @@
+ALTER TABLE public.job_approvals ADD COLUMN outlook_event_id TEXT NULL;

@@ -175,6 +175,7 @@ export type Database = {
           expires_at: string
           id: string
           job_id: string
+          outlook_event_id: string | null
           proposed_end: string | null
           proposed_start: string | null
           responded_at: string | null
@@ -188,6 +189,7 @@ export type Database = {
           expires_at?: string
           id?: string
           job_id: string
+          outlook_event_id?: string | null
           proposed_end?: string | null
           proposed_start?: string | null
           responded_at?: string | null
@@ -201,6 +203,7 @@ export type Database = {
           expires_at?: string
           id?: string
           job_id?: string
+          outlook_event_id?: string | null
           proposed_end?: string | null
           proposed_start?: string | null
           responded_at?: string | null

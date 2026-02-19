@@ -8,17 +8,137 @@ const corsHeaders = {
 
 /**
  * Determine overall job status based on all approval statuses.
- * Rules:
- * - If any rejected → 'rejected'
- * - If any reschedule_requested → 'time_change_proposed'
- * - If all approved → 'approved'
- * - Otherwise → 'requested' (still pending)
  */
 function computeJobStatus(approvals: any[]): string {
   if (approvals.some((a: any) => a.status === "rejected")) return "rejected";
   if (approvals.some((a: any) => a.status === "reschedule_requested")) return "time_change_proposed";
-  if (approvals.every((a: any) => a.status === "approved")) return "approved";
+  if (approvals.every((a: any) => a.status === "approved")) return "scheduled";
   return "requested";
+}
+
+/**
+ * Ensure Microsoft access token is valid; refresh if expired.
+ * Returns a valid access_token or null.
+ */
+async function ensureValidMsToken(
+  supabaseAdmin: any,
+  userId: string
+): Promise<string | null> {
+  const { data: userData, error: userErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+  if (userErr || !userData?.user) {
+    console.error("[handle-approval] Failed to fetch user:", userErr);
+    return null;
+  }
+
+  const meta = userData.user.user_metadata || {};
+  const accessToken = meta.ms_access_token;
+  const refreshToken = meta.ms_refresh_token;
+  const expiresAt = meta.ms_expires_at;
+
+  if (!accessToken) {
+    console.error("[handle-approval] No MS access token in user metadata");
+    return null;
+  }
+
+  // Check if token is still valid (with 5 min buffer)
+  if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
+    return accessToken;
+  }
+
+  // Token expired – refresh
+  if (!refreshToken) {
+    console.error("[handle-approval] No refresh token available");
+    return null;
+  }
+
+  console.log("[handle-approval] Refreshing expired MS token for user", userId);
+
+  const tokenRes = await fetch("https://login.microsoftonline.com/" + Deno.env.get("AZURE_TENANT_ID") + "/oauth2/v2.0/token", {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: new URLSearchParams({
+      client_id: Deno.env.get("AZURE_CLIENT_ID")!,
+      client_secret: Deno.env.get("AZURE_CLIENT_SECRET")!,
+      grant_type: "refresh_token",
+      refresh_token: refreshToken,
+      scope: "https://graph.microsoft.com/.default offline_access",
+    }),
+  });
+
+  if (!tokenRes.ok) {
+    const errText = await tokenRes.text();
+    console.error("[handle-approval] Token refresh failed:", errText);
+    return null;
+  }
+
+  const tokenData = await tokenRes.json();
+  const newExpires = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
+
+  // Update metadata with spread to preserve existing fields
+  const { error: updateErr } = await supabaseAdmin.auth.admin.updateUserById(userId, {
+    user_metadata: {
+      ...meta,
+      ms_access_token: tokenData.access_token,
+      ms_refresh_token: tokenData.refresh_token || refreshToken,
+      ms_expires_at: newExpires,
+    },
+  });
+
+  if (updateErr) {
+    console.error("[handle-approval] Failed to update token metadata:", updateErr);
+  }
+
+  return tokenData.access_token;
+}
+
+/**
+ * Create an Outlook calendar event for the technician.
+ */
+async function createOutlookEvent(
+  accessToken: string,
+  techEmail: string,
+  job: any
+): Promise<string | null> {
+  const displayNumber = job.internal_number || job.job_number || "";
+  const subject = displayNumber ? `${displayNumber} - ${job.title}` : job.title;
+
+  const body: any = {
+    subject,
+    body: {
+      contentType: "HTML",
+      content: `<b>Kunde:</b> ${job.customer || "Ikke angitt"}<br/><b>Adresse:</b> ${job.address || "Ikke angitt"}${job.description ? `<br/><b>Beskrivelse:</b> ${job.description}` : ""}`,
+    },
+    start: {
+      dateTime: job.start_time,
+      timeZone: "Europe/Oslo",
+    },
+    end: {
+      dateTime: job.end_time,
+      timeZone: "Europe/Oslo",
+    },
+  };
+
+  if (job.address) {
+    body.location = { displayName: job.address };
+  }
+
+  const res = await fetch(`https://graph.microsoft.com/v1.0/users/${techEmail}/events`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify(body),
+  });
+
+  if (!res.ok) {
+    const errText = await res.text();
+    console.error("[handle-approval] Graph API create event failed:", res.status, errText);
+    return null;
+  }
+
+  const eventData = await res.json();
+  return eventData.id || null;
 }
 
 Deno.serve(async (req) => {
@@ -27,7 +147,6 @@ Deno.serve(async (req) => {
   }
 
   try {
-    // This is a PUBLIC endpoint - no auth required
     const { token, action, comment, proposed_start, proposed_end } = await req.json();
 
     if (!token || !action) {
@@ -64,7 +183,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Validate token state
     if (approval.status !== "pending") {
       return new Response(JSON.stringify({ error: "Denne forespørselen er allerede besvart" }), {
         status: 409,
@@ -79,10 +197,10 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Get technician name for logging
+    // Get technician info
     const { data: tech } = await supabaseAdmin
       .from("technicians")
-      .select("name")
+      .select("name, email, user_id")
       .eq("user_id", approval.technician_user_id)
       .single();
 
@@ -109,7 +227,6 @@ Deno.serve(async (req) => {
       updateData.comment = comment;
       logMessage = `Montør ${techName} avslo jobben (begrunnelse: ${comment})`;
     } else {
-      // reschedule
       if (!proposed_start || !proposed_end) {
         return new Response(JSON.stringify({ error: "Foreslått start og slutt er påkrevd" }), {
           status: 400,
@@ -138,6 +255,60 @@ Deno.serve(async (req) => {
       });
     }
 
+    // --- Outlook Calendar Sync on Approve ---
+    let calendarWarning: string | null = null;
+
+    if (action === "approve") {
+      // Idempotency: skip if event already created
+      if (approval.outlook_event_id) {
+        console.log("[handle-approval] Outlook event already exists, skipping:", approval.outlook_event_id);
+      } else if (tech?.email && tech?.user_id) {
+        try {
+          // Fetch job details
+          const { data: job } = await supabaseAdmin
+            .from("events")
+            .select("title, description, start_time, end_time, address, customer, internal_number, job_number")
+            .eq("id", approval.job_id)
+            .single();
+
+          if (job) {
+            const msToken = await ensureValidMsToken(supabaseAdmin, tech.user_id);
+
+            if (msToken) {
+              const outlookEventId = await createOutlookEvent(msToken, tech.email, job);
+
+              if (outlookEventId) {
+                // Save outlook_event_id on the approval row
+                await supabaseAdmin
+                  .from("job_approvals")
+                  .update({ outlook_event_id: outlookEventId })
+                  .eq("id", approval.id);
+
+                console.log("[handle-approval] Outlook event created:", outlookEventId);
+
+                // Log calendar creation
+                await supabaseAdmin.from("event_logs").insert({
+                  event_id: approval.job_id,
+                  performed_by: approval.technician_user_id,
+                  action_type: "calendar_synced",
+                  change_summary: `Kalenderavtale opprettet for ${techName}`,
+                });
+              } else {
+                calendarWarning = "Godkjenning registrert, men kalenderavtale kunne ikke opprettes.";
+                console.error("[handle-approval] Failed to create Outlook event");
+              }
+            } else {
+              calendarWarning = "Godkjenning registrert, men Microsoft-token er ugyldig eller utløpt.";
+              console.error("[handle-approval] No valid MS token for calendar sync");
+            }
+          }
+        } catch (calErr) {
+          calendarWarning = "Godkjenning registrert, men kalendersynk feilet.";
+          console.error("[handle-approval] Calendar sync exception:", calErr);
+        }
+      }
+    }
+
     // Re-fetch all approvals for this job to compute overall status
     const { data: allApprovals } = await supabaseAdmin
       .from("job_approvals")
@@ -158,7 +329,7 @@ Deno.serve(async (req) => {
       .update(jobUpdate)
       .eq("id", approval.job_id);
 
-    // Log to event_logs
+    // Log status change
     await supabaseAdmin.from("event_logs").insert({
       event_id: approval.job_id,
       performed_by: approval.technician_user_id,
@@ -166,12 +337,28 @@ Deno.serve(async (req) => {
       change_summary: logMessage,
     });
 
-    return new Response(JSON.stringify({
+    // If all approved → log that job is now scheduled
+    if (newJobStatus === "scheduled") {
+      await supabaseAdmin.from("event_logs").insert({
+        event_id: approval.job_id,
+        performed_by: approval.technician_user_id,
+        action_type: "status_changed",
+        change_summary: "Alle montører godkjente – jobb satt til Planlagt",
+      });
+    }
+
+    const responseBody: any = {
       success: true,
       message: action === "approve" ? "Jobben er godkjent!" :
                action === "reject" ? "Jobben er avslått." :
                "Nytt tidspunkt er foreslått.",
-    }), {
+    };
+
+    if (calendarWarning) {
+      responseBody.warning = calendarWarning;
+    }
+
+    return new Response(JSON.stringify(responseBody), {
       status: 200,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
