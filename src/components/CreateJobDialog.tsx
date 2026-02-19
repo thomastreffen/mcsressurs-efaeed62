@@ -118,7 +118,47 @@ function CreateJobDialogInner({
 
       console.log("[CreateJob] Event created:", createdEvent.id);
 
-      // 2. Insert event_technicians
+      // 2. Upload files to storage and save attachment metadata
+      if (files.length > 0) {
+        const attachments: { name: string; url: string; size: number }[] = [];
+
+        for (const file of files) {
+          const filePath = `${createdEvent.id}/${Date.now()}-${file.name}`;
+          const { error: uploadError } = await supabase.storage
+            .from("job-attachments")
+            .upload(filePath, file);
+
+          if (uploadError) {
+            console.error("[CreateJob] File upload failed:", file.name, uploadError);
+            toast.error(`Kunne ikke laste opp ${file.name}`);
+            continue;
+          }
+
+          const { data: urlData } = supabase.storage
+            .from("job-attachments")
+            .getPublicUrl(filePath);
+
+          attachments.push({
+            name: file.name,
+            url: urlData.publicUrl,
+            size: file.size,
+          });
+          console.log("[CreateJob] File uploaded:", file.name);
+        }
+
+        if (attachments.length > 0) {
+          const { error: attError } = await supabase
+            .from("events")
+            .update({ attachments })
+            .eq("id", createdEvent.id);
+
+          if (attError) {
+            console.error("[CreateJob] Attachment metadata save failed:", attError);
+          }
+        }
+      }
+
+      // 3. Insert event_technicians
       const techInserts = safeTechIds.map((techId) => ({
         event_id: createdEvent.id,
         technician_id: techId,
@@ -133,7 +173,7 @@ function CreateJobDialogInner({
         toast.error("Jobb opprettet, men montørtilknytning feilet", { description: techError.message });
       }
 
-      // 3. Call create-approval
+      // 4. Call create-approval
       console.log("[CreateJob] Calling create-approval for job:", createdEvent.id);
       const { data: approvalData, error: approvalError } = await supabase.functions.invoke(
         "create-approval",
