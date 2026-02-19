@@ -25,6 +25,8 @@ interface Lead {
   source: string | null;
   status: LeadStatus;
   estimated_value: number;
+  probability: number;
+  expected_close_date: string | null;
   notes: string | null;
   created_at: string;
 }
@@ -47,6 +49,8 @@ export default function LeadsPage() {
   const [phone, setPhone] = useState("");
   const [source, setSource] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
+  const [probability, setProbability] = useState("50");
+  const [expectedCloseDate, setExpectedCloseDate] = useState("");
   const [notes, setNotes] = useState("");
 
   const fetchLeads = async () => {
@@ -60,7 +64,7 @@ export default function LeadsPage() {
 
   const resetForm = () => {
     setCompanyName(""); setContactName(""); setEmail(""); setPhone("");
-    setSource(""); setEstimatedValue(""); setNotes(""); setEditLead(null);
+    setSource(""); setEstimatedValue(""); setProbability("50"); setExpectedCloseDate(""); setNotes(""); setEditLead(null);
   };
 
   const openCreate = () => { resetForm(); setDialogOpen(true); };
@@ -72,6 +76,8 @@ export default function LeadsPage() {
     setPhone(lead.phone || "");
     setSource(lead.source || "");
     setEstimatedValue(lead.estimated_value ? String(lead.estimated_value) : "");
+    setProbability(lead.probability ? String(lead.probability) : "50");
+    setExpectedCloseDate(lead.expected_close_date || "");
     setNotes(lead.notes || "");
     setDialogOpen(true);
   };
@@ -86,6 +92,8 @@ export default function LeadsPage() {
       phone: phone.trim() || null,
       source: source.trim() || null,
       estimated_value: Number(estimatedValue) || 0,
+      probability: Number(probability) || 50,
+      expected_close_date: expectedCloseDate || null,
       notes: notes.trim() || null,
     };
 
@@ -277,6 +285,16 @@ export default function LeadsPage() {
             <div className="space-y-1.5">
               <Label>Estimert verdi (kr)</Label>
               <Input value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)} placeholder="0" type="number" />
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Sannsynlighet (%)</Label>
+                <Input value={probability} onChange={(e) => setProbability(e.target.value)} placeholder="50" type="number" min="0" max="100" />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Forventet lukkedato</Label>
+                <Input value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} type="date" />
+              </div>
             </div>
             <div className="space-y-1.5">
               <Label>Notater</Label>

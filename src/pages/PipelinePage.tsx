@@ -5,7 +5,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { PIPELINE_STAGES, type PipelineStage } from "@/lib/lead-status";
 import { LEAD_STATUS_CONFIG, type LeadStatus } from "@/lib/lead-status";
-import { Loader2, Building2, DollarSign } from "lucide-react";
+import { Loader2, DollarSign, TrendingUp } from "lucide-react";
 import { toast } from "sonner";
 
 interface PipelineCard {
@@ -14,6 +14,7 @@ interface PipelineCard {
   title: string;
   subtitle: string;
   value: number;
+  probability: number;
   stage: PipelineStage;
   sourceId: string;
 }
@@ -36,20 +37,19 @@ export default function PipelinePage() {
 
       const items: PipelineCard[] = [];
 
-      // Leads → new/qualified
       for (const lead of (leadsRes.data || []) as any[]) {
-        if (lead.status === "won") continue; // handled by offers
+        if (lead.status === "won") continue;
         const stage: PipelineStage = lead.status === "new" ? "new"
           : lead.status === "contacted" ? "new"
           : "qualified";
         items.push({
           id: `lead-${lead.id}`, type: "lead", title: lead.company_name,
           subtitle: lead.contact_name || lead.email || "", value: Number(lead.estimated_value) || 0,
+          probability: Number(lead.probability) || 50,
           stage, sourceId: lead.id,
         });
       }
 
-      // Calculations without offers → calculation
       const calcIdsWithOffers = new Set((offersRes.data || []).map((o: any) => o.calculation_id));
       for (const calc of (calcsRes.data || []) as any[]) {
         if (calcIdsWithOffers.has(calc.id)) continue;
@@ -57,23 +57,25 @@ export default function PipelinePage() {
           items.push({
             id: `calc-${calc.id}`, type: "calculation", title: calc.project_title,
             subtitle: calc.customer_name, value: Number(calc.total_price) || 0,
+            probability: 60,
             stage: "calculation", sourceId: calc.id,
           });
         }
       }
 
-      // Offers → offer_sent / negotiation / won
       for (const offer of (offersRes.data || []) as any[]) {
         const stage: PipelineStage = offer.status === "draft" ? "offer_sent"
           : offer.status === "sent" ? "offer_sent"
           : offer.status === "accepted" ? "won"
           : offer.status === "rejected" ? "lost"
           : "negotiation";
+        const prob = stage === "won" ? 100 : stage === "lost" ? 0 : stage === "negotiation" ? 75 : 50;
         items.push({
           id: `offer-${offer.id}`, type: "offer",
           title: offer.calculations?.project_title || offer.offer_number,
           subtitle: offer.calculations?.customer_name || "",
           value: Number(offer.total_inc_vat) || 0,
+          probability: prob,
           stage, sourceId: offer.id,
         });
       }
@@ -91,7 +93,6 @@ export default function PipelinePage() {
     const card = cards.find((c) => c.id === dragging);
     if (!card || card.stage === targetStage) { setDragging(null); return; }
 
-    // Only allow lead status changes via drag
     if (card.type === "lead") {
       const statusMap: Partial<Record<PipelineStage, LeadStatus>> = {
         new: "new", qualified: "qualified", won: "won", lost: "lost",
@@ -111,27 +112,39 @@ export default function PipelinePage() {
   };
 
   const handleCardClick = (card: PipelineCard) => {
-    if (card.type === "calculation") navigate(`/calculations/${card.sourceId}`);
-    else if (card.type === "offer") {
-      // navigate to the calculation that owns this offer
-      const offerCard = cards.find((c) => c.id === card.id);
-      if (offerCard) navigate(`/sales/offers`);
-    }
-    // leads don't have a detail page yet
+    if (card.type === "lead") return;
+    if (card.type === "calculation") navigate(`/sales/calculations/${card.sourceId}`);
+    else navigate(`/sales/offers`);
   };
 
   const stageCards = (stage: PipelineStage) => cards.filter((c) => c.stage === stage);
   const stageValue = (stage: PipelineStage) => stageCards(stage).reduce((s, c) => s + c.value, 0);
+  const stageWeightedValue = (stage: PipelineStage) => stageCards(stage).reduce((s, c) => s + c.value * (c.probability / 100), 0);
+
+  const totalPipeline = cards.reduce((s, c) => s + c.value, 0);
+  const totalWeighted = cards.reduce((s, c) => s + c.value * (c.probability / 100), 0);
 
   if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
     <div className="p-4 sm:p-6 space-y-6">
-      <div>
-        <h1 className="text-xl sm:text-2xl font-bold">Salgspipeline</h1>
-        <p className="text-sm text-muted-foreground">
-          {cards.length} aktive muligheter · kr {cards.reduce((s, c) => s + c.value, 0).toLocaleString("nb-NO")} total verdi
-        </p>
+      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl sm:text-2xl font-bold">Salgspipeline</h1>
+          <p className="text-sm text-muted-foreground">
+            {cards.length} aktive muligheter
+          </p>
+        </div>
+        <div className="flex gap-4 text-sm">
+          <div className="rounded-lg border bg-card px-3 py-2">
+            <p className="text-xs text-muted-foreground">Total pipeline</p>
+            <p className="font-bold font-mono">kr {totalPipeline.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
+          </div>
+          <div className="rounded-lg border bg-card px-3 py-2">
+            <p className="text-xs text-muted-foreground flex items-center gap-1"><TrendingUp className="h-3 w-3" /> Forventet</p>
+            <p className="font-bold font-mono text-primary">kr {totalWeighted.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
+          </div>
+        </div>
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
@@ -142,16 +155,19 @@ export default function PipelinePage() {
             onDragOver={(e) => e.preventDefault()}
             onDrop={() => handleDrop(stage.key)}
           >
-            <div className="p-3 border-b flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
-                <span className="text-sm font-medium">{stage.label}</span>
-                <Badge variant="outline" className="text-[10px] h-5">{stageCards(stage.key).length}</Badge>
+            <div className="p-3 border-b space-y-1">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="h-2.5 w-2.5 rounded-full" style={{ backgroundColor: stage.color }} />
+                  <span className="text-sm font-medium">{stage.label}</span>
+                  <Badge variant="outline" className="text-[10px] h-5">{stageCards(stage.key).length}</Badge>
+                </div>
               </div>
               {stageValue(stage.key) > 0 && (
-                <span className="text-[10px] font-mono text-muted-foreground">
-                  kr {stageValue(stage.key).toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
-                </span>
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground font-mono">
+                  <span>kr {stageValue(stage.key).toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</span>
+                  <span className="text-primary">≈ kr {stageWeightedValue(stage.key).toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</span>
+                </div>
               )}
             </div>
             <div className="flex-1 p-2 space-y-2 overflow-y-auto">
@@ -162,7 +178,7 @@ export default function PipelinePage() {
                   onDragStart={() => handleDragStart(card.id)}
                   onDragEnd={handleDragEnd}
                   onClick={() => handleCardClick(card)}
-                  className={`rounded-md border bg-background p-3 cursor-pointer hover:shadow-sm transition-shadow ${dragging === card.id ? "opacity-50" : ""}`}
+                  className={`rounded-md border bg-background p-3 cursor-pointer hover:shadow-md hover:border-primary/20 transition-all ${dragging === card.id ? "opacity-50" : ""}`}
                 >
                   <div className="flex items-start justify-between gap-2">
                     <div className="min-w-0 flex-1">
@@ -174,9 +190,12 @@ export default function PipelinePage() {
                     </Badge>
                   </div>
                   {card.value > 0 && (
-                    <div className="mt-2 flex items-center gap-1 text-xs text-muted-foreground">
-                      <DollarSign className="h-3 w-3" />
-                      kr {card.value.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
+                    <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
+                      <span className="flex items-center gap-1">
+                        <DollarSign className="h-3 w-3" />
+                        kr {card.value.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
+                      </span>
+                      <span className="text-[10px] font-mono">{card.probability}%</span>
                     </div>
                   )}
                 </div>
