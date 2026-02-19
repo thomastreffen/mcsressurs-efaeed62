@@ -1,11 +1,9 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { cn } from "@/lib/utils";
-import { User, Loader2, Search } from "lucide-react";
-import { ScrollArea } from "@/components/ui/scroll-area";
+import { User, Loader2, Search, Check } from "lucide-react";
 
 interface DBTech {
   id: string;
@@ -46,11 +44,11 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
 
   const toggle = (id: string) => {
     const safePrev = Array.isArray(safeSelectedIds) ? [...safeSelectedIds] : [];
-    onChange(
-      safePrev.includes(id)
-        ? safePrev.filter(x => x !== id)
-        : [...safePrev, id]
-    );
+    const next = safePrev.includes(id)
+      ? safePrev.filter(x => x !== id)
+      : [...safePrev, id];
+    console.log("Toggle technician:", id, "Selected IDs will be:", next);
+    onChange(next);
   };
 
   const safeTechnicians = Array.isArray(technicians)
@@ -61,7 +59,8 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
         )
     : [];
 
-  console.log("Technicians rendered:", safeTechnicians);
+  console.log("RAW technicians:", technicians);
+  console.log("SAFE technicians:", safeTechnicians);
 
   const filtered = search
     ? safeTechnicians.filter((t) => t.name?.toLowerCase().includes(search.toLowerCase()))
@@ -80,7 +79,7 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
             className="h-7 border-0 p-0 text-sm shadow-none focus-visible:ring-0"
           />
         </div>
-        <ScrollArea className="h-40">
+        <div className="h-40 overflow-y-auto">
           <div className="p-1 space-y-0.5">
             {loading ? (
               <div className="flex items-center justify-center py-3">
@@ -101,21 +100,22 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
                       checked ? "bg-accent" : "hover:bg-secondary"
                     )}
                   >
-                    <Checkbox
-                      checked={checked}
-                      onCheckedChange={() => toggle(tech.id)}
-                      onClick={(e) => e.stopPropagation()}
-                    />
+                    <div className={cn(
+                      "flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border",
+                      checked ? "border-primary bg-primary text-primary-foreground" : "border-muted-foreground/30"
+                    )}>
+                      {checked && <Check className="h-3 w-3" />}
+                    </div>
                     <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
                       <User className="h-3 w-3" />
                     </div>
-                    <span className="text-sm">{tech.name ?? "Ukjent"}</span>
+                    <span className="text-sm">{typeof tech.name === "string" ? tech.name : JSON.stringify(tech.name)}</span>
                   </button>
                 );
               })
             )}
           </div>
-        </ScrollArea>
+        </div>
       </div>
       {safeSelectedIds.length === 0 && (
         <p className="text-xs text-destructive">Velg minst én montør</p>
