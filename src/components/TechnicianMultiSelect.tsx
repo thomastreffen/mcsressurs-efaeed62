@@ -45,16 +45,24 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
   const safeSelectedIds = Array.isArray(selectedIds) ? selectedIds : [];
 
   const toggle = (id: string) => {
-    if (safeSelectedIds.includes(id)) {
-      onChange(safeSelectedIds.filter((s) => s !== id));
-    } else {
-      onChange([...safeSelectedIds, id]);
-    }
+    const safePrev = Array.isArray(safeSelectedIds) ? [...safeSelectedIds] : [];
+    onChange(
+      safePrev.includes(id)
+        ? safePrev.filter(x => x !== id)
+        : [...safePrev, id]
+    );
   };
 
   const safeTechnicians = Array.isArray(technicians)
-    ? technicians.filter((t) => t?.id && t?.user_id)
+    ? technicians
+        .filter(t => t && typeof t.id === "string" && t.id.length > 0)
+        .filter((t, index, arr) =>
+          arr.findIndex(x => x.id === t.id) === index
+        )
     : [];
+
+  console.log("Technicians rendered:", safeTechnicians);
+
   const filtered = search
     ? safeTechnicians.filter((t) => t.name?.toLowerCase().includes(search.toLowerCase()))
     : safeTechnicians;
@@ -86,7 +94,7 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
                 return (
                   <button
                     type="button"
-                    key={tech.id}
+                    key={`tech-${tech.id}`}
                     onClick={() => toggle(tech.id)}
                     className={cn(
                       "flex w-full items-center gap-3 rounded-md px-2 py-1.5 text-left transition-colors",
