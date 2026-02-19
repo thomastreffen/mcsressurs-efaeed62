@@ -1,9 +1,10 @@
 import { addDays, format, startOfWeek, isSameDay } from "date-fns";
 import { nb } from "date-fns/locale";
-import { getJobsForDay, getBookedMinutesForDay, type Job } from "@/lib/mock-data";
+import { useCalendarEvents } from "@/hooks/useCalendarEvents";
 import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { cn } from "@/lib/utils";
 import { JobStatusBadge } from "./JobStatusBadge";
+import type { Job } from "@/lib/mock-data";
 
 interface WeekCalendarProps {
   technicianId: string;
@@ -17,6 +18,7 @@ function formatHours(minutes: number): string {
 }
 
 export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
+  const { getJobsForDay, getBookedMinutesForDay, loading } = useCalendarEvents(technicianId);
   const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });
   const days = Array.from({ length: 7 }, (_, i) => addDays(weekStart, i));
   const today = new Date();
@@ -25,10 +27,10 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
   return (
     <div className="grid grid-cols-7 gap-px rounded-xl border bg-border overflow-hidden">
       {days.map((day) => {
-        const dayJobs = getJobsForDay(technicianId, day);
+        const dayJobs = getJobsForDay(day);
         const isToday = isSameDay(day, today);
         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
-        const bookedMinutes = getBookedMinutesForDay(technicianId, day);
+        const bookedMinutes = getBookedMinutesForDay(day);
         const utilizationPct = Math.min(100, Math.round((bookedMinutes / WORK_DAY_MINUTES) * 100));
 
         return (
