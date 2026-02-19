@@ -14,6 +14,39 @@ export type Database = {
   }
   public: {
     Tables: {
+      activity_log: {
+        Row: {
+          action: string
+          created_at: string
+          description: string | null
+          entity_id: string
+          entity_type: string
+          id: string
+          metadata: Json | null
+          performed_by: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          description?: string | null
+          entity_id: string
+          entity_type: string
+          id?: string
+          metadata?: Json | null
+          performed_by?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          description?: string | null
+          entity_id?: string
+          entity_type?: string
+          id?: string
+          metadata?: Json | null
+          performed_by?: string | null
+        }
+        Relationships: []
+      }
       calculation_items: {
         Row: {
           calculation_id: string
@@ -74,6 +107,7 @@ export type Database = {
           customer_name: string
           description: string | null
           id: string
+          lead_id: string | null
           project_title: string
           status: Database["public"]["Enums"]["calculation_status"]
           total_labor: number | null
@@ -90,6 +124,7 @@ export type Database = {
           customer_name: string
           description?: string | null
           id?: string
+          lead_id?: string | null
           project_title: string
           status?: Database["public"]["Enums"]["calculation_status"]
           total_labor?: number | null
@@ -106,6 +141,7 @@ export type Database = {
           customer_name?: string
           description?: string | null
           id?: string
+          lead_id?: string | null
           project_title?: string
           status?: Database["public"]["Enums"]["calculation_status"]
           total_labor?: number | null
@@ -113,7 +149,15 @@ export type Database = {
           total_price?: number | null
           updated_at?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "calculations_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       event_logs: {
         Row: {
@@ -344,6 +388,51 @@ export type Database = {
           },
         ]
       }
+      leads: {
+        Row: {
+          company_name: string
+          contact_name: string | null
+          created_at: string
+          email: string | null
+          estimated_value: number | null
+          id: string
+          notes: string | null
+          owner_id: string | null
+          phone: string | null
+          source: string | null
+          status: Database["public"]["Enums"]["lead_status"]
+          updated_at: string
+        }
+        Insert: {
+          company_name: string
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          estimated_value?: number | null
+          id?: string
+          notes?: string | null
+          owner_id?: string | null
+          phone?: string | null
+          source?: string | null
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+        }
+        Update: {
+          company_name?: string
+          contact_name?: string | null
+          created_at?: string
+          email?: string | null
+          estimated_value?: number | null
+          id?: string
+          notes?: string | null
+          owner_id?: string | null
+          phone?: string | null
+          source?: string | null
+          status?: Database["public"]["Enums"]["lead_status"]
+          updated_at?: string
+        }
+        Relationships: []
+      }
       microsoft_tokens: {
         Row: {
           access_token: string
@@ -414,48 +503,63 @@ export type Database = {
       }
       offers: {
         Row: {
+          accepted_at: string | null
+          accepted_ip: string | null
           calculation_id: string
           created_at: string
           created_by: string
           generated_html_snapshot: string | null
           generated_pdf_url: string | null
           id: string
+          lead_id: string | null
           offer_number: string
+          public_token: string | null
           sent_at: string | null
           sent_to_email: string | null
           status: Database["public"]["Enums"]["offer_status"]
           total_ex_vat: number
           total_inc_vat: number
+          valid_until: string | null
           version: number
         }
         Insert: {
+          accepted_at?: string | null
+          accepted_ip?: string | null
           calculation_id: string
           created_at?: string
           created_by: string
           generated_html_snapshot?: string | null
           generated_pdf_url?: string | null
           id?: string
+          lead_id?: string | null
           offer_number: string
+          public_token?: string | null
           sent_at?: string | null
           sent_to_email?: string | null
           status?: Database["public"]["Enums"]["offer_status"]
           total_ex_vat?: number
           total_inc_vat?: number
+          valid_until?: string | null
           version?: number
         }
         Update: {
+          accepted_at?: string | null
+          accepted_ip?: string | null
           calculation_id?: string
           created_at?: string
           created_by?: string
           generated_html_snapshot?: string | null
           generated_pdf_url?: string | null
           id?: string
+          lead_id?: string | null
           offer_number?: string
+          public_token?: string | null
           sent_at?: string | null
           sent_to_email?: string | null
           status?: Database["public"]["Enums"]["offer_status"]
           total_ex_vat?: number
           total_inc_vat?: number
+          valid_until?: string | null
           version?: number
         }
         Relationships: [
@@ -464,6 +568,13 @@ export type Database = {
             columns: ["calculation_id"]
             isOneToOne: false
             referencedRelation: "calculations"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
             referencedColumns: ["id"]
           },
         ]
@@ -575,6 +686,7 @@ export type Database = {
         | "completed"
         | "ready_for_invoicing"
         | "invoiced"
+      lead_status: "new" | "contacted" | "qualified" | "lost" | "won"
       offer_status: "draft" | "sent" | "accepted" | "rejected" | "expired"
     }
     CompositeTypes: {
@@ -725,6 +837,7 @@ export const Constants = {
         "ready_for_invoicing",
         "invoiced",
       ],
+      lead_status: ["new", "contacted", "qualified", "lost", "won"],
       offer_status: ["draft", "sent", "accepted", "rejected", "expired"],
     },
   },

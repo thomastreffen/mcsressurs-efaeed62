@@ -80,7 +80,7 @@ export default function CalculationsPage() {
           <p className="text-sm text-muted-foreground">{filtered.length} kalkulasjoner totalt</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => navigate("/calculations/new")} className="gap-1.5 self-start">
+          <Button onClick={() => navigate("/sales/calculations/new")} className="gap-1.5 self-start">
             <Plus className="h-4 w-4" />
             Ny kalkulasjon
           </Button>
@@ -139,7 +139,7 @@ export default function CalculationsPage() {
                     <TableRow
                       key={calc.id}
                       className="cursor-pointer hover:bg-secondary/50"
-                      onClick={() => navigate(`/calculations/${calc.id}`)}
+                      onClick={() => navigate(`/sales/calculations/${calc.id}`)}
                     >
                       <TableCell>
                         <p className="text-sm font-medium truncate max-w-[250px]">{calc.project_title}</p>

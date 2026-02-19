@@ -360,7 +360,7 @@ export default function CalculationDetail() {
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 pb-24 space-y-6">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/calculations")} className="gap-1.5 -ml-2">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
           <ArrowLeft className="h-4 w-4" /> Tilbake
         </Button>
         <div className="flex items-center gap-2">
