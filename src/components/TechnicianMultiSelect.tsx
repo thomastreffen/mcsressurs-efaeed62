@@ -8,6 +8,7 @@ import { User, Loader2 } from "lucide-react";
 interface DBTech {
   id: string;
   name: string;
+  user_id: string | null;
 }
 
 interface TechnicianMultiSelectProps {
@@ -22,13 +23,14 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
   useEffect(() => {
     supabase
       .from("technicians")
-      .select("id, name")
+      .select("id, name, user_id")
+      .not("user_id", "is", null)
       .order("name")
       .then(({ data }) => {
         const raw = data || [];
         const seen = new Set<string>();
         const unique = raw.filter((t) => {
-          if (!t.id || seen.has(t.id)) return false;
+          if (!t.id || !t.user_id || seen.has(t.id)) return false;
           seen.add(t.id);
           return true;
         });
@@ -45,6 +47,10 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
     }
   };
 
+  if (!Array.isArray(technicians)) return null;
+
+  const safeTechnicians = technicians.filter((t) => t?.id && t?.user_id);
+
   return (
     <div className="space-y-1.5">
       <Label>Montør(er)</Label>
@@ -54,7 +60,7 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
             <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
           </div>
         ) : (
-          technicians.map((tech) => {
+          safeTechnicians.map((tech) => {
             const checked = selectedIds.includes(tech.id);
             return (
               <button
@@ -74,7 +80,7 @@ export function TechnicianMultiSelect({ selectedIds, onChange }: TechnicianMulti
                 <div className="flex h-6 w-6 items-center justify-center rounded-full bg-primary/10 text-primary">
                   <User className="h-3 w-3" />
                 </div>
-                <span className="text-sm">{tech.name}</span>
+                <span className="text-sm">{tech.name ?? "Ukjent"}</span>
               </button>
             );
           })
