@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -7,6 +7,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -17,9 +18,11 @@ import {
   ALL_CALCULATION_STATUSES,
   type CalculationStatus,
 } from "@/lib/calculation-status";
+import { ConvertToJobDialog } from "@/components/ConvertToJobDialog";
 import {
   ArrowLeft, Loader2, Sparkles, FileDown, ArrowRightLeft, Plus, Trash2, Save,
-  Building2, Mail, FileText, Brain, Package,
+  Building2, Mail, FileText, Brain, Package, Upload, X, Image as ImageIcon,
+  AlertTriangle, Paperclip, Eye, EyeOff,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -62,8 +65,15 @@ export default function CalculationDetail() {
   const [loading, setLoading] = useState(true);
   const [aiLoading, setAiLoading] = useState(false);
   const [pdfLoading, setPdfLoading] = useState(false);
-  const [convertLoading, setConvertLoading] = useState(false);
+  const [convertOpen, setConvertOpen] = useState(false);
   const [settings, setSettings] = useState({ material_multiplier: 2.0, default_hour_rate: 1080 });
+  const [showCost, setShowCost] = useState(false);
+  const [lastSaved, setLastSaved] = useState<Date | null>(null);
+
+  // File upload
+  const [files, setFiles] = useState<File[]>([]);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const fetchCalc = useCallback(async () => {
     if (!id) return;
@@ -87,6 +97,18 @@ export default function CalculationDetail() {
   }, [id]);
 
   useEffect(() => { fetchCalc(); }, [fetchCalc]);
+
+  // Auto-save every 30s
+  const itemsRef = useRef(items);
+  itemsRef.current = items;
+  useEffect(() => {
+    if (!isAdmin || !calc) return;
+    const interval = setInterval(async () => {
+      if (itemsRef.current.length === 0) return;
+      await saveItems(true);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [calc, isAdmin]);
 
   const recalcTotals = (updatedItems: CalcItem[]) => {
     const totalMaterial = updatedItems.filter((i) => i.type === "material").reduce((s, i) => s + i.total_price, 0);
@@ -114,57 +136,42 @@ export default function CalculationDetail() {
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
 
-      // Save AI analysis
       await supabase.from("calculations").update({ ai_analysis: data }).eq("id", calc.id);
 
-      // Delete existing AI-suggested items
-      await supabase.from("calculation_items").delete().eq("calculation_id", calc.id).eq("suggested_by_ai", true);
+      if (data.status === "insufficient_data") {
+        setCalc((prev) => prev ? { ...prev, ai_analysis: data } : null);
+        toast.warning("AI trenger mer informasjon", { description: "Se AI-analyse-fanen for detaljer" });
+        setAiLoading(false);
+        return;
+      }
 
-      // Insert new items from AI
+      await supabase.from("calculation_items").delete().eq("calculation_id", calc.id).eq("suggested_by_ai", true);
       const newItems: any[] = [];
       if (data.materials) {
         for (const m of data.materials) {
           const sellPrice = (m.unit_price || 0) * settings.material_multiplier;
           newItems.push({
-            calculation_id: calc.id,
-            type: "material",
-            title: m.title,
-            description: m.description || null,
-            quantity: m.quantity || 1,
-            unit: m.unit || "stk",
-            unit_price: sellPrice,
-            total_price: sellPrice * (m.quantity || 1),
-            suggested_by_ai: true,
+            calculation_id: calc.id, type: "material", title: m.title, description: m.description || null,
+            quantity: m.quantity || 1, unit: m.unit || "stk", unit_price: sellPrice,
+            total_price: sellPrice * (m.quantity || 1), suggested_by_ai: true,
           });
         }
       }
       if (data.labor) {
         for (const l of data.labor) {
           newItems.push({
-            calculation_id: calc.id,
-            type: "labor",
-            title: l.title,
-            description: l.description || null,
-            quantity: l.hours || 1,
-            unit: "timer",
-            unit_price: settings.default_hour_rate,
-            total_price: (l.hours || 1) * settings.default_hour_rate,
-            suggested_by_ai: true,
+            calculation_id: calc.id, type: "labor", title: l.title, description: l.description || null,
+            quantity: l.hours || 1, unit: "timer", unit_price: settings.default_hour_rate,
+            total_price: (l.hours || 1) * settings.default_hour_rate, suggested_by_ai: true,
           });
         }
       }
-
-      if (newItems.length > 0) {
-        await supabase.from("calculation_items").insert(newItems);
-      }
-
-      // Recalculate totals
+      if (newItems.length > 0) await supabase.from("calculation_items").insert(newItems);
       const { data: allItems } = await supabase.from("calculation_items").select("*").eq("calculation_id", calc.id);
       if (allItems) {
         const totals = recalcTotals(allItems as CalcItem[]);
         await supabase.from("calculations").update(totals).eq("id", calc.id);
       }
-
       toast.success("AI-analyse fullført", { description: `${newItems.length} poster generert` });
       fetchCalc();
     } catch (err: any) {
@@ -173,53 +180,40 @@ export default function CalculationDetail() {
     setAiLoading(false);
   };
 
-  const handleItemChange = async (itemId: string, field: string, value: any) => {
+  const handleItemChange = (itemId: string, field: string, value: any) => {
     const item = items.find((i) => i.id === itemId);
     if (!item) return;
-
     const updated = { ...item, [field]: value };
     if (field === "quantity" || field === "unit_price") {
       updated.total_price = Number(updated.quantity) * Number(updated.unit_price);
     }
-
     setItems((prev) => prev.map((i) => (i.id === itemId ? updated : i)));
   };
 
-  const saveItems = async () => {
+  const saveItems = async (silent = false) => {
     if (!calc) return;
-    for (const item of items) {
+    for (const item of itemsRef.current) {
       await supabase.from("calculation_items").update({
-        title: item.title,
-        description: item.description,
-        quantity: item.quantity,
-        unit: item.unit,
-        unit_price: item.unit_price,
-        total_price: item.total_price,
+        title: item.title, description: item.description, quantity: item.quantity,
+        unit: item.unit, unit_price: item.unit_price, total_price: item.total_price,
       }).eq("id", item.id);
     }
-    const totals = recalcTotals(items);
+    const totals = recalcTotals(itemsRef.current);
     await supabase.from("calculations").update(totals).eq("id", calc.id);
     setCalc((prev) => prev ? { ...prev, ...totals } : null);
-    toast.success("Kalkulasjon lagret");
+    setLastSaved(new Date());
+    if (!silent) toast.success("Kalkulasjon lagret");
   };
 
   const addItem = async (type: "material" | "labor") => {
     if (!calc) return;
-    const { data, error } = await supabase.from("calculation_items").insert({
-      calculation_id: calc.id,
-      type,
-      title: type === "material" ? "Nytt materiale" : "Ny arbeidspost",
-      quantity: 1,
-      unit: type === "material" ? "stk" : "timer",
+    const { data } = await supabase.from("calculation_items").insert({
+      calculation_id: calc.id, type, title: type === "material" ? "Nytt materiale" : "Ny arbeidspost",
+      quantity: 1, unit: type === "material" ? "stk" : "timer",
       unit_price: type === "labor" ? settings.default_hour_rate : 0,
-      total_price: type === "labor" ? settings.default_hour_rate : 0,
-      suggested_by_ai: false,
+      total_price: type === "labor" ? settings.default_hour_rate : 0, suggested_by_ai: false,
     }).select().single();
-
-    if (data) {
-      setItems((prev) => [...prev, data as CalcItem]);
-      toast.success("Post lagt til");
-    }
+    if (data) { setItems((prev) => [...prev, data as CalcItem]); toast.success("Post lagt til"); }
   };
 
   const deleteItem = async (itemId: string) => {
@@ -248,11 +242,8 @@ export default function CalculationDetail() {
       });
       if (error) throw error;
       if (data?.error) throw new Error(data.error);
-
-      // Open HTML in new window for printing/PDF
       const blob = new Blob([data.html], { type: "text/html" });
-      const url = URL.createObjectURL(blob);
-      window.open(url, "_blank");
+      window.open(URL.createObjectURL(blob), "_blank");
       setCalc((prev) => prev ? { ...prev, status: "generated" as CalculationStatus } : null);
       toast.success("Tilbud generert – skriv ut som PDF fra nettleseren");
     } catch (err: any) {
@@ -261,80 +252,82 @@ export default function CalculationDetail() {
     setPdfLoading(false);
   };
 
-  const handleConvertToProject = async () => {
-    if (!calc) return;
-    setConvertLoading(true);
-    try {
-      // Get first available technician
-      const { data: techs } = await supabase.from("technicians").select("id").limit(1);
-      const techId = techs?.[0]?.id;
-      if (!techId) {
-        toast.error("Ingen montører tilgjengelig");
-        setConvertLoading(false);
-        return;
-      }
-
-      const now = new Date();
-      const { data: event, error } = await supabase.from("events").insert({
-        title: calc.project_title,
-        customer: calc.customer_name,
-        description: calc.description || `Konvertert fra kalkulasjon`,
-        start_time: now.toISOString(),
-        end_time: new Date(now.getTime() + 8 * 60 * 60 * 1000).toISOString(),
-        status: "requested",
-        technician_id: techId,
-        created_by: user?.id,
-      }).select("id").single();
-
-      if (error) throw error;
-
-      await supabase.from("event_technicians").insert({
-        event_id: event.id,
-        technician_id: techId,
-      });
-
-      await supabase.from("calculations").update({ status: "converted" }).eq("id", calc.id);
-
-      toast.success("Konvertert til prosjekt");
-      navigate(`/jobs/${event.id}`);
-    } catch (err: any) {
-      toast.error("Kunne ikke konvertere", { description: err.message });
+  // File upload
+  const handleUpload = async () => {
+    if (files.length === 0 || !calc) return;
+    setUploading(true);
+    const existing = Array.isArray(calc.attachments) ? calc.attachments : [];
+    const newAtts: any[] = [];
+    for (const file of files) {
+      const path = `${calc.id}/${Date.now()}-${file.name}`;
+      const { error } = await supabase.storage.from("calculation-attachments").upload(path, file);
+      if (error) { toast.error(`Feil: ${file.name}`); continue; }
+      const { data: urlData } = supabase.storage.from("calculation-attachments").getPublicUrl(path);
+      newAtts.push({ name: file.name, url: urlData.publicUrl, size: file.size });
     }
-    setConvertLoading(false);
+    const all = [...existing, ...newAtts];
+    await supabase.from("calculations").update({ attachments: all }).eq("id", calc.id);
+    setCalc((prev) => prev ? { ...prev, attachments: all } : null);
+    setFiles([]);
+    setUploading(false);
+    if (newAtts.length > 0) toast.success(`${newAtts.length} filer lastet opp`);
   };
 
-  if (loading) {
-    return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
-  }
+  const removeAttachment = async (url: string) => {
+    if (!calc) return;
+    const updated = (calc.attachments || []).filter((a: any) => a.url !== url);
+    await supabase.from("calculations").update({ attachments: updated }).eq("id", calc.id);
+    setCalc((prev) => prev ? { ...prev, attachments: updated } : null);
+    toast.success("Vedlegg fjernet");
+  };
 
-  if (!calc) {
-    return (
-      <div className="flex items-center justify-center p-12">
-        <div className="text-center space-y-2">
-          <p className="text-lg font-medium">Kalkulasjon ikke funnet</p>
-          <Button variant="outline" onClick={() => navigate("/calculations")}>Tilbake</Button>
-        </div>
+  // Margin calculations
+  const getCostPrice = (item: CalcItem) => {
+    if (item.type === "material") return item.unit_price / settings.material_multiplier;
+    return item.unit_price;
+  };
+  const getMargin = (item: CalcItem) => {
+    if (item.type !== "material") return 0;
+    const cost = getCostPrice(item) * item.quantity;
+    return item.total_price - cost;
+  };
+
+  if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (!calc) return (
+    <div className="flex items-center justify-center p-12">
+      <div className="text-center space-y-2">
+        <p className="text-lg font-medium">Kalkulasjon ikke funnet</p>
+        <Button variant="outline" onClick={() => navigate("/calculations")}>Tilbake</Button>
       </div>
-    );
-  }
+    </div>
+  );
 
   const materials = items.filter((i) => i.type === "material");
   const labor = items.filter((i) => i.type === "labor");
   const analysis = calc.ai_analysis;
+  const attachments = Array.isArray(calc.attachments) ? calc.attachments : [];
+
+  const totalCost = materials.reduce((s, i) => s + getCostPrice(i) * i.quantity, 0) + Number(calc.total_labor);
+  const totalMargin = Number(calc.total_price) - totalCost;
+  const marginPercent = Number(calc.total_price) > 0 ? (totalMargin / Number(calc.total_price)) * 100 : 0;
+
+  const confidenceColor = (level: string) => {
+    if (level === "high") return "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200";
+    if (level === "medium") return "bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200";
+    return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
+  };
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
+    <div className="mx-auto max-w-5xl p-4 sm:p-6 pb-24 space-y-6">
       <div className="flex items-center justify-between">
         <Button variant="ghost" size="sm" onClick={() => navigate("/calculations")} className="gap-1.5 -ml-2">
-          <ArrowLeft className="h-4 w-4" />
-          Tilbake
+          <ArrowLeft className="h-4 w-4" /> Tilbake
         </Button>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {lastSaved && <span className="text-xs text-muted-foreground">Sist lagret {format(lastSaved, "HH:mm")}</span>}
           {isAdmin && calc.status !== "converted" && (
             <Select value={calc.status} onValueChange={(v) => handleStatusChange(v as CalculationStatus)}>
-              <SelectTrigger className="w-[160px]">
-                <SelectValue />
-              </SelectTrigger>
+              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {ALL_CALCULATION_STATUSES.map((s) => (
                   <SelectItem key={s} value={s}>{CALCULATION_STATUS_CONFIG[s].label}</SelectItem>
@@ -351,9 +344,7 @@ export default function CalculationDetail() {
             <h1 className="text-xl sm:text-2xl font-bold">{calc.project_title}</h1>
             <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{calc.customer_name}</span>
-              {calc.customer_email && (
-                <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{calc.customer_email}</span>
-              )}
+              {calc.customer_email && <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{calc.customer_email}</span>}
             </div>
           </div>
           <Badge className={CALCULATION_STATUS_CONFIG[calc.status]?.className + " text-sm"}>
@@ -361,31 +352,27 @@ export default function CalculationDetail() {
           </Badge>
         </div>
 
-        {/* Action buttons */}
         {isAdmin && (
           <div className="flex flex-wrap gap-2">
             <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" className="gap-1.5">
               {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
               AI-analyse
             </Button>
-            <Button onClick={saveItems} variant="outline" className="gap-1.5">
-              <Save className="h-4 w-4" />
-              Lagre
+            <Button onClick={() => saveItems()} variant="outline" className="gap-1.5">
+              <Save className="h-4 w-4" /> Lagre
             </Button>
             <Button onClick={handleGenerateOffer} disabled={pdfLoading || items.length === 0} variant="outline" className="gap-1.5">
               {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
               Generer tilbud
             </Button>
             {calc.status === "accepted" && (
-              <Button onClick={handleConvertToProject} disabled={convertLoading} className="gap-1.5">
-                {convertLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArrowRightLeft className="h-4 w-4" />}
-                Konverter til prosjekt
+              <Button onClick={() => setConvertOpen(true)} className="gap-1.5">
+                <ArrowRightLeft className="h-4 w-4" /> Konverter til prosjekt
               </Button>
             )}
           </div>
         )}
 
-        {/* Summary cards */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-lg border bg-card p-3 text-center">
             <p className="text-xs text-muted-foreground">Materialer</p>
@@ -404,22 +391,32 @@ export default function CalculationDetail() {
             <p className="text-lg font-bold">kr {(Number(calc.total_price) * 1.25).toLocaleString("nb-NO")}</p>
           </div>
         </div>
+
+        {/* Margin section - admin only */}
+        {isAdmin && showCost && items.length > 0 && (
+          <div className="grid grid-cols-3 gap-3">
+            <div className="rounded-lg border border-dashed bg-card p-3 text-center">
+              <p className="text-xs text-muted-foreground">Totalkost</p>
+              <p className="text-lg font-bold">kr {totalCost.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
+            </div>
+            <div className="rounded-lg border border-dashed bg-card p-3 text-center">
+              <p className="text-xs text-muted-foreground">Dekningsbidrag</p>
+              <p className="text-lg font-bold text-primary">kr {totalMargin.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
+            </div>
+            <div className="rounded-lg border border-dashed bg-card p-3 text-center">
+              <p className="text-xs text-muted-foreground">Dekningsgrad</p>
+              <p className="text-lg font-bold">{marginPercent.toFixed(1)}%</p>
+            </div>
+          </div>
+        )}
       </header>
 
       <Tabs defaultValue="overview">
         <TabsList className="w-full sm:w-auto flex overflow-x-auto">
-          <TabsTrigger value="overview" className="gap-1.5">
-            <FileText className="h-3.5 w-3.5" />
-            Oversikt
-          </TabsTrigger>
-          <TabsTrigger value="ai" className="gap-1.5">
-            <Brain className="h-3.5 w-3.5" />
-            AI Analyse
-          </TabsTrigger>
-          <TabsTrigger value="items" className="gap-1.5">
-            <Package className="h-3.5 w-3.5" />
-            Kalkylelinjer ({items.length})
-          </TabsTrigger>
+          <TabsTrigger value="overview" className="gap-1.5"><FileText className="h-3.5 w-3.5" />Oversikt</TabsTrigger>
+          <TabsTrigger value="attachments" className="gap-1.5"><Paperclip className="h-3.5 w-3.5" />Vedlegg {attachments.length > 0 && `(${attachments.length})`}</TabsTrigger>
+          <TabsTrigger value="ai" className="gap-1.5"><Brain className="h-3.5 w-3.5" />AI Analyse</TabsTrigger>
+          <TabsTrigger value="items" className="gap-1.5"><Package className="h-3.5 w-3.5" />Kalkylelinjer ({items.length})</TabsTrigger>
         </TabsList>
 
         <TabsContent value="overview" className="space-y-4 pt-4">
@@ -440,6 +437,66 @@ export default function CalculationDetail() {
           </div>
         </TabsContent>
 
+        <TabsContent value="attachments" className="space-y-4 pt-4">
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="gap-1.5">
+                <Upload className="h-3.5 w-3.5" /> Velg filer
+              </Button>
+              {files.length > 0 && (
+                <Button size="sm" onClick={handleUpload} disabled={uploading} className="gap-1.5">
+                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  Last opp ({files.length})
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">Bilder, PDF, tegninger, Excel, Word</span>
+              <input ref={fileInputRef} type="file" multiple className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf"
+                onChange={(e) => {
+                  const valid = Array.from(e.target.files || []).filter((f) => {
+                    if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name} for stor`); return false; }
+                    return true;
+                  });
+                  setFiles((prev) => [...prev, ...valid]);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+            </div>
+          )}
+
+          {files.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Klare for opplasting</p>
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-md bg-accent px-2.5 py-1.5 text-sm">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="truncate flex-1">{f.name}</span>
+                  <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                  <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {attachments.length > 0 ? (
+            <div className="space-y-1.5">
+              {attachments.map((att: any, i: number) => (
+                <div key={i} className="flex items-center gap-2 rounded-md bg-secondary px-2.5 py-1.5 text-sm">
+                  {/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.name) ? <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="truncate flex-1 hover:underline">{att.name}</a>
+                  {isAdmin && (
+                    <button onClick={() => removeAttachment(att.url)} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : files.length === 0 && (
+            <div className="border border-dashed rounded-lg p-8 text-center text-muted-foreground">
+              <Paperclip className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">Ingen vedlegg</p>
+            </div>
+          )}
+        </TabsContent>
+
         <TabsContent value="ai" className="space-y-4 pt-4">
           {!analysis ? (
             <div className="rounded-lg border border-dashed bg-card p-8 text-center space-y-3">
@@ -455,22 +512,69 @@ export default function CalculationDetail() {
                 </Button>
               )}
             </div>
+          ) : analysis.status === "insufficient_data" ? (
+            <div className="space-y-4">
+              <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-4 space-y-3">
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                  <div>
+                    <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">Mer informasjon kreves før AI kan generere realistisk kalkyle</h3>
+                    <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">Beskrivelsen mangler kritisk informasjon.</p>
+                  </div>
+                </div>
+                {analysis.missing_information?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">Manglende informasjon:</p>
+                    <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
+                      {analysis.missing_information.map((info: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{info}</span></li>)}
+                    </ul>
+                  </div>
+                )}
+                {analysis.clarifying_questions?.length > 0 && (
+                  <div>
+                    <p className="text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">Oppfølgingsspørsmål:</p>
+                    <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
+                      {analysis.clarifying_questions.map((q: string, i: number) => <li key={i} className="flex gap-2"><span>❓</span><span>{q}</span></li>)}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              {isAdmin && (
+                <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" className="gap-1.5">
+                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Kjør AI-analyse på nytt
+                </Button>
+              )}
+            </div>
           ) : (
             <div className="space-y-4">
+              {analysis.confidence_level && (
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="text-xs text-muted-foreground">Konfidens:</span>
+                  <Badge className={confidenceColor(analysis.confidence_level)}>
+                    {analysis.confidence_level === "high" ? "Høy" : analysis.confidence_level === "medium" ? "Middels" : "Lav"}
+                  </Badge>
+                  {analysis.requires_manual_review && <Badge variant="outline" className="text-xs">Krever manuell gjennomgang</Badge>}
+                </div>
+              )}
               <div className="rounded-lg border bg-card p-4 space-y-2">
                 <h3 className="text-sm font-medium">Oppsummering</h3>
                 <p className="text-sm text-muted-foreground">{analysis.job_summary}</p>
-                {analysis.job_type && (
-                  <Badge variant="outline">{analysis.job_type}</Badge>
-                )}
+                {analysis.job_type && <Badge variant="outline">{analysis.job_type}</Badge>}
               </div>
+              {analysis.assumptions?.length > 0 && (
+                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 p-4 space-y-2">
+                  <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">📋 Forutsetninger</h3>
+                  <ul className="text-sm space-y-0.5 text-blue-700 dark:text-blue-300">
+                    {analysis.assumptions.map((a: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{a}</span></li>)}
+                  </ul>
+                </div>
+              )}
               {analysis.risk_notes?.length > 0 && (
                 <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-4 space-y-2">
                   <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">⚠ Risikovurdering</h3>
-                  <ul className="text-sm space-y-1 text-orange-700 dark:text-orange-300">
-                    {analysis.risk_notes.map((note: string, i: number) => (
-                      <li key={i} className="flex gap-2"><span>•</span><span>{note}</span></li>
-                    ))}
+                  <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
+                    {analysis.risk_notes.map((note: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{note}</span></li>)}
                   </ul>
                 </div>
               )}
@@ -488,20 +592,34 @@ export default function CalculationDetail() {
                   </div>
                 )}
               </div>
+              {isAdmin && (
+                <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" size="sm" className="gap-1.5">
+                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  Kjør på nytt
+                </Button>
+              )}
             </div>
           )}
         </TabsContent>
 
         <TabsContent value="items" className="space-y-6 pt-4">
+          {isAdmin && items.length > 0 && (
+            <div className="flex items-center gap-3">
+              <div className="flex items-center gap-1.5">
+                <Switch checked={showCost} onCheckedChange={setShowCost} id="cost-toggle" />
+                <label htmlFor="cost-toggle" className="text-xs text-muted-foreground flex items-center gap-1 cursor-pointer">
+                  {showCost ? <Eye className="h-3 w-3" /> : <EyeOff className="h-3 w-3" />}
+                  {showCost ? "Vis kost & margin" : "Skjul kost & margin"}
+                </label>
+              </div>
+            </div>
+          )}
+
           {/* Materials */}
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Materialer</h3>
-              {isAdmin && (
-                <Button variant="outline" size="sm" onClick={() => addItem("material")} className="gap-1">
-                  <Plus className="h-3 w-3" /> Legg til
-                </Button>
-              )}
+              {isAdmin && <Button variant="outline" size="sm" onClick={() => addItem("material")} className="gap-1"><Plus className="h-3 w-3" /> Legg til</Button>}
             </div>
             <div className="rounded-lg border overflow-x-auto">
               <Table>
@@ -510,43 +628,33 @@ export default function CalculationDetail() {
                     <TableHead>Beskrivelse</TableHead>
                     <TableHead className="w-[80px]">Antall</TableHead>
                     <TableHead className="w-[70px]">Enhet</TableHead>
-                    <TableHead className="w-[100px]">Pris</TableHead>
+                    {showCost && <TableHead className="w-[90px]">Kost</TableHead>}
+                    <TableHead className="w-[100px]">Salgspris</TableHead>
                     <TableHead className="w-[100px] text-right">Sum</TableHead>
+                    {showCost && <TableHead className="w-[90px] text-right">Margin</TableHead>}
                     {isAdmin && <TableHead className="w-[50px]" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {materials.length === 0 ? (
-                    <TableRow><TableCell colSpan={6} className="text-center text-muted-foreground py-4">Ingen materialer</TableCell></TableRow>
+                    <TableRow><TableCell colSpan={showCost ? 8 : 6} className="text-center text-muted-foreground py-4">Ingen materialer</TableCell></TableRow>
                   ) : materials.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        {isAdmin ? (
-                          <Input value={item.title} onChange={(e) => handleItemChange(item.id, "title", e.target.value)} className="h-8 text-sm" />
-                        ) : (
-                          <span className="text-sm">{item.title}</span>
-                        )}
+                        {isAdmin ? <Input value={item.title} onChange={(e) => handleItemChange(item.id, "title", e.target.value)} className="h-8 text-sm" /> : <span className="text-sm">{item.title}</span>}
                         {item.suggested_by_ai && <Badge variant="outline" className="ml-1.5 text-[10px]">AI</Badge>}
                       </TableCell>
                       <TableCell>
-                        {isAdmin ? (
-                          <Input type="number" value={item.quantity} onChange={(e) => handleItemChange(item.id, "quantity", Number(e.target.value))} className="h-8 text-sm w-20" />
-                        ) : item.quantity}
+                        {isAdmin ? <Input type="number" value={item.quantity} onChange={(e) => handleItemChange(item.id, "quantity", Number(e.target.value))} className="h-8 text-sm w-20" /> : item.quantity}
                       </TableCell>
                       <TableCell className="text-sm">{item.unit}</TableCell>
+                      {showCost && <TableCell className="text-sm font-mono text-muted-foreground">kr {getCostPrice(item).toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</TableCell>}
                       <TableCell>
-                        {isAdmin ? (
-                          <Input type="number" value={item.unit_price} onChange={(e) => handleItemChange(item.id, "unit_price", Number(e.target.value))} className="h-8 text-sm w-24" />
-                        ) : `kr ${item.unit_price}`}
+                        {isAdmin ? <Input type="number" value={item.unit_price} onChange={(e) => handleItemChange(item.id, "unit_price", Number(e.target.value))} className="h-8 text-sm w-24" /> : `kr ${item.unit_price}`}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm font-medium">kr {item.total_price.toLocaleString("nb-NO")}</TableCell>
-                      {isAdmin && (
-                        <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteItem(item.id)}>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      )}
+                      {showCost && <TableCell className="text-right font-mono text-sm text-primary">kr {getMargin(item).toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</TableCell>}
+                      {isAdmin && <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteItem(item.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button></TableCell>}
                     </TableRow>
                   ))}
                 </TableBody>
@@ -558,11 +666,7 @@ export default function CalculationDetail() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Arbeid</h3>
-              {isAdmin && (
-                <Button variant="outline" size="sm" onClick={() => addItem("labor")} className="gap-1">
-                  <Plus className="h-3 w-3" /> Legg til
-                </Button>
-              )}
+              {isAdmin && <Button variant="outline" size="sm" onClick={() => addItem("labor")} className="gap-1"><Plus className="h-3 w-3" /> Legg til</Button>}
             </div>
             <div className="rounded-lg border overflow-x-auto">
               <Table>
@@ -581,48 +685,47 @@ export default function CalculationDetail() {
                   ) : labor.map((item) => (
                     <TableRow key={item.id}>
                       <TableCell>
-                        {isAdmin ? (
-                          <Input value={item.title} onChange={(e) => handleItemChange(item.id, "title", e.target.value)} className="h-8 text-sm" />
-                        ) : (
-                          <span className="text-sm">{item.title}</span>
-                        )}
+                        {isAdmin ? <Input value={item.title} onChange={(e) => handleItemChange(item.id, "title", e.target.value)} className="h-8 text-sm" /> : <span className="text-sm">{item.title}</span>}
                         {item.suggested_by_ai && <Badge variant="outline" className="ml-1.5 text-[10px]">AI</Badge>}
                       </TableCell>
                       <TableCell>
-                        {isAdmin ? (
-                          <Input type="number" value={item.quantity} onChange={(e) => handleItemChange(item.id, "quantity", Number(e.target.value))} className="h-8 text-sm w-20" />
-                        ) : item.quantity}
+                        {isAdmin ? <Input type="number" value={item.quantity} onChange={(e) => handleItemChange(item.id, "quantity", Number(e.target.value))} className="h-8 text-sm w-20" /> : item.quantity}
                       </TableCell>
                       <TableCell>
-                        {isAdmin ? (
-                          <Input type="number" value={item.unit_price} onChange={(e) => handleItemChange(item.id, "unit_price", Number(e.target.value))} className="h-8 text-sm w-24" />
-                        ) : `kr ${item.unit_price}`}
+                        {isAdmin ? <Input type="number" value={item.unit_price} onChange={(e) => handleItemChange(item.id, "unit_price", Number(e.target.value))} className="h-8 text-sm w-24" /> : `kr ${item.unit_price}`}
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm font-medium">kr {item.total_price.toLocaleString("nb-NO")}</TableCell>
-                      {isAdmin && (
-                        <TableCell>
-                          <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteItem(item.id)}>
-                            <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                          </Button>
-                        </TableCell>
-                      )}
+                      {isAdmin && <TableCell><Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => deleteItem(item.id)}><Trash2 className="h-3.5 w-3.5 text-destructive" /></Button></TableCell>}
                     </TableRow>
                   ))}
                 </TableBody>
               </Table>
             </div>
           </div>
-
-          {isAdmin && items.length > 0 && (
-            <div className="flex justify-end">
-              <Button onClick={saveItems} className="gap-1.5">
-                <Save className="h-4 w-4" />
-                Lagre endringer
-              </Button>
-            </div>
-          )}
         </TabsContent>
       </Tabs>
+
+      {/* Sticky save bar */}
+      {isAdmin && items.length > 0 && (
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-background/95 backdrop-blur-sm border-t p-3 flex items-center justify-between">
+          <div className="text-xs text-muted-foreground">
+            {lastSaved ? `Sist lagret kl ${format(lastSaved, "HH:mm:ss")}` : "Ikke lagret ennå"} • Auto-lagring aktiv
+          </div>
+          <Button onClick={() => saveItems()} className="gap-1.5">
+            <Save className="h-4 w-4" /> Lagre endringer
+          </Button>
+        </div>
+      )}
+
+      {/* Convert dialog */}
+      <ConvertToJobDialog
+        open={convertOpen}
+        onOpenChange={setConvertOpen}
+        calculationId={calc.id}
+        defaultTitle={calc.project_title}
+        defaultCustomer={calc.customer_name}
+        defaultDescription={calc.description || undefined}
+      />
     </div>
   );
 }
