@@ -25,7 +25,7 @@ export function AppLayout() {
 
         <div className="flex flex-1 flex-col min-w-0">
           {/* Top header bar */}
-          <header className="flex items-center justify-between border-b bg-card px-4 py-2.5 sticky top-0 z-30">
+          <header className="flex items-center justify-between border-b border-border/50 bg-card px-4 py-3 sticky top-0 z-30">
             <div className="flex items-center gap-2">
               {!isMobile && <SidebarTrigger />}
             </div>
