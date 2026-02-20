@@ -480,6 +480,143 @@ Deno.serve(async (req) => {
       });
     }
 
+    // ─── FETCH THREAD ───
+    if (action === "fetch_thread") {
+      const { entity_type, entity_id } = body;
+      if (!entity_type || !entity_id) {
+        return respond({ error: "Missing entity_type/entity_id", logs }, 400);
+      }
+
+      log(`Fetch thread for ${entity_type}/${entity_id}`);
+
+      // Find existing outbound logs for this entity to get conversation_id / ref_code
+      const { data: existingLogs } = await supabaseAdmin
+        .from("communication_logs")
+        .select("conversation_id, ref_code, graph_message_id")
+        .eq("entity_type", entity_type)
+        .eq("entity_id", entity_id)
+        .eq("direction", "outbound")
+        .not("conversation_id", "is", null)
+        .order("created_at", { ascending: false })
+        .limit(5);
+
+      const conversationIds = [...new Set((existingLogs || []).map(l => l.conversation_id).filter(Boolean))];
+      const refCode = (existingLogs || [])[0]?.ref_code || await resolveRefCode(entity_type, entity_id);
+
+      log(`Found ${conversationIds.length} conversation IDs, ref: ${refCode}`);
+
+      let graphMessages: any[] = [];
+
+      if (conversationIds.length > 0) {
+        // Primary: fetch by conversation_id(s)
+        for (const convId of conversationIds.slice(0, 3)) {
+          const filterStr = `conversationId eq '${convId}'`;
+          const url = `${GRAPH_BASE}/me/messages?$filter=${encodeURIComponent(filterStr)}&$top=25&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,from,toRecipients,receivedDateTime,webLink,internetMessageId,conversationId,isDraft`;
+          const res = await fetch(url, {
+            headers: { Authorization: `Bearer ${msToken}` },
+          });
+          if (res.ok) {
+            const data = await res.json();
+            graphMessages.push(...(data.value || []));
+          } else {
+            const errText = await res.text();
+            log(`Graph fetch by convId failed: ${res.status} ${errText.substring(0, 100)}`);
+          }
+        }
+      }
+
+      // Fallback: search by ref_code if no results
+      if (graphMessages.length === 0 && refCode) {
+        log("Falling back to ref_code search");
+        const searchUrl = `${GRAPH_BASE}/me/messages?$search="${encodeURIComponent(`"${refCode}"`)}"&$top=25&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,from,toRecipients,receivedDateTime,webLink,internetMessageId,conversationId,isDraft`;
+        const res = await fetch(searchUrl, {
+          headers: { Authorization: `Bearer ${msToken}` },
+        });
+        if (res.ok) {
+          const data = await res.json();
+          graphMessages = data.value || [];
+        } else {
+          const errText = await res.text();
+          log(`Graph search failed: ${res.status} ${errText.substring(0, 100)}`);
+        }
+      }
+
+      log(`Found ${graphMessages.length} messages from Graph`);
+
+      // Deduplicate by message id
+      const seenIds = new Set<string>();
+      const uniqueMessages = graphMessages.filter(m => {
+        if (seenIds.has(m.id)) return false;
+        seenIds.add(m.id);
+        return true;
+      });
+
+      // Store inbound messages idempotently
+      let storedCount = 0;
+      for (const msg of uniqueMessages) {
+        const fromAddr = msg.from?.emailAddress?.address || "";
+        // Skip messages sent by the current user (outbound)
+        const userEmail = authUser.email?.toLowerCase() || "";
+        const isFromSelf = fromAddr.toLowerCase() === userEmail;
+        if (isFromSelf || msg.isDraft) continue;
+
+        // Check if already stored
+        const { data: existing } = await supabaseAdmin
+          .from("communication_logs")
+          .select("id")
+          .eq("graph_message_id", msg.id)
+          .limit(1);
+
+        if (existing && existing.length > 0) continue;
+
+        const inboundRow = {
+          entity_type,
+          entity_id,
+          direction: "inbound",
+          mode: "received",
+          to_recipients: (msg.toRecipients || []).map((r: any) => ({ address: r.emailAddress?.address })),
+          subject: msg.subject || "",
+          body_preview: (msg.bodyPreview || "").substring(0, 500),
+          graph_message_id: msg.id,
+          internet_message_id: msg.internetMessageId || null,
+          conversation_id: msg.conversationId || null,
+          outlook_weblink: msg.webLink || null,
+          created_by: authUser.id,
+          ref_code: refCode,
+          created_at: msg.receivedDateTime || new Date().toISOString(),
+        };
+
+        const { error: insertErr } = await supabaseAdmin.from("communication_logs").insert(inboundRow);
+        if (!insertErr) storedCount++;
+        else log(`Inbound insert warning: ${insertErr.message}`);
+      }
+
+      log(`Stored ${storedCount} new inbound messages`);
+
+      // Return formatted messages
+      const formatted = uniqueMessages.map(msg => ({
+        message_id: msg.id,
+        internet_message_id: msg.internetMessageId || null,
+        conversation_id: msg.conversationId || null,
+        from: msg.from?.emailAddress?.address || null,
+        from_name: msg.from?.emailAddress?.name || null,
+        to: (msg.toRecipients || []).map((r: any) => r.emailAddress?.address),
+        subject: msg.subject || "",
+        body_preview: msg.bodyPreview || "",
+        received_at: msg.receivedDateTime || null,
+        web_link: msg.webLink || null,
+        is_draft: msg.isDraft || false,
+      }));
+
+      return respond({
+        success: true,
+        messages: formatted,
+        stored_count: storedCount,
+        ref_code: refCode,
+        logs,
+      });
+    }
+
     return respond({ error: `Unknown action: ${action}`, logs }, 400);
   } catch (err) {
     console.error("[ms-mail] Error:", err);
