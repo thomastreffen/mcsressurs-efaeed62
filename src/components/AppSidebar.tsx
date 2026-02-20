@@ -72,13 +72,13 @@ export function AppSidebar() {
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-primary text-primary-foreground">
-            <Wrench className="h-4 w-4" />
+          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15">
+            <Wrench className="h-4 w-4 text-white" />
           </div>
           {!collapsed && (
             <div>
-              <h1 className="text-sm font-semibold leading-tight">MCS Service</h1>
-              <p className="text-[11px] text-muted-foreground">Salg & Prosjekt</p>
+              <h1 className="text-sm font-semibold leading-tight text-white">MCS Service</h1>
+              <p className="text-[11px] text-white/60">Salg & Prosjekt</p>
             </div>
           )}
         </div>
@@ -91,7 +91,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {mainNav.map((item) => (
                 <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
                     <NavLink to={item.url} end={item.url === "/"}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
@@ -111,7 +111,7 @@ export function AppSidebar() {
               <SidebarMenu>
                 {salesNav.map((item) => (
                   <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
                       <NavLink to={item.url} end={item.url === "/sales"}>
                         <item.icon className="h-4 w-4" />
                         <span>{item.title}</span>
@@ -131,7 +131,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {projectNav.map((item) => (
                 <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
                     <NavLink to={item.url}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
@@ -157,7 +157,7 @@ export function AppSidebar() {
                   })
                   .map((item) => (
                     <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title}>
+                      <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
                         <NavLink to={item.url}>
                           <item.icon className="h-4 w-4" />
                           <span>{item.title}</span>
