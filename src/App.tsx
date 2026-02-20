@@ -31,6 +31,7 @@ import CompanySettings from "./pages/CompanySettings";
 import TrashPage from "./pages/TrashPage";
 import AccessControlPage from "./pages/AccessControlPage";
 import IntegrationsDebug from "./pages/IntegrationsDebug";
+import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -176,6 +177,14 @@ const App = () => (
                 }
               />
               <Route path="/settings/integrations" element={<IntegrationsDebug />} />
+              <Route
+                path="/admin/integration-health"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <IntegrationHealthPage />
+                  </ProtectedRoute>
+                }
+              />
             </Route>
 
             <Route path="*" element={<NotFound />} />
