@@ -54,15 +54,14 @@ interface SalesData {
   recentOffers: { id: string; offer_number: string; status: OfferStatus; total_inc_vat: number; customer: string }[];
 }
 
-// ── Chart colors ──
+// ── Chart colors – MCS palette: blue primary, orange highlight only ──
 const BLUE = "hsl(213, 60%, 42%)";
+const BLUE_LIGHT = "hsl(213, 55%, 55%)";
+const BLUE_PALE = "hsl(213, 50%, 68%)";
 const ORANGE = "hsl(28, 80%, 52%)";
 const GREEN = "hsl(152, 60%, 42%)";
 const RED = "hsl(0, 72%, 51%)";
-const PURPLE = "hsl(262, 55%, 55%)";
-const TEAL = "hsl(185, 60%, 40%)";
-const GRAY = "hsl(215, 15%, 55%)";
-const LIGHT_BLUE = "hsl(213, 60%, 55%)";
+const GRAY = "hsl(215, 15%, 70%)";
 
 export default function KpiDashboard() {
   const navigate = useNavigate();
@@ -133,8 +132,8 @@ export default function KpiDashboard() {
       statusCounts[ev.status] = (statusCounts[ev.status] || 0) + 1;
     }
     const statusColors: Record<string, string> = {
-      requested: "hsl(40, 85%, 50%)", approved: GREEN, scheduled: PURPLE,
-      in_progress: TEAL, completed: "hsl(152, 65%, 32%)", time_change_proposed: BLUE,
+      requested: ORANGE, approved: GREEN, scheduled: BLUE_LIGHT,
+      in_progress: BLUE, completed: GREEN, time_change_proposed: BLUE_PALE,
       rejected: RED, ready_for_invoicing: ORANGE, invoiced: GRAY,
     };
     const statusBreakdown = Object.entries(statusCounts)
@@ -191,7 +190,7 @@ export default function KpiDashboard() {
       const src = l.source || "Ukjent";
       sourceCounts[src] = (sourceCounts[src] || 0) + 1;
     }
-    const sourceColors = [BLUE, ORANGE, GREEN, PURPLE, TEAL, RED, GRAY, LIGHT_BLUE];
+    const sourceColors = [BLUE, ORANGE, BLUE_LIGHT, GREEN, BLUE_PALE, GRAY];
     const leadsPerSource = Object.entries(sourceCounts).map(([k, v], i) => ({ name: k, value: v, color: sourceColors[i % sourceColors.length] }));
 
     // Lead conversion funnel
@@ -235,7 +234,7 @@ export default function KpiDashboard() {
   if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
-    <div className="p-4 sm:p-6 space-y-6 max-w-7xl mx-auto">
+    <div className="p-5 sm:p-8 space-y-8 max-w-7xl mx-auto">
       {/* Header with toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
@@ -284,9 +283,9 @@ export default function KpiDashboard() {
 
 function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: string) => void }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-4 w-4" />} />
         <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-4 w-4" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} />
         <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-4 w-4" />} variant={data.failedLinks > 0 ? "error" : "default"} />
@@ -294,7 +293,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Resource load */}
         <SectionCard title="Ressursbelastning" subtitle="Timer denne uke" icon={<BarChart3 className="h-4 w-4" />}>
           {data.techLoad.length > 0 ? (
@@ -333,7 +332,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       </div>
 
       {/* Action items + recent */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <SectionCard title="Krever handling" subtitle="Oppgaver som venter" icon={<AlertTriangle className="h-4 w-4" />}>
           <div className="space-y-2">
             <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
@@ -349,7 +348,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
               <button
                 key={job.id}
                 onClick={() => navigate(`/jobs/${job.id}`)}
-                className="flex items-center gap-3 w-full rounded-xl border p-2.5 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{job.title}</p>
@@ -377,9 +376,9 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
 
 function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (path: string) => void }) {
   return (
-    <div className="space-y-6">
+    <div className="space-y-8">
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <KpiCard title="Leads denne mnd" value={data.leadsThisMonth} icon={<UserPlus className="h-4 w-4" />} />
         <KpiCard title="Konverteringsrate" value={`${data.conversionRate.toFixed(0)}%`} icon={<Target className="h-4 w-4" />} />
         <KpiCard title="Pipeline-verdi" value={`kr ${(data.pipelineValue / 1000).toFixed(0)}k`} icon={<TrendingUp className="h-4 w-4" />} accent />
@@ -387,7 +386,7 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
         {/* Lead funnel */}
         <SectionCard title="Lead → Jobb" subtitle="Konverteringstrakt" icon={<TrendingUp className="h-4 w-4" />}>
           <div className="h-48">
@@ -411,7 +410,7 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} />
                   <Tooltip formatter={(v: number) => [`kr ${(v / 1000).toFixed(0)}k`, "Verdi"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                  <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={GREEN} />
+                  <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={BLUE_LIGHT} />
                 </BarChart>
               </ResponsiveContainer>
             </div>
@@ -431,7 +430,7 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
       </div>
 
       {/* Action items + recent offers */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
         <SectionCard title="Krever oppfølging" subtitle="Salgsoppgaver" icon={<AlertTriangle className="h-4 w-4" />}>
           <div className="space-y-2">
             <ActionItem label="Leads uten oppfølging" count={data.actionItems.leadsNoFollowup} variant="warning" onClick={() => navigate("/sales/leads")} />
@@ -446,7 +445,7 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
               <button
                 key={offer.id}
                 onClick={() => navigate("/sales/offers")}
-                className="flex items-center gap-3 w-full rounded-xl border p-2.5 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{offer.offer_number}</p>
@@ -476,19 +475,17 @@ function KpiCard({ title, value, icon, variant, accent }: {
   title: string; value: number | string; icon: React.ReactNode;
   variant?: "default" | "warning" | "error"; accent?: boolean;
 }) {
-  const borderClass = variant === "error" ? "border-destructive/30" : variant === "warning" ? "border-status-ready-for-invoicing/30" : "";
+  const bgClass = variant === "error" ? "bg-destructive/[0.03]" : variant === "warning" ? "bg-status-ready-for-invoicing/[0.03]" : "bg-card";
   const iconClass = accent ? "text-primary" : variant === "error" ? "text-destructive" : variant === "warning" ? "text-status-ready-for-invoicing" : "text-muted-foreground";
 
   return (
-    <Card className={`rounded-2xl shadow-sm hover:shadow-md transition-shadow ${borderClass}`}>
-      <CardContent className="p-4">
-        <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-2`}>
-          {icon}
-          {title}
-        </div>
-        <p className="text-2xl font-bold text-foreground">{value}</p>
-      </CardContent>
-    </Card>
+    <div className={`rounded-2xl shadow-sm hover:shadow-md transition-shadow p-5 ${bgClass}`}>
+      <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-3`}>
+        {icon}
+        {title}
+      </div>
+      <p className="text-3xl font-bold text-foreground tracking-tight">{value}</p>
+    </div>
   );
 }
 
@@ -496,22 +493,18 @@ function SectionCard({ title, subtitle, icon, children, action }: {
   title: string; subtitle?: string; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <Card className="rounded-2xl shadow-sm">
-      <CardHeader className="pb-2 px-5 pt-5">
-        <div className="flex items-center justify-between">
-          <div>
-            <CardTitle className="text-sm font-semibold flex items-center gap-1.5">
-              {icon} {title}
-            </CardTitle>
-            {subtitle && <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>}
-          </div>
-          {action}
+    <div className="rounded-2xl shadow-sm bg-card p-5">
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+            {icon} {title}
+          </h3>
+          {subtitle && <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>}
         </div>
-      </CardHeader>
-      <CardContent className="px-5 pb-5">
-        {children}
-      </CardContent>
-    </Card>
+        {action}
+      </div>
+      {children}
+    </div>
   );
 }
 
