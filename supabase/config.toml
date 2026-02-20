@@ -35,3 +35,6 @@ verify_jwt = false
 
 [functions.lead-calendar-event]
 verify_jwt = false
+
+[functions.ms-debug]
+verify_jwt = false

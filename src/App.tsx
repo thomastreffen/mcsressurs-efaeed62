@@ -30,6 +30,7 @@ import OfferAcceptPage from "./pages/OfferAcceptPage";
 import CompanySettings from "./pages/CompanySettings";
 import TrashPage from "./pages/TrashPage";
 import AccessControlPage from "./pages/AccessControlPage";
+import IntegrationsDebug from "./pages/IntegrationsDebug";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -171,6 +172,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["super_admin"]}>
                     <AccessControlPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/settings/integrations"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <IntegrationsDebug />
                   </ProtectedRoute>
                 }
               />
