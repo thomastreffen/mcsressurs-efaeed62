@@ -242,10 +242,12 @@ export function JobCalendarSync({
       });
       if (error) throw error;
       const successCount = (data.results || []).filter((r: any) => r.status !== "failed" && r.status !== "in_progress").length;
-      const inProgress = (data.results || []).filter((r: any) => r.status === "in_progress").length;
+      const inProgressCount = (data.results || []).filter((r: any) => r.status === "in_progress").length;
 
-      if (inProgress > 0) {
-        toast.info("Synk pågår allerede for noen teknikere");
+      if (inProgressCount > 0 && inProgressCount === (data.results?.length || 0)) {
+        toast.info("Synk pågår allerede", { description: "Prøv igjen om noen sekunder." });
+      } else if (inProgressCount > 0) {
+        toast.warning(`Delvis synk: ${successCount} synket, ${inProgressCount} pågår allerede`);
       } else {
         toast.success(`Outlook synkronisert`, { description: `${successCount}/${data.results?.length || 0} teknikere` });
       }
@@ -335,16 +337,16 @@ export function JobCalendarSync({
             Outlook-kalender
           </h3>
           <div className="flex gap-2 flex-wrap">
-            <Button size="sm" variant="outline" onClick={checkAvailability} disabled={loadingAvail || !technicianIds.length} className="gap-1.5">
+            <Button size="sm" variant="outline" onClick={checkAvailability} disabled={loadingAvail || syncing || !technicianIds.length} className="gap-1.5">
               {loadingAvail ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
               Sjekk tilgjengelighet
             </Button>
-            <Button size="sm" onClick={initiateSync} disabled={syncing || !technicianIds.length} className="gap-1.5">
+            <Button size="sm" onClick={initiateSync} disabled={syncing || loadingAvail || !technicianIds.length} className="gap-1.5">
               {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarCheck className="h-3.5 w-3.5" />}
-              Synk til Outlook
+              {syncing ? "Synker..." : "Synk til Outlook"}
             </Button>
             {hasFailedLinks && (
-              <Button size="sm" variant="outline" onClick={repairSync} disabled={repairing} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={repairSync} disabled={repairing || syncing} className="gap-1.5">
                 {repairing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
                 Reparer synk
               </Button>
