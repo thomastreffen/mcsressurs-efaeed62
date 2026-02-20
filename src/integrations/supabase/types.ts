@@ -200,6 +200,66 @@ export type Database = {
           },
         ]
       }
+      communication_logs: {
+        Row: {
+          bcc_recipients: Json | null
+          body_preview: string | null
+          cc_recipients: Json | null
+          conversation_id: string | null
+          created_at: string
+          created_by: string
+          direction: string
+          entity_id: string
+          entity_type: string
+          graph_message_id: string | null
+          id: string
+          internet_message_id: string | null
+          mode: string
+          outlook_weblink: string | null
+          subject: string
+          to_recipients: Json
+          updated_at: string
+        }
+        Insert: {
+          bcc_recipients?: Json | null
+          body_preview?: string | null
+          cc_recipients?: Json | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by: string
+          direction?: string
+          entity_id: string
+          entity_type: string
+          graph_message_id?: string | null
+          id?: string
+          internet_message_id?: string | null
+          mode?: string
+          outlook_weblink?: string | null
+          subject?: string
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Update: {
+          bcc_recipients?: Json | null
+          body_preview?: string | null
+          cc_recipients?: Json | null
+          conversation_id?: string | null
+          created_at?: string
+          created_by?: string
+          direction?: string
+          entity_id?: string
+          entity_type?: string
+          graph_message_id?: string | null
+          id?: string
+          internet_message_id?: string | null
+          mode?: string
+          outlook_weblink?: string | null
+          subject?: string
+          to_recipients?: Json
+          updated_at?: string
+        }
+        Relationships: []
+      }
       company_settings: {
         Row: {
           address: string | null

@@ -23,6 +23,7 @@ import {
 } from "@/lib/job-status";
 import { useAuth } from "@/hooks/useAuth";
 import { JobCalendarSync } from "@/components/JobCalendarSync";
+import { EmailComposer } from "@/components/EmailComposer";
 import {
   ArrowLeft,
   Building2,
@@ -39,6 +40,7 @@ import {
   Download,
   Trash2,
   Pencil,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -395,6 +397,10 @@ export default function JobDetail() {
           <Tabs defaultValue="overview">
             <TabsList className="w-full sm:w-auto flex overflow-x-auto">
               <TabsTrigger value="overview">Oversikt</TabsTrigger>
+              <TabsTrigger value="email" className="gap-1.5">
+                <Mail className="h-3.5 w-3.5" />
+                E-post
+              </TabsTrigger>
               <TabsTrigger value="documents" className="gap-1.5">
                 <FileText className="h-3.5 w-3.5" />
                 Dokumenter {docAttachments.length > 0 && `(${docAttachments.length})`}
@@ -503,6 +509,16 @@ export default function JobDetail() {
                   </div>
                 </div>
               )}
+            </TabsContent>
+
+            <TabsContent value="email" className="pt-4">
+              <EmailComposer
+                entityType="job"
+                entityId={job.id}
+                defaultTo={job.customer ? undefined : undefined}
+                defaultSubject={`Ref: JOBB ${displayNumber} | ${job.customer} | ${job.title}`}
+                onSent={() => fetchLogs()}
+              />
             </TabsContent>
 
             <TabsContent value="documents" className="pt-4">
