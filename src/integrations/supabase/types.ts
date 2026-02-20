@@ -23,7 +23,12 @@ export type Database = {
           entity_type: string
           id: string
           metadata: Json | null
+          microsoft_event_id: string | null
+          microsoft_message_id: string | null
           performed_by: string | null
+          title: string | null
+          type: string
+          visibility: string
         }
         Insert: {
           action: string
@@ -33,7 +38,12 @@ export type Database = {
           entity_type: string
           id?: string
           metadata?: Json | null
+          microsoft_event_id?: string | null
+          microsoft_message_id?: string | null
           performed_by?: string | null
+          title?: string | null
+          type?: string
+          visibility?: string
         }
         Update: {
           action?: string
@@ -43,7 +53,12 @@ export type Database = {
           entity_type?: string
           id?: string
           metadata?: Json | null
+          microsoft_event_id?: string | null
+          microsoft_message_id?: string | null
           performed_by?: string | null
+          title?: string | null
+          type?: string
+          visibility?: string
         }
         Relationships: []
       }
