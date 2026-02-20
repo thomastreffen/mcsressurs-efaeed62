@@ -4,6 +4,8 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -16,6 +18,7 @@ import {
   Loader2,
   AlertTriangle,
   Plug,
+  CalendarCheck,
 } from "lucide-react";
 
 const AZURE_CLIENT_ID = "f5605c08-b986-4626-9dec-e1446fd13702";
@@ -233,6 +236,9 @@ export default function IntegrationsDebug() {
         </Card>
       )}
 
+      {/* Test Availability */}
+      <AvailabilityTester addLog={addLog} />
+
       {/* Debug Log */}
       <Card>
         <CardHeader>
@@ -257,6 +263,110 @@ export default function IntegrationsDebug() {
         </CardContent>
       </Card>
     </div>
+  );
+}
+
+function AvailabilityTester({ addLog }: { addLog: (msg: string) => void }) {
+  const [testDate, setTestDate] = useState(() => {
+    const d = new Date();
+    return d.toISOString().slice(0, 10);
+  });
+  const [testStart, setTestStart] = useState("08:00");
+  const [testEnd, setTestEnd] = useState("16:00");
+  const [testing, setTesting] = useState(false);
+  const [results, setResults] = useState<any[] | null>(null);
+
+  const runTest = async () => {
+    setTesting(true);
+    setResults(null);
+    addLog("Testing availability for all technicians...");
+    try {
+      // First get all technician user_ids
+      const { data: techs } = await supabase.from("technicians").select("user_id");
+      const userIds = (techs || []).map((t: any) => t.user_id).filter(Boolean);
+
+      if (!userIds.length) {
+        addLog("No technicians found");
+        toast.error("Ingen teknikere funnet");
+        setTesting(false);
+        return;
+      }
+
+      const start = `${testDate}T${testStart}:00`;
+      const end = `${testDate}T${testEnd}:00`;
+
+      const { data, error } = await supabase.functions.invoke("ms-calendar", {
+        body: { action: "availability", user_ids: userIds, start, end },
+      });
+
+      if (error) throw error;
+      setResults(data.results || []);
+      if (data.logs) data.logs.forEach((l: string) => addLog(l));
+      const busyCount = (data.results || []).filter((r: any) => r.busy).length;
+      addLog(`Availability: ${busyCount}/${data.results?.length || 0} opptatt`);
+      toast.success("Tilgjengelighetssjekk fullført");
+    } catch (e: any) {
+      addLog(`FEIL: ${e.message}`);
+      toast.error("Test feilet", { description: e.message });
+    } finally {
+      setTesting(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <CalendarCheck className="h-4 w-4" />
+          Test tilgjengelighet
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap gap-3 items-end">
+          <div>
+            <Label className="text-xs">Dato</Label>
+            <Input type="date" value={testDate} onChange={(e) => setTestDate(e.target.value)} className="w-40 mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Fra</Label>
+            <Input type="time" value={testStart} onChange={(e) => setTestStart(e.target.value)} className="w-28 mt-1" />
+          </div>
+          <div>
+            <Label className="text-xs">Til</Label>
+            <Input type="time" value={testEnd} onChange={(e) => setTestEnd(e.target.value)} className="w-28 mt-1" />
+          </div>
+          <Button onClick={runTest} disabled={testing} size="sm" className="gap-1.5">
+            {testing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarCheck className="h-3.5 w-3.5" />}
+            Test
+          </Button>
+        </div>
+
+        {results && (
+          <div className="space-y-2">
+            {results.map((r: any, i: number) => (
+              <div
+                key={i}
+                className={`flex items-center justify-between rounded-md border p-2.5 ${
+                  r.busy ? "border-destructive/30 bg-destructive/5" : "border-[hsl(var(--status-approved))]/30 bg-[hsl(var(--status-approved))]/5"
+                }`}
+              >
+                <div className="flex items-center gap-2">
+                  {r.busy ? (
+                    <XCircle className="h-4 w-4 text-destructive" />
+                  ) : (
+                    <CheckCircle2 className="h-4 w-4 text-[hsl(var(--status-approved))]" />
+                  )}
+                  <span className="text-sm font-medium">{r.name}</span>
+                </div>
+                <span className="text-xs text-muted-foreground">
+                  {r.busy ? `${r.busy_slots?.length || 0} konflikt(er)` : "Ledig"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 

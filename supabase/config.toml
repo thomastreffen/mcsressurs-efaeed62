@@ -38,3 +38,6 @@ verify_jwt = false
 
 [functions.ms-debug]
 verify_jwt = false
+
+[functions.ms-calendar]
+verify_jwt = false

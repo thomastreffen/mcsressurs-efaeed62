@@ -22,6 +22,7 @@ import {
   type JobStatus,
 } from "@/lib/job-status";
 import { useAuth } from "@/hooks/useAuth";
+import { JobCalendarSync } from "@/components/JobCalendarSync";
 import {
   ArrowLeft,
   Building2,
@@ -459,13 +460,22 @@ export default function JobDetail() {
                 </div>
               )}
 
-              {/* Outlook Sync Section – Admin only */}
-              {isAdmin && (
+              {/* Per-technician Outlook Calendar Sync */}
+              <JobCalendarSync
+                jobId={job.id}
+                jobStart={job.start}
+                jobEnd={job.end}
+                technicianIds={job.technicianIds}
+                isAdmin={isAdmin}
+              />
+
+              {/* Legacy Outlook Sync Section – Admin only */}
+              {isAdmin && job.microsoftEventId && (
                 <div className="rounded-lg border bg-card p-4 space-y-3">
                   <div className="flex items-center justify-between">
                     <h3 className="text-sm font-medium flex items-center gap-2">
                       <CalendarCheck className="h-4 w-4" />
-                      Outlook Sync
+                      Legacy Outlook Sync
                     </h3>
                     <SyncStatusBadge status={job.outlookSyncStatus} />
                   </div>
@@ -473,65 +483,23 @@ export default function JobDetail() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
                     <div>
                       <span className="text-muted-foreground">Outlook Event ID:</span>{" "}
-                      <span className="font-mono text-xs">{job.microsoftEventId ? job.microsoftEventId.slice(0, 20) + "…" : "Ikke koblet"}</span>
+                      <span className="font-mono text-xs">{job.microsoftEventId.slice(0, 20) + "…"}</span>
                     </div>
                     <div>
                       <span className="text-muted-foreground">Sist synkronisert:</span>{" "}
                       <span>{job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}</span>
                     </div>
-                    {job.outlookDeletedAt && (
-                      <div className="col-span-full">
-                        <span className="text-muted-foreground">Slettet fra Outlook:</span>{" "}
-                        <span className="text-destructive">{format(job.outlookDeletedAt, "d. MMM yyyy HH:mm", { locale: nb })}</span>
-                      </div>
-                    )}
                   </div>
 
                   <div className="flex flex-wrap gap-2 pt-1">
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!!syncLoading}
-                      onClick={() => handleOutlookAction("check_and_restore")}
-                      className="gap-1.5"
-                    >
-                      {syncLoading === "check_and_restore" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                      Sjekk sync
-                    </Button>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      disabled={!!syncLoading}
-                      onClick={() => handleOutlookAction("resync")}
-                      className="gap-1.5"
-                    >
+                    <Button size="sm" variant="outline" disabled={!!syncLoading} onClick={() => handleOutlookAction("resync")} className="gap-1.5">
                       {syncLoading === "resync" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                      Resync Outlook
+                      Resync
                     </Button>
-                    {job.microsoftEventId && (
-                      <>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!!syncLoading}
-                          onClick={() => handleOutlookAction("delete_outlook")}
-                          className="gap-1.5 text-destructive hover:text-destructive"
-                        >
-                          {syncLoading === "delete_outlook" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Trash2 className="h-3.5 w-3.5" />}
-                          Slett Outlook-event
-                        </Button>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          disabled={!!syncLoading}
-                          onClick={() => handleOutlookAction("disconnect")}
-                          className="gap-1.5"
-                        >
-                          {syncLoading === "disconnect" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
-                          Koble fra Outlook
-                        </Button>
-                      </>
-                    )}
+                    <Button size="sm" variant="outline" disabled={!!syncLoading} onClick={() => handleOutlookAction("disconnect")} className="gap-1.5">
+                      {syncLoading === "disconnect" ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Unplug className="h-3.5 w-3.5" />}
+                      Koble fra
+                    </Button>
                   </div>
                 </div>
               )}
