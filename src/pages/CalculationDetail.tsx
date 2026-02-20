@@ -267,10 +267,25 @@ export default function CalculationDetail() {
       const { data, error } = await supabase.functions.invoke("generate-offer-pdf", {
         body: { calculation_id: calc.id, created_by: user?.id },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (error) {
+        // Check for 409 content-hash duplicate
+        if (error.message?.includes("Ingen endringer")) {
+          toast.info("Ingen endringer", { description: error.message });
+          setPdfLoading(false);
+          return;
+        }
+        throw error;
+      }
+      if (data?.error) {
+        if (data.error.includes("Ingen endringer")) {
+          toast.info("Ingen endringer", { description: data.error });
+          setPdfLoading(false);
+          return;
+        }
+        throw new Error(data.error);
+      }
       toast.success(`Tilbud ${data.offer_number || ""} v${data.version} opprettet`, {
-        description: "Du finner det under Tilbud-fanen",
+        description: "PDF generert og lagret",
       });
       fetchCalc();
     } catch (err: any) {
