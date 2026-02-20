@@ -7,27 +7,74 @@ const corsHeaders = {
 };
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
+const LOCK_WINDOW_SECONDS = 30;
+
+// ── Helpers ──
+
+function normalizeText(s: string): string {
+  return (s || "").replace(/\s+/g, " ").trim();
+}
+
+async function computeSendHash(entityId: string, to: string[], cc: string[], subject: string, bodyHtml: string): Promise<string> {
+  const raw = [
+    entityId,
+    ...(to || []).map(normalizeText).sort(),
+    ...(cc || []).map(normalizeText).sort(),
+    normalizeText(subject),
+    normalizeText(bodyHtml),
+  ].join("|");
+  const buf = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(raw));
+  return Array.from(new Uint8Array(buf)).map(b => b.toString(16).padStart(2, "0")).join("");
+}
+
+function buildStructuredError(code: string, message: string, recommendation: string, graphStatus?: number): object {
+  return { error_code: code, message, recommendation, ...(graphStatus ? { graph_status: graphStatus } : {}) };
+}
+
+function classifyGraphError(status: number, body: string): { code: string; message: string; recommendation: string } {
+  if (status === 401) return { code: "invalid_grant", message: "Token er ugyldig eller utløpt.", recommendation: "Logg inn på nytt for å fornye Microsoft-tilkoblingen." };
+  if (status === 403) return { code: "insufficient_privileges", message: "Mangler rettigheter (Mail.ReadWrite).", recommendation: "Sjekk at admin har godkjent Graph-tilgangene (admin consent)." };
+  if (status === 404) return { code: "item_not_found", message: "Meldingen ble ikke funnet i Outlook.", recommendation: "Utkastet kan ha blitt slettet. Opprett et nytt." };
+  if (status === 429) return { code: "throttled", message: "For mange forespørsler til Outlook.", recommendation: "Vent noen sekunder og prøv igjen." };
+  try {
+    const parsed = JSON.parse(body);
+    const msg = parsed?.error?.message || body.substring(0, 200);
+    if (msg.includes("InvalidRecipients") || msg.includes("IMCEAEX")) return { code: "invalid_recipients", message: "En eller flere mottakeradresser er ugyldige.", recommendation: "Sjekk e-postadressene og prøv igjen." };
+    return { code: "graph_error", message: msg.substring(0, 200), recommendation: "Prøv igjen. Kontakt administrator hvis feilen vedvarer." };
+  } catch {
+    return { code: "graph_error", message: `Graph API feil (HTTP ${status})`, recommendation: "Prøv igjen." };
+  }
+}
 
 async function ensureValidMsToken(
   supabaseAdmin: any,
   userId: string,
   log: (msg: string) => void
-): Promise<string | null> {
+): Promise<{ token: string | null; errorInfo?: object }> {
   const { data: userData, error } = await supabaseAdmin.auth.admin.getUserById(userId);
-  if (error || !userData?.user) { log(`User fetch failed: ${error?.message}`); return null; }
+  if (error || !userData?.user) {
+    log(`User fetch failed: ${error?.message}`);
+    return { token: null, errorInfo: buildStructuredError("missing_token", "Bruker ikke funnet.", "Kontakt administrator.") };
+  }
 
   const meta = userData.user.user_metadata || {};
   const accessToken = meta.ms_access_token;
   const refreshToken = meta.ms_refresh_token;
   const expiresAt = meta.ms_expires_at;
 
-  if (!accessToken) { log("No MS access token"); return null; }
-
-  if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
-    return accessToken;
+  if (!accessToken) {
+    log("No MS access token");
+    return { token: null, errorInfo: buildStructuredError("missing_token", "Ingen Microsoft-tilkobling funnet.", "Logg inn med Microsoft via Integrasjoner-siden.") };
   }
 
-  if (!refreshToken) { log("Token expired, no refresh token"); return null; }
+  if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
+    return { token: accessToken };
+  }
+
+  if (!refreshToken) {
+    log("Token expired, no refresh token");
+    return { token: null, errorInfo: buildStructuredError("invalid_grant", "Microsoft-token utløpt uten refresh-token.", "Logg inn på nytt for å fornye tilkoblingen.") };
+  }
 
   log("Refreshing token...");
   const tokenRes = await fetch(
@@ -45,7 +92,11 @@ async function ensureValidMsToken(
     }
   );
 
-  if (!tokenRes.ok) { log(`Refresh failed: ${tokenRes.status}`); return null; }
+  if (!tokenRes.ok) {
+    const errBody = await tokenRes.text();
+    log(`Refresh failed: ${tokenRes.status} ${errBody.substring(0, 200)}`);
+    return { token: null, errorInfo: buildStructuredError("invalid_grant", "Kunne ikke fornye Microsoft-token.", "Logg inn på nytt via Integrasjoner.") };
+  }
 
   const tokenData = await tokenRes.json();
   const newExpiry = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
@@ -60,8 +111,10 @@ async function ensureValidMsToken(
   });
 
   log("Token refreshed");
-  return tokenData.access_token;
+  return { token: tokenData.access_token };
 }
+
+// ── Main handler ──
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
@@ -103,42 +156,104 @@ Deno.serve(async (req) => {
 
     log(`Action: ${action}, user: ${authUser.id}`);
 
-    const msToken = await ensureValidMsToken(supabaseAdmin, authUser.id, log);
+    const { token: msToken, errorInfo: tokenError } = await ensureValidMsToken(supabaseAdmin, authUser.id, log);
     if (!msToken) {
-      return respond({ error: "Microsoft-tilkobling må fornyes. Logg inn på nytt.", ms_reauth: true, logs }, 401);
+      return respond({
+        error: (tokenError as any)?.message || "Microsoft-tilkobling må fornyes.",
+        error_info: tokenError,
+        ms_reauth: true,
+        logs,
+      }, 401);
     }
+
+    // ─── HELPER: Build subject with ref_code ───
+    const buildSubjectWithRef = (rawSubject: string, refCode: string | null): string => {
+      if (!refCode) return rawSubject;
+      // Don't duplicate if ref is already in subject
+      if (rawSubject.includes(refCode)) return rawSubject;
+      return `Ref: ${refCode} | ${rawSubject}`;
+    };
+
+    // ─── HELPER: Append ref footer to body ───
+    const appendRefFooter = (htmlBody: string, refCode: string | null): string => {
+      if (!refCode) return htmlBody;
+      if (htmlBody.includes(refCode)) return htmlBody;
+      return htmlBody + `<br/><p style="color:#999;font-size:11px;">Ref: ${refCode}</p>`;
+    };
+
+    // ─── HELPER: Resolve ref_code for entity ───
+    const resolveRefCode = async (entityType: string, entityId: string): Promise<string | null> => {
+      if (entityType === "lead") {
+        const { data } = await supabaseAdmin.from("leads").select("lead_ref_code").eq("id", entityId).single();
+        return data?.lead_ref_code || null;
+      }
+      if (entityType === "job") {
+        const { data } = await supabaseAdmin.from("events").select("internal_number").eq("id", entityId).single();
+        return data?.internal_number || null;
+      }
+      return null;
+    };
+
+    // ─── HELPER: Build Graph message object ───
+    const buildGraphMessage = (subject: string, bodyHtml: string, to: string[], cc?: string[], bcc?: string[]) => {
+      const msg: any = {
+        subject,
+        body: { contentType: "HTML", content: bodyHtml },
+        toRecipients: to.map((e: string) => ({ emailAddress: { address: e } })),
+        isDraft: true,
+      };
+      if (cc?.length) msg.ccRecipients = cc.map((e: string) => ({ emailAddress: { address: e } }));
+      if (bcc?.length) msg.bccRecipients = bcc.map((e: string) => ({ emailAddress: { address: e } }));
+      return msg;
+    };
+
+    // ─── HELPER: Fetch weblink from Graph for sent message ───
+    const fetchWebLink = async (messageId: string): Promise<string | null> => {
+      try {
+        // After sending, the message moves to SentItems. Try to find via internetMessageId.
+        const getRes = await fetch(`${GRAPH_BASE}/me/messages/${messageId}?$select=webLink`, {
+          headers: { Authorization: `Bearer ${msToken}` },
+        });
+        if (getRes.ok) {
+          const data = await getRes.json();
+          return data.webLink || null;
+        }
+        // Message might have moved; webLink from draft is still valid for Outlook web
+        await getRes.text(); // consume body
+        return null;
+      } catch {
+        return null;
+      }
+    };
 
     // ─── CREATE DRAFT ───
     if (action === "create_draft") {
-      const { entity_type, entity_id, to, cc, bcc, subject, body_html } = body;
-      if (!entity_type || !entity_id || !subject) {
+      const { entity_type, entity_id, to, cc, bcc, subject: rawSubject, body_html: rawBodyHtml } = body;
+      if (!entity_type || !entity_id || !rawSubject) {
         return respond({ error: "Missing required fields", logs }, 400);
       }
 
-      log(`Creating draft for ${entity_type}/${entity_id}`);
+      const refCode = await resolveRefCode(entity_type, entity_id);
+      const subject = buildSubjectWithRef(rawSubject, refCode);
+      const bodyHtml = appendRefFooter(rawBodyHtml || "", refCode);
 
-      const message: any = {
-        subject,
-        body: { contentType: "HTML", content: body_html || "" },
-        toRecipients: (to || []).map((e: string) => ({ emailAddress: { address: e } })),
-        isDraft: true,
-      };
-      if (cc?.length) message.ccRecipients = cc.map((e: string) => ({ emailAddress: { address: e } }));
-      if (bcc?.length) message.bccRecipients = bcc.map((e: string) => ({ emailAddress: { address: e } }));
+      log(`Creating draft for ${entity_type}/${entity_id}, ref: ${refCode}`);
 
+      const graphMsg = buildGraphMessage(subject, bodyHtml, to || [], cc, bcc);
       const graphRes = await fetch(`${GRAPH_BASE}/me/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(message),
+        body: JSON.stringify(graphMsg),
       });
 
       if (!graphRes.ok) {
         const errText = await graphRes.text();
-        log(`Draft creation failed: ${graphRes.status} ${errText.substring(0, 300)}`);
-        const ms_reauth = graphRes.status === 401 || graphRes.status === 403;
+        log(`Draft creation failed: ${graphRes.status}`);
+        const errInfo = classifyGraphError(graphRes.status, errText);
         return respond({
-          error: ms_reauth ? "Mangler rettigheter (Mail.ReadWrite)." : `Graph feil (${graphRes.status})`,
-          ms_reauth,
+          error: errInfo.message,
+          error_info: buildStructuredError(errInfo.code, errInfo.message, errInfo.recommendation, graphRes.status),
+          ms_reauth: graphRes.status === 401 || graphRes.status === 403,
           logs,
         }, 500);
       }
@@ -146,7 +261,6 @@ Deno.serve(async (req) => {
       const draft = await graphRes.json();
       log(`Draft created: ${draft.id?.slice(0, 30)}`);
 
-      // Save to communication_logs
       const logRow = {
         entity_type,
         entity_id,
@@ -156,82 +270,153 @@ Deno.serve(async (req) => {
         cc_recipients: (cc || []).map((e: string) => ({ address: e })),
         bcc_recipients: (bcc || []).map((e: string) => ({ address: e })),
         subject,
-        body_preview: (body_html || "").replace(/<[^>]*>/g, "").substring(0, 500),
+        body_preview: bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500),
         graph_message_id: draft.id,
         internet_message_id: draft.internetMessageId || null,
         conversation_id: draft.conversationId || null,
         outlook_weblink: draft.webLink || null,
         created_by: authUser.id,
+        ref_code: refCode,
       };
 
       const { error: insertErr } = await supabaseAdmin.from("communication_logs").insert(logRow);
       if (insertErr) log(`DB insert warning: ${insertErr.message}`);
 
-      // Also log to activity_log / lead_history if lead
       if (entity_type === "lead") {
         await supabaseAdmin.from("lead_history").insert({
-          lead_id: entity_id,
-          action: "email_draft_created",
+          lead_id: entity_id, action: "email_draft_created",
           description: `E-postutkast opprettet: ${subject}`,
-          performed_by: authUser.id,
-          metadata: { message_id: draft.id },
+          performed_by: authUser.id, metadata: { message_id: draft.id, ref_code: refCode },
         });
       }
       if (entity_type === "job") {
         await supabaseAdmin.from("event_logs").insert({
-          event_id: entity_id,
-          action_type: "email_draft_created",
-          performed_by: authUser.id,
-          change_summary: `E-postutkast opprettet: ${subject}`,
+          event_id: entity_id, action_type: "email_draft_created",
+          performed_by: authUser.id, change_summary: `E-postutkast opprettet: ${subject}`,
         });
       }
 
       return respond({
-        success: true,
-        mode: "draft",
+        success: true, mode: "draft",
         message_id: draft.id,
-        web_link: draft.webLink || `https://outlook.office365.com/mail/drafts/${draft.id}`,
+        web_link: draft.webLink || `https://outlook.office365.com/mail/drafts`,
         internet_message_id: draft.internetMessageId || null,
         conversation_id: draft.conversationId || null,
+        ref_code: refCode,
         logs,
       });
     }
 
-    // ─── SEND MAIL (draft-first approach) ───
+    // ─── SEND MAIL (draft-first, idempotent) ───
     if (action === "send_mail") {
-      const { entity_type, entity_id, to, cc, bcc, subject, body_html } = body;
-      if (!entity_type || !entity_id || !subject || !to?.length) {
+      const { entity_type, entity_id, to, cc, bcc, subject: rawSubject, body_html: rawBodyHtml } = body;
+      if (!entity_type || !entity_id || !rawSubject || !to?.length) {
         return respond({ error: "Missing required fields", logs }, 400);
       }
 
-      log(`Sending mail for ${entity_type}/${entity_id}`);
+      const operationId = crypto.randomUUID();
+      const now = new Date().toISOString();
 
-      // Step 1: Create draft to get stable IDs
-      const message: any = {
+      const refCode = await resolveRefCode(entity_type, entity_id);
+      const subject = buildSubjectWithRef(rawSubject, refCode);
+      const bodyHtml = appendRefFooter(rawBodyHtml || "", refCode);
+
+      log(`Send mail for ${entity_type}/${entity_id}, ref: ${refCode}, op: ${operationId.slice(0, 8)}`);
+
+      // ── Idempotency check: same hash within 60 seconds = already_sent ──
+      const sendHash = await computeSendHash(entity_id, to, cc || [], subject, bodyHtml);
+      log(`Send hash: ${sendHash.slice(0, 12)}`);
+
+      const cutoff = new Date(Date.now() - 60_000).toISOString();
+      const { data: existing } = await supabaseAdmin
+        .from("communication_logs")
+        .select("id, mode, outlook_weblink, created_at")
+        .eq("send_hash", sendHash)
+        .eq("mode", "sent")
+        .gte("created_at", cutoff)
+        .limit(1);
+
+      if (existing && existing.length > 0) {
+        log("Duplicate detected – already_sent");
+        return respond({
+          success: true,
+          mode: "already_sent",
+          message: "Denne e-posten ble allerede sendt.",
+          web_link: existing[0].outlook_weblink,
+          existing_id: existing[0].id,
+          logs,
+        });
+      }
+
+      // ── Claim operation (simple lock) ──
+      // Insert a "sending" row to claim the operation
+      const claimRow = {
+        entity_type,
+        entity_id,
+        direction: "outbound",
+        mode: "sending",
+        to_recipients: to.map((e: string) => ({ address: e })),
+        cc_recipients: (cc || []).map((e: string) => ({ address: e })),
+        bcc_recipients: (bcc || []).map((e: string) => ({ address: e })),
         subject,
-        body: { contentType: "HTML", content: body_html || "" },
-        toRecipients: to.map((e: string) => ({ emailAddress: { address: e } })),
-        isDraft: true,
+        body_preview: bodyHtml.replace(/<[^>]*>/g, "").substring(0, 500),
+        created_by: authUser.id,
+        ref_code: refCode,
+        send_hash: sendHash,
+        last_operation_id: operationId,
+        last_operation_at: now,
       };
-      if (cc?.length) message.ccRecipients = cc.map((e: string) => ({ emailAddress: { address: e } }));
-      if (bcc?.length) message.bccRecipients = bcc.map((e: string) => ({ emailAddress: { address: e } }));
 
+      const { data: claimData, error: claimErr } = await supabaseAdmin
+        .from("communication_logs")
+        .insert(claimRow)
+        .select("id")
+        .single();
+
+      if (claimErr) {
+        log(`Claim failed: ${claimErr.message}`);
+        return respond({ error: "Kunne ikke starte sending.", logs }, 500);
+      }
+      const claimId = claimData.id;
+      log(`Claimed operation, log_id: ${claimId}`);
+
+      // ── Step 1: Create draft ──
+      const graphMsg = buildGraphMessage(subject, bodyHtml, to, cc, bcc);
       const draftRes = await fetch(`${GRAPH_BASE}/me/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
-        body: JSON.stringify(message),
+        body: JSON.stringify(graphMsg),
       });
 
       if (!draftRes.ok) {
         const errText = await draftRes.text();
         log(`Draft creation failed: ${draftRes.status}`);
-        return respond({ error: `Kunne ikke opprette utkast: ${draftRes.status}`, logs }, 500);
+        const errInfo = classifyGraphError(draftRes.status, errText);
+        // Update claim row to failed
+        await supabaseAdmin.from("communication_logs").update({
+          mode: "failed",
+          last_error: buildStructuredError(errInfo.code, errInfo.message, errInfo.recommendation, draftRes.status),
+        }).eq("id", claimId);
+        return respond({
+          error: errInfo.message,
+          error_info: buildStructuredError(errInfo.code, errInfo.message, errInfo.recommendation, draftRes.status),
+          ms_reauth: draftRes.status === 401 || draftRes.status === 403,
+          logs,
+        }, 500);
       }
 
       const draft = await draftRes.json();
       log(`Draft created: ${draft.id?.slice(0, 30)}`);
 
-      // Step 2: Send the draft
+      // Update claim with draft info
+      await supabaseAdmin.from("communication_logs").update({
+        graph_message_id: draft.id,
+        internet_message_id: draft.internetMessageId || null,
+        conversation_id: draft.conversationId || null,
+        outlook_weblink: draft.webLink || null,
+      }).eq("id", claimId);
+
+      // ── Step 2: Send the draft ──
       const sendRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}/send`, {
         method: "POST",
         headers: { Authorization: `Bearer ${msToken}`, "Content-Length": "0" },
@@ -239,9 +424,15 @@ Deno.serve(async (req) => {
 
       if (!sendRes.ok) {
         const errText = await sendRes.text();
-        log(`Send failed: ${sendRes.status} ${errText.substring(0, 200)}`);
+        log(`Send failed: ${sendRes.status}`);
+        const errInfo = classifyGraphError(sendRes.status, errText);
+        await supabaseAdmin.from("communication_logs").update({
+          mode: "failed",
+          last_error: buildStructuredError(errInfo.code, errInfo.message, errInfo.recommendation, sendRes.status),
+        }).eq("id", claimId);
         return respond({
-          error: `Sending feilet (${sendRes.status})`,
+          error: errInfo.message,
+          error_info: buildStructuredError(errInfo.code, errInfo.message, errInfo.recommendation, sendRes.status),
           draft_id: draft.id,
           web_link: draft.webLink,
           logs,
@@ -250,40 +441,28 @@ Deno.serve(async (req) => {
 
       log("Mail sent successfully");
 
-      // Save to communication_logs
-      const logRow = {
-        entity_type,
-        entity_id,
-        direction: "outbound",
+      // ── Step 3: Verify/update weblink after send ──
+      let finalWebLink = draft.webLink;
+      const fetchedLink = await fetchWebLink(draft.id);
+      if (fetchedLink) finalWebLink = fetchedLink;
+
+      // Update claim row to sent
+      await supabaseAdmin.from("communication_logs").update({
         mode: "sent",
-        to_recipients: to.map((e: string) => ({ address: e })),
-        cc_recipients: (cc || []).map((e: string) => ({ address: e })),
-        bcc_recipients: (bcc || []).map((e: string) => ({ address: e })),
-        subject,
-        body_preview: (body_html || "").replace(/<[^>]*>/g, "").substring(0, 500),
-        graph_message_id: draft.id,
-        internet_message_id: draft.internetMessageId || null,
-        conversation_id: draft.conversationId || null,
-        outlook_weblink: draft.webLink || null,
-        created_by: authUser.id,
-      };
+        outlook_weblink: finalWebLink,
+      }).eq("id", claimId);
 
-      const { error: insertErr } = await supabaseAdmin.from("communication_logs").insert(logRow);
-      if (insertErr) log(`DB insert warning: ${insertErr.message}`);
-
+      // Activity logging
       if (entity_type === "lead") {
         await supabaseAdmin.from("lead_history").insert({
-          lead_id: entity_id,
-          action: "email_sent",
+          lead_id: entity_id, action: "email_sent",
           description: `E-post sendt: ${subject}`,
-          performed_by: authUser.id,
-          metadata: { message_id: draft.id, to },
+          performed_by: authUser.id, metadata: { message_id: draft.id, to, ref_code: refCode },
         });
       }
       if (entity_type === "job") {
         await supabaseAdmin.from("event_logs").insert({
-          event_id: entity_id,
-          action_type: "email_sent",
+          event_id: entity_id, action_type: "email_sent",
           performed_by: authUser.id,
           change_summary: `E-post sendt: ${subject} → ${to.join(", ")}`,
         });
@@ -295,7 +474,8 @@ Deno.serve(async (req) => {
         message_id: draft.id,
         internet_message_id: draft.internetMessageId || null,
         conversation_id: draft.conversationId || null,
-        web_link: draft.webLink || null,
+        web_link: finalWebLink,
+        ref_code: refCode,
         logs,
       });
     }

@@ -214,8 +214,13 @@ export type Database = {
           graph_message_id: string | null
           id: string
           internet_message_id: string | null
+          last_error: Json | null
+          last_operation_at: string | null
+          last_operation_id: string | null
           mode: string
           outlook_weblink: string | null
+          ref_code: string | null
+          send_hash: string | null
           subject: string
           to_recipients: Json
           updated_at: string
@@ -233,8 +238,13 @@ export type Database = {
           graph_message_id?: string | null
           id?: string
           internet_message_id?: string | null
+          last_error?: Json | null
+          last_operation_at?: string | null
+          last_operation_id?: string | null
           mode?: string
           outlook_weblink?: string | null
+          ref_code?: string | null
+          send_hash?: string | null
           subject?: string
           to_recipients?: Json
           updated_at?: string
@@ -252,8 +262,13 @@ export type Database = {
           graph_message_id?: string | null
           id?: string
           internet_message_id?: string | null
+          last_error?: Json | null
+          last_operation_at?: string | null
+          last_operation_id?: string | null
           mode?: string
           outlook_weblink?: string | null
+          ref_code?: string | null
+          send_hash?: string | null
           subject?: string
           to_recipients?: Json
           updated_at?: string
