@@ -282,9 +282,15 @@ export default function KpiDashboard() {
 // ── Ops Dashboard ──
 
 function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: string) => void }) {
+  const activeTechs = useMemo(() => data.techLoad.filter(t => t.hours > 0).slice(0, 8), [data.techLoad]);
+  const totalJobs = useMemo(() => data.statusBreakdown.reduce((s, d) => s + d.value, 0), [data.statusBreakdown]);
+  const totalSync = useMemo(() => data.syncBreakdown.reduce((s, d) => s + d.value, 0), [data.syncBreakdown]);
+  const syncOk = useMemo(() => data.syncBreakdown.find(d => d.name === "OK")?.value ?? 0, [data.syncBreakdown]);
+  const syncFail = useMemo(() => data.syncBreakdown.find(d => d.name === "Feil")?.value ?? 0, [data.syncBreakdown]);
+
   return (
     <div className="space-y-10">
-      {/* KPI row – 4 across on 12-col grid */}
+      {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
         <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-5 w-5" />} />
         <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-5 w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} />
@@ -296,14 +302,14 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       <div className="grid grid-cols-12 gap-5">
         <div className="col-span-12 lg:col-span-8">
           <SectionCard title="Ressursbelastning" subtitle="Timer denne uke" icon={<BarChart3 className="h-4 w-4" />}>
-            {data.techLoad.length > 0 ? (
-              <div className="min-h-[320px] overflow-x-auto">
-                <ResponsiveContainer width="100%" height={Math.max(320, data.techLoad.length * 44)}>
-                  <BarChart data={data.techLoad} layout="vertical" margin={{ left: 0, right: 16, top: 8, bottom: 8 }}>
+            {activeTechs.length > 0 ? (
+              <div style={{ minHeight: 320 }}>
+                <ResponsiveContainer width="100%" height={Math.max(320, activeTechs.length * 46)}>
+                  <BarChart data={activeTechs} layout="vertical" margin={{ left: 0, right: 16, top: 8, bottom: 8 }}>
                     <XAxis type="number" hide />
                     <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} interval={0} />
                     <Tooltip formatter={(v: number) => [`${v.toFixed(1)}t`, "Timer"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={24} />
+                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={20} maxBarSize={28} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
@@ -316,7 +322,31 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
         <div className="col-span-12 lg:col-span-4">
           <SectionCard title="Jobbstatus" subtitle="Aktive jobber" icon={<PieChart className="h-4 w-4" />}>
             {data.statusBreakdown.length > 0 ? (
-              <DonutChart data={data.statusBreakdown} />
+              <div className="flex flex-col items-center gap-4">
+                <div className="h-48 w-48 relative">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <RPieChart>
+                      <Pie data={data.statusBreakdown} cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                        {data.statusBreakdown.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                      </Pie>
+                      <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} formatter={(v: number) => [v, ""]} />
+                    </RPieChart>
+                  </ResponsiveContainer>
+                  <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                    <span className="text-3xl font-bold text-foreground">{totalJobs}</span>
+                    <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Totalt</span>
+                  </div>
+                </div>
+                <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+                  {data.statusBreakdown.map((d, i) => (
+                    <div key={i} className="flex items-center gap-1.5 text-xs">
+                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                      <span className="text-muted-foreground">{d.name}</span>
+                      <span className="font-medium text-foreground">{d.value}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
             ) : (
               <p className="text-sm text-muted-foreground py-12 text-center">Ingen jobber</p>
             )}
@@ -328,7 +358,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       <SectionCard title="Synk-status" subtitle="Kalenderkoblinger" icon={<CheckCircle2 className="h-4 w-4" />}>
         {data.syncBreakdown.length > 0 ? (
           <div className="flex flex-wrap items-center gap-8">
-            <div className="h-40 w-40 shrink-0">
+            <div className="h-40 w-40 shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <RPieChart>
                   <Pie data={data.syncBreakdown} cx="50%" cy="50%" innerRadius={36} outerRadius={56} paddingAngle={2} dataKey="value" strokeWidth={0}>
@@ -337,15 +367,32 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                   <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} formatter={(v: number) => [v, ""]} />
                 </RPieChart>
               </ResponsiveContainer>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-2xl font-bold text-foreground">{totalSync}</span>
+              </div>
             </div>
-            <div className="flex flex-wrap gap-6">
-              {data.syncBreakdown.map((d, i) => (
-                <div key={i} className="flex items-center gap-2 text-sm">
-                  <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                  <span className="text-muted-foreground">{d.name}</span>
-                  <span className="font-semibold text-foreground">{d.value}</span>
+            <div className="flex flex-col gap-3">
+              <div className="flex items-center gap-6">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-status-approved" />
+                  <span className="text-sm text-muted-foreground">OK</span>
+                  <span className="text-lg font-semibold text-foreground">{syncOk}</span>
                 </div>
-              ))}
+                <div className="flex items-center gap-2">
+                  <XCircle className="h-4 w-4 text-destructive" />
+                  <span className="text-sm text-muted-foreground">Feil</span>
+                  <span className="text-lg font-semibold text-foreground">{syncFail}</span>
+                </div>
+              </div>
+              <div className="flex flex-wrap gap-4">
+                {data.syncBreakdown.map((d, i) => (
+                  <div key={i} className="flex items-center gap-2 text-sm">
+                    <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                    <span className="text-muted-foreground">{d.name}</span>
+                    <span className="font-semibold text-foreground">{d.value}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           </div>
         ) : (
@@ -356,14 +403,25 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       {/* Action items (6/12) + Recent jobs (6/12) */}
       <div className="grid grid-cols-12 gap-5">
         <div className="col-span-12 lg:col-span-6">
-          <SectionCard title="Krever handling" subtitle="Oppgaver som venter" icon={<AlertTriangle className="h-4 w-4" />}>
-            <div className="space-y-2 min-h-[200px]">
-              <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
-              <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
-              <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
-              <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
+          <div className="rounded-2xl shadow-sm bg-card overflow-hidden">
+            <div className="h-1 bg-accent/60" />
+            <div className="p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                    <AlertTriangle className="h-4 w-4" /> Krever handling
+                  </h3>
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Oppgaver som venter</p>
+                </div>
+              </div>
+              <div className="space-y-1 min-h-[200px]">
+                <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
+                <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
+                <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
+                <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
+              </div>
             </div>
-          </SectionCard>
+          </div>
         </div>
 
         <div className="col-span-12 lg:col-span-6">
@@ -501,8 +559,9 @@ function KpiCard({ title, value, icon, variant, accent }: {
   title: string; value: number | string; icon: React.ReactNode;
   variant?: "default" | "warning" | "error"; accent?: boolean;
 }) {
-  const bgClass = variant === "error" ? "bg-destructive/[0.03]" : variant === "warning" ? "bg-status-ready-for-invoicing/[0.03]" : "bg-card";
-  const iconClass = accent ? "text-primary" : variant === "error" ? "text-destructive" : variant === "warning" ? "text-status-ready-for-invoicing" : "text-muted-foreground";
+  const hasIssue = (variant === "error" && value !== 0) || (variant === "warning" && value !== 0);
+  const bgClass = hasIssue && variant === "error" ? "bg-destructive/[0.04]" : hasIssue && variant === "warning" ? "bg-accent/[0.04]" : "bg-card";
+  const iconClass = accent ? "text-primary" : hasIssue && variant === "error" ? "text-destructive" : hasIssue && variant === "warning" ? "text-accent" : "text-muted-foreground";
 
   return (
     <div className={`rounded-2xl shadow-sm hover:shadow-md transition-shadow p-6 sm:p-8 ${bgClass}`}>
@@ -510,7 +569,7 @@ function KpiCard({ title, value, icon, variant, accent }: {
         {icon}
         {title}
       </div>
-      <p className="text-4xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-5xl font-bold text-foreground tracking-tight">{value}</p>
     </div>
   );
 }
@@ -538,7 +597,7 @@ function ActionItem({ label, count, variant, onClick }: {
   label: string; count: number; variant: "warning" | "error" | "default"; onClick: () => void;
 }) {
   if (count === 0) return (
-    <div className="flex items-center justify-between py-2 px-3 rounded-xl">
+    <div className="flex items-center justify-between py-2.5 px-3 rounded-xl">
       <span className="text-sm text-muted-foreground">{label}</span>
       <Badge variant="outline" className="text-[10px] rounded-full bg-status-approved/10 text-status-approved border-status-approved/20">OK</Badge>
     </div>
@@ -547,19 +606,22 @@ function ActionItem({ label, count, variant, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-between w-full py-2 px-3 rounded-xl hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+      className="flex items-center justify-between w-full py-2.5 px-3 rounded-xl hover:bg-secondary/60 active:bg-secondary/80 transition-colors focus-visible:ring-2 focus-visible:ring-ring cursor-pointer group"
     >
-      <span className="text-sm font-medium text-foreground">{label}</span>
-      <Badge
-        className={`text-[10px] rounded-full px-2 ${
-          variant === "error"
-            ? "bg-destructive/10 text-destructive border-destructive/20"
-            : "bg-status-ready-for-invoicing/10 text-status-ready-for-invoicing border-status-ready-for-invoicing/20"
-        }`}
-        variant="outline"
-      >
-        {count}
-      </Badge>
+      <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{label}</span>
+      <div className="flex items-center gap-2">
+        <Badge
+          className={`text-[10px] rounded-full px-2 ${
+            variant === "error"
+              ? "bg-destructive/10 text-destructive border-destructive/20"
+              : "bg-accent/10 text-accent border-accent/20"
+          }`}
+          variant="outline"
+        >
+          {count}
+        </Badge>
+        <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+      </div>
     </button>
   );
 }
