@@ -67,19 +67,24 @@ function noTokenError(): StructuredError {
   };
 }
 
-// ── Sync hash for idempotency ──
+// ── Deterministic sync hash for idempotency ──
+
+function normalizeText(s: string | null | undefined): string {
+  return (s || "").replace(/\s+/g, " ").trim();
+}
 
 function computeSyncHash(job: any, userId: string): string {
+  // Deterministic: normalized content + updated_at for staleness detection
   const parts = [
-    job.start_time,
-    job.end_time,
-    job.title || "",
-    job.address || "",
-    job.description || "",
-    job.customer || "",
+    job.start_time || "",
+    job.end_time || "",
+    normalizeText(job.title),
+    normalizeText(job.address),
+    normalizeText(job.description),
+    normalizeText(job.customer),
+    job.updated_at || "",
     userId,
   ];
-  // Simple hash: joined string → base64-like fingerprint
   const str = parts.join("|");
   let hash = 0;
   for (let i = 0; i < str.length; i++) {
@@ -88,6 +93,25 @@ function computeSyncHash(job: any, userId: string): string {
     hash |= 0;
   }
   return hash.toString(36);
+}
+
+// ── Build event content deterministically ──
+
+function buildSubject(job: any): string {
+  const displayNumber = job.internal_number || job.job_number || job.id.slice(0, 8);
+  return `JOBB ${displayNumber} | ${normalizeText(job.customer) || "Ukjent kunde"} | ${normalizeText(job.title)}`;
+}
+
+function buildHtmlBody(job: any, jobId: string): string {
+  const displayNumber = job.internal_number || job.job_number || job.id.slice(0, 8);
+  const jobLink = `https://mcsressurs.lovable.app/jobs/${jobId}`;
+  return [
+    `<b>Jobb:</b> ${displayNumber}`,
+    `<b>Kunde:</b> ${normalizeText(job.customer) || "Ikke angitt"}`,
+    `<b>Adresse:</b> ${normalizeText(job.address) || "Ikke angitt"}`,
+    job.description ? `<b>Beskrivelse:</b> ${normalizeText(job.description)}` : null,
+    `<br/><a href="${jobLink}">Åpne jobb i systemet</a>`,
+  ].filter(Boolean).join("<br/>");
 }
 
 // ── Token management ──
@@ -339,31 +363,33 @@ Deno.serve(async (req) => {
         .select("id, email, name, user_id")
         .in("user_id", targetUserIds);
 
-      const displayNumber = job.internal_number || job.job_number || job.id.slice(0, 8);
-      const jobLink = `https://mcsressurs.lovable.app/jobs/${job_id}`;
-
-      const subject = `JOBB ${displayNumber} | ${job.customer || "Ukjent kunde"} | ${job.title}`;
-      const htmlBody = [
-        `<b>Jobb:</b> ${displayNumber}`,
-        `<b>Kunde:</b> ${job.customer || "Ikke angitt"}`,
-        `<b>Adresse:</b> ${job.address || "Ikke angitt"}`,
-        job.description ? `<b>Beskrivelse:</b> ${job.description}` : null,
-        `<br/><a href="${jobLink}">Åpne jobb i systemet</a>`,
-      ].filter(Boolean).join("<br/>");
+      const subject = buildSubject(job);
+      const htmlBody = buildHtmlBody(job, job_id);
 
       const results: any[] = [];
 
       for (const tech of techs || []) {
         const techLog = (msg: string) => log(`[${tech.name}] ${msg}`);
 
-        // ── Idempotency check ──
+        // ── Atomic upsert + lock via RPC-style raw query ──
         const syncHash = computeSyncHash(job, tech.user_id);
+        const now = new Date().toISOString();
 
+        // Ensure row exists (idempotent upsert)
+        await supabaseAdmin.from("job_calendar_links").upsert({
+          job_id,
+          user_id: tech.user_id,
+          technician_id: tech.id,
+          provider: "microsoft",
+        }, { onConflict: "job_id,user_id,provider", ignoreDuplicates: true });
+
+        // Read with latest data
         const { data: existingLink } = await supabaseAdmin
           .from("job_calendar_links")
           .select("*")
           .eq("job_id", job_id)
-          .eq("technician_id", tech.id)
+          .eq("user_id", tech.user_id)
+          .eq("provider", "microsoft")
           .maybeSingle();
 
         // Check if already in sync (no change needed)
@@ -389,15 +415,24 @@ Deno.serve(async (req) => {
           }
         }
 
-        // Claim the operation
-        await supabaseAdmin.from("job_calendar_links").upsert({
-          job_id,
-          user_id: tech.user_id,
-          technician_id: tech.id,
-          provider: "microsoft",
-          last_operation_id: operationId,
-          last_operation_at: new Date().toISOString(),
-        }, { onConflict: "job_id,technician_id" });
+        // Claim the operation atomically
+        const { data: claimed, error: claimErr } = await supabaseAdmin
+          .from("job_calendar_links")
+          .update({
+            last_operation_id: operationId,
+            last_operation_at: now,
+          })
+          .eq("job_id", job_id)
+          .eq("user_id", tech.user_id)
+          .eq("provider", "microsoft")
+          .select("id")
+          .single();
+
+        if (claimErr || !claimed) {
+          techLog(`Failed to claim lock: ${claimErr?.message}`);
+          results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: { error_code: "lock_failed", message: "Kunne ikke låse raden", recommendation: "Prøv igjen." } });
+          continue;
+        }
 
         // ── Get MS token ──
         const msToken = await ensureValidMsToken(supabaseAdmin, tech.user_id, techLog);
