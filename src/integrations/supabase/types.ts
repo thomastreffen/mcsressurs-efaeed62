@@ -609,8 +609,82 @@ export type Database = {
           },
         ]
       }
+      lead_history: {
+        Row: {
+          action: string
+          created_at: string
+          description: string | null
+          id: string
+          lead_id: string
+          metadata: Json | null
+          performed_by: string | null
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          lead_id: string
+          metadata?: Json | null
+          performed_by?: string | null
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          description?: string | null
+          id?: string
+          lead_id?: string
+          metadata?: Json | null
+          performed_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_history_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      lead_participants: {
+        Row: {
+          created_at: string
+          id: string
+          lead_id: string
+          notify_enabled: boolean
+          role: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          lead_id: string
+          notify_enabled?: boolean
+          role?: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          lead_id?: string
+          notify_enabled?: boolean
+          role?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_participants_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       leads: {
         Row: {
+          assigned_owner_user_id: string | null
           company_id: string | null
           company_name: string
           contact_name: string | null
@@ -620,6 +694,11 @@ export type Database = {
           estimated_value: number | null
           expected_close_date: string | null
           id: string
+          next_action_date: string | null
+          next_action_note: string | null
+          next_action_type:
+            | Database["public"]["Enums"]["lead_next_action_type"]
+            | null
           notes: string | null
           owner_id: string | null
           phone: string | null
@@ -629,6 +708,7 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          assigned_owner_user_id?: string | null
           company_id?: string | null
           company_name: string
           contact_name?: string | null
@@ -638,6 +718,11 @@ export type Database = {
           estimated_value?: number | null
           expected_close_date?: string | null
           id?: string
+          next_action_date?: string | null
+          next_action_note?: string | null
+          next_action_type?:
+            | Database["public"]["Enums"]["lead_next_action_type"]
+            | null
           notes?: string | null
           owner_id?: string | null
           phone?: string | null
@@ -647,6 +732,7 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          assigned_owner_user_id?: string | null
           company_id?: string | null
           company_name?: string
           contact_name?: string | null
@@ -656,6 +742,11 @@ export type Database = {
           estimated_value?: number | null
           expected_close_date?: string | null
           id?: string
+          next_action_date?: string | null
+          next_action_note?: string | null
+          next_action_type?:
+            | Database["public"]["Enums"]["lead_next_action_type"]
+            | null
           notes?: string | null
           owner_id?: string | null
           phone?: string | null
@@ -1130,7 +1221,21 @@ export type Database = {
         | "ready_for_invoicing"
         | "invoiced"
         | "archived"
-      lead_status: "new" | "contacted" | "qualified" | "lost" | "won"
+      lead_next_action_type:
+        | "call"
+        | "email"
+        | "meeting"
+        | "site_visit"
+        | "other"
+      lead_status:
+        | "new"
+        | "contacted"
+        | "befaring"
+        | "qualified"
+        | "tilbud_sendt"
+        | "forhandling"
+        | "lost"
+        | "won"
       offer_status:
         | "draft"
         | "sent"
@@ -1289,7 +1394,23 @@ export const Constants = {
         "invoiced",
         "archived",
       ],
-      lead_status: ["new", "contacted", "qualified", "lost", "won"],
+      lead_next_action_type: [
+        "call",
+        "email",
+        "meeting",
+        "site_visit",
+        "other",
+      ],
+      lead_status: [
+        "new",
+        "contacted",
+        "befaring",
+        "qualified",
+        "tilbud_sendt",
+        "forhandling",
+        "lost",
+        "won",
+      ],
       offer_status: [
         "draft",
         "sent",
