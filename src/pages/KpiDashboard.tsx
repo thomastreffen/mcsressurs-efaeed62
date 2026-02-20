@@ -234,7 +234,7 @@ export default function KpiDashboard() {
   if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
-    <div className="p-5 sm:p-8 space-y-8 max-w-7xl mx-auto">
+    <div className="p-5 sm:p-8 space-y-8 w-full">
       {/* Header with toggle */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
