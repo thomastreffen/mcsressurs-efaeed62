@@ -282,11 +282,30 @@ export default function KpiDashboard() {
 // ── Ops Dashboard ──
 
 function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: string) => void }) {
-  const activeTechs = useMemo(() => data.techLoad.filter(t => t.hours > 0).slice(0, 8), [data.techLoad]);
+  const techChartData = useMemo(() => {
+    const sorted = data.techLoad.filter(t => t.hours > 0).sort((a, b) => b.hours - a.hours);
+    const top = sorted.slice(0, 8);
+    const rest = sorted.slice(8);
+    if (rest.length > 0) {
+      top.push({ name: `Andre (${rest.length})`, hours: rest.reduce((s, t) => s + t.hours, 0), color: "hsl(215, 12%, 70%)" });
+    }
+    return top;
+  }, [data.techLoad]);
+  const totalPlannedHours = useMemo(() => data.techLoad.filter(t => t.hours > 0).reduce((s, t) => s + t.hours, 0), [data.techLoad]);
+  const techsWithJobs = useMemo(() => data.techLoad.filter(t => t.hours > 0).length, [data.techLoad]);
   const totalJobs = useMemo(() => data.statusBreakdown.reduce((s, d) => s + d.value, 0), [data.statusBreakdown]);
   const totalSync = useMemo(() => data.syncBreakdown.reduce((s, d) => s + d.value, 0), [data.syncBreakdown]);
   const syncOk = useMemo(() => data.syncBreakdown.find(d => d.name === "OK")?.value ?? 0, [data.syncBreakdown]);
   const syncFail = useMemo(() => data.syncBreakdown.find(d => d.name === "Feil")?.value ?? 0, [data.syncBreakdown]);
+
+  const renderBarLabel = (props: any) => {
+    const { x, y, width, height, value } = props;
+    return (
+      <text x={x + width + 6} y={y + height / 2} fill="hsl(215, 12%, 50%)" fontSize={11} dominantBaseline="central">
+        {Math.round(value)} t
+      </text>
+    );
+  };
 
   return (
     <div className="space-y-10">
@@ -301,15 +320,15 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       {/* Resource load (8/12) + Job status (4/12) */}
       <div className="grid grid-cols-12 gap-5">
         <div className="col-span-12 lg:col-span-8">
-          <SectionCard title="Ressursbelastning" subtitle="Timer denne uke" icon={<BarChart3 className="h-4 w-4" />}>
-            {activeTechs.length > 0 ? (
-              <div style={{ minHeight: 320 }}>
-                <ResponsiveContainer width="100%" height={Math.max(320, activeTechs.length * 46)}>
-                  <BarChart data={activeTechs} layout="vertical" margin={{ left: 0, right: 16, top: 8, bottom: 8 }}>
+          <SectionCard title="Ressursbelastning" subtitle={`Totalt planlagt: ${Math.round(totalPlannedHours)} t · Montører med jobb: ${techsWithJobs}`} icon={<BarChart3 className="h-4 w-4" />}>
+            {techChartData.length > 0 ? (
+              <div style={{ minHeight: 260 }}>
+                <ResponsiveContainer width="100%" height={Math.max(260, techChartData.length * 34)}>
+                  <BarChart data={techChartData} layout="vertical" margin={{ left: 0, right: 40, top: 4, bottom: 4 }}>
                     <XAxis type="number" hide />
                     <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} interval={0} />
                     <Tooltip formatter={(v: number) => [`${v.toFixed(1)}t`, "Timer"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={20} maxBarSize={28} />
+                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={18} maxBarSize={22} label={renderBarLabel} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
