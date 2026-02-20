@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -28,10 +28,8 @@ import {
   Building2,
   MapPin,
   Clock,
-  Users,
   Loader2,
   FileText,
-  Image as ImageIcon,
   RefreshCw,
   Unplug,
   CalendarCheck,
@@ -43,6 +41,8 @@ import {
   ExternalLink,
   MoreHorizontal,
   ChevronDown,
+  Mail,
+  Send,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -58,8 +58,9 @@ import {
   CollapsibleTrigger,
 } from "@/components/ui/collapsible";
 import type { OutlookSyncStatus } from "@/lib/mock-data";
+import { useIsMobile } from "@/hooks/use-mobile";
 
-/* ─── Sync Status Badge ─── */
+/* ─── Sync Status Badge (small pill) ─── */
 const SYNC_STATUS_MAP: Record<string, { label: string; variant: "ok" | "warn" | "error" | "muted" }> = {
   not_synced: { label: "Ikke synkronisert", variant: "muted" },
   synced: { label: "OK", variant: "ok" },
@@ -79,7 +80,7 @@ const syncBadgeClasses: Record<string, string> = {
 function SyncBadge({ status }: { status?: OutlookSyncStatus }) {
   const config = SYNC_STATUS_MAP[status || "not_synced"] || SYNC_STATUS_MAP.not_synced;
   return (
-    <span className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11px] font-medium ${syncBadgeClasses[config.variant]}`}>
+    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none ${syncBadgeClasses[config.variant]}`}>
       {config.label}
     </span>
   );
@@ -117,6 +118,7 @@ export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user, isAdmin } = useAuth();
+  const isMobile = useIsMobile();
 
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
@@ -130,6 +132,11 @@ export default function JobDetail() {
   const [meetingLoading, setMeetingLoading] = useState(false);
   const [offerData, setOfferData] = useState<any>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(!isMobile);
+
+  // Refs for scroll-to actions
+  const emailRef = useRef<HTMLDivElement>(null);
+  const syncRef = useRef<HTMLDivElement>(null);
 
   /* ── Outlook legacy action ── */
   const handleOutlookAction = async (syncAction: string) => {
@@ -310,6 +317,10 @@ export default function JobDetail() {
     setMeetingLoading(false);
   };
 
+  /* ── Scroll-to helpers ── */
+  const scrollToEmail = () => emailRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+  const scrollToSync = () => syncRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
+
   /* ── Loading / not found ── */
   if (loading) {
     return (
@@ -338,62 +349,111 @@ export default function JobDetail() {
 
   return (
     <>
-      <div className="min-h-screen bg-[hsl(210,20%,98%)] dark:bg-background">
+      <div className="min-h-screen bg-background">
         {/* ═══ Sticky Header ═══ */}
-        <div className="sticky top-0 z-30 border-b border-border/50 bg-card/80 backdrop-blur-xl">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6 py-4">
-            <div className="flex items-start justify-between gap-4">
+        <div className="sticky top-0 z-30 border-b border-border/40 bg-card/80 backdrop-blur-xl">
+          <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-4">
+            <div className="flex items-start justify-between gap-3">
               {/* Left: back + job info */}
-              <div className="flex items-start gap-3 min-w-0">
+              <div className="flex items-start gap-2.5 min-w-0">
                 <Button
                   variant="ghost"
                   size="icon"
                   onClick={() => navigate("/")}
-                  className="shrink-0 mt-0.5 rounded-xl h-9 w-9"
+                  className="shrink-0 mt-0.5 rounded-xl h-8 w-8 focus-visible:ring-2 focus-visible:ring-primary"
                 >
                   <ArrowLeft className="h-4 w-4" />
                 </Button>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-2.5 flex-wrap">
-                    <h1 className="text-lg sm:text-xl font-bold tracking-tight truncate">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <h1 className="text-base sm:text-lg font-bold tracking-tight truncate">
                       {displayNumber}
                     </h1>
                     <JobStatusBadge status={job.status} />
                     {job.calendarDirty && (
-                      <span className="inline-flex items-center rounded-md bg-orange-50 border border-orange-200 px-2 py-0.5 text-[11px] font-medium text-orange-700 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">
+                      <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium leading-none text-orange-700 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">
                         Usynkronisert
                       </span>
                     )}
                   </div>
-                  <div className="flex items-center gap-3 mt-1 text-sm text-muted-foreground flex-wrap">
+                  <div className="flex items-center gap-2.5 mt-0.5 text-xs text-muted-foreground flex-wrap">
                     <span className="flex items-center gap-1">
-                      <Building2 className="h-3.5 w-3.5" />
+                      <Building2 className="h-3 w-3" />
                       {job.customer}
                     </span>
                     {job.address && (
-                      <span className="flex items-center gap-1">
-                        <MapPin className="h-3.5 w-3.5" />
+                      <span className="flex items-center gap-1 hidden sm:flex">
+                        <MapPin className="h-3 w-3" />
                         {job.address}
                       </span>
                     )}
                     <span className="flex items-center gap-1">
-                      <Clock className="h-3.5 w-3.5" />
+                      <Clock className="h-3 w-3" />
                       {format(job.start, "d. MMM", { locale: nb })} {format(job.start, "HH:mm")}–{format(job.end, "HH:mm")}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Right: Actions */}
-              <div className="flex items-center gap-2 shrink-0">
-                {/* Status select */}
-                <div className="hidden sm:block w-44">
+              {/* Right: Primary actions + More */}
+              <div className="flex items-center gap-1.5 shrink-0">
+                {/* 3 primary action buttons (hidden on smallest screens, shown sm+) */}
+                <div className="hidden sm:flex items-center gap-1.5">
+                  {/* Email */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={scrollToEmail}
+                  >
+                    <Mail className="h-3.5 w-3.5" />
+                    Opprett kladd
+                  </Button>
+
+                  {/* Synk Outlook */}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
+                    onClick={scrollToSync}
+                  >
+                    <CalendarCheck className="h-3.5 w-3.5" />
+                    Synk
+                  </Button>
+
+                  {/* Teams */}
+                  {job.meetingJoinUrl ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
+                      onClick={() => window.open(job.meetingJoinUrl!, "_blank")}
+                    >
+                      <Video className="h-3.5 w-3.5" />
+                      Bli med
+                    </Button>
+                  ) : isAdmin ? (
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
+                      disabled={meetingLoading}
+                      onClick={handleCreateMeeting}
+                    >
+                      {meetingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
+                      Teams
+                    </Button>
+                  ) : null}
+                </div>
+
+                {/* Status select (desktop) */}
+                <div className="hidden md:block w-40 ml-1">
                   <Select
                     value={job.status}
                     onValueChange={(v) => handleStatusChange(v as JobStatus)}
                     disabled={statusUpdating}
                   >
-                    <SelectTrigger className="h-9 rounded-xl text-xs">
+                    <SelectTrigger className="h-8 rounded-xl text-xs">
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -404,30 +464,60 @@ export default function JobDetail() {
                   </Select>
                 </div>
 
-                {isAdmin && (
-                  <DropdownMenu>
-                    <DropdownMenuTrigger asChild>
-                      <Button variant="ghost" size="icon" className="rounded-xl h-9 w-9">
-                        <MoreHorizontal className="h-4 w-4" />
-                      </Button>
-                    </DropdownMenuTrigger>
-                    <DropdownMenuContent align="end" className="w-48">
+                {/* More menu */}
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button variant="ghost" size="icon" className="rounded-xl h-8 w-8 focus-visible:ring-2 focus-visible:ring-primary">
+                      <MoreHorizontal className="h-4 w-4" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" className="w-48">
+                    {/* Mobile-only shortcuts */}
+                    <div className="sm:hidden">
+                      <DropdownMenuItem onClick={scrollToEmail} className="gap-2">
+                        <Mail className="h-3.5 w-3.5" /> Opprett kladd
+                      </DropdownMenuItem>
+                      <DropdownMenuItem onClick={scrollToSync} className="gap-2">
+                        <CalendarCheck className="h-3.5 w-3.5" /> Synk Outlook
+                      </DropdownMenuItem>
+                      {job.meetingJoinUrl ? (
+                        <DropdownMenuItem onClick={() => window.open(job.meetingJoinUrl!, "_blank")} className="gap-2">
+                          <Video className="h-3.5 w-3.5" /> Bli med i Teams
+                        </DropdownMenuItem>
+                      ) : isAdmin ? (
+                        <DropdownMenuItem onClick={handleCreateMeeting} disabled={meetingLoading} className="gap-2">
+                          <Video className="h-3.5 w-3.5" /> Opprett Teams-møte
+                        </DropdownMenuItem>
+                      ) : null}
+                    </div>
+                    {isAdmin && (
                       <DropdownMenuItem onClick={() => setEditOpen(true)} className="gap-2">
                         <Pencil className="h-3.5 w-3.5" /> Rediger jobb
                       </DropdownMenuItem>
-                      {job.microsoftEventId && (
-                        <>
-                          <DropdownMenuItem onClick={() => handleOutlookAction("resync")} disabled={!!syncLoading} className="gap-2">
-                            <RefreshCw className="h-3.5 w-3.5" /> Resync Outlook
-                          </DropdownMenuItem>
-                          <DropdownMenuItem onClick={() => handleOutlookAction("disconnect")} disabled={!!syncLoading} className="gap-2">
-                            <Unplug className="h-3.5 w-3.5" /> Koble fra Outlook
-                          </DropdownMenuItem>
-                        </>
-                      )}
-                    </DropdownMenuContent>
-                  </DropdownMenu>
-                )}
+                    )}
+                    {isAdmin && job.microsoftEventId && (
+                      <>
+                        <DropdownMenuItem onClick={() => handleOutlookAction("resync")} disabled={!!syncLoading} className="gap-2">
+                          <RefreshCw className="h-3.5 w-3.5" /> Resync Outlook
+                        </DropdownMenuItem>
+                        <DropdownMenuItem onClick={() => handleOutlookAction("disconnect")} disabled={!!syncLoading} className="gap-2">
+                          <Unplug className="h-3.5 w-3.5" /> Koble fra Outlook
+                        </DropdownMenuItem>
+                      </>
+                    )}
+                    {job.meetingJoinUrl && (
+                      <DropdownMenuItem
+                        onClick={() => {
+                          navigator.clipboard.writeText(job.meetingJoinUrl!);
+                          toast.success("Møtelenke kopiert");
+                        }}
+                        className="gap-2"
+                      >
+                        <Copy className="h-3.5 w-3.5" /> Kopier Teams-lenke
+                      </DropdownMenuItem>
+                    )}
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
             </div>
           </div>
@@ -490,7 +580,7 @@ export default function JobDetail() {
         )}
 
         {/* ═══ Main Content: 2-col grid ═══ */}
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 pb-24 sm:pb-6">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
             {/* ── LEFT COLUMN (3/5) ── */}
             <div className="lg:col-span-3 space-y-6">
@@ -499,10 +589,9 @@ export default function JobDetail() {
               <SectionCard>
                 <SectionTitle icon={<Clock className="h-4 w-4 text-primary" />}>Planlegging</SectionTitle>
                 <div className="space-y-3">
-                  {/* Time / Location / Technicians */}
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Tidspunkt</p>
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tidspunkt</p>
                       <p className="text-sm font-medium">
                         {format(job.start, "EEEE d. MMM", { locale: nb })}
                       </p>
@@ -511,33 +600,31 @@ export default function JobDetail() {
                       </p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Adresse</p>
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Adresse</p>
                       <p className="text-sm font-medium">{job.address || "—"}</p>
                     </div>
                     <div className="space-y-1">
-                      <p className="text-xs text-muted-foreground">Montører</p>
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Montører</p>
                       <p className="text-sm font-medium">
                         {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
                       </p>
                     </div>
                   </div>
 
-                  {/* Description */}
                   {job.description && (
-                    <div className="pt-2 border-t border-border/50">
+                    <div className="pt-3 border-t border-border/40">
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap">{job.description}</p>
                     </div>
                   )}
 
-                  {/* Attendee statuses */}
                   {job.attendeeStatuses.length > 0 && (
-                    <div className="pt-2 border-t border-border/50">
+                    <div className="pt-3 border-t border-border/40">
                       <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
                     </div>
                   )}
 
                   {/* Calendar sync */}
-                  <div className="pt-2 border-t border-border/50">
+                  <div ref={syncRef} className="pt-3 border-t border-border/40">
                     <JobCalendarSync
                       jobId={job.id}
                       jobStart={job.start}
@@ -559,13 +646,13 @@ export default function JobDetail() {
                   <div className="space-y-3">
                     <div className="flex items-center gap-4 text-sm flex-wrap">
                       <div>
-                        <span className="text-muted-foreground">Tidspunkt: </span>
-                        {format(job.start, "d. MMM HH:mm", { locale: nb })} – {format(job.end, "HH:mm")}
+                        <span className="text-muted-foreground text-xs">Tidspunkt: </span>
+                        <span className="text-sm">{format(job.start, "d. MMM HH:mm", { locale: nb })} – {format(job.end, "HH:mm")}</span>
                       </div>
                       {job.meetingCreatedAt && (
                         <div>
-                          <span className="text-muted-foreground">Opprettet: </span>
-                          {format(job.meetingCreatedAt, "d. MMM HH:mm", { locale: nb })}
+                          <span className="text-muted-foreground text-xs">Opprettet: </span>
+                          <span className="text-sm">{format(job.meetingCreatedAt, "d. MMM HH:mm", { locale: nb })}</span>
                         </div>
                       )}
                     </div>
@@ -611,18 +698,17 @@ export default function JobDetail() {
                 )}
               </SectionCard>
 
-              {/* Dokumenter & Bilder */}
-              <SectionCard>
+              {/* Dokumentasjon (desktop: left col, mobile: after email) */}
+              <SectionCard className="order-4 lg:order-none">
                 <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Dokumentasjon</SectionTitle>
 
-                {/* Linked Offer */}
                 {offerData && (
-                  <div className="mb-4 p-3 rounded-xl bg-accent/40 border border-border/40 space-y-2">
+                  <div className="mb-4 p-3 rounded-xl bg-accent/30 border border-border/40 space-y-2">
                     <div className="flex items-center justify-between">
                       <p className="text-sm font-medium">Tilbud {offerData.offer_number} (v{offerData.version})</p>
-                      <Badge className={OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.className}>
+                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none ${OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.className}`}>
                         {OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.label}
-                      </Badge>
+                      </span>
                     </div>
                     <p className="text-xs text-muted-foreground">
                       Sum inkl. MVA: <span className="font-mono">kr {Number(offerData.total_inc_vat).toLocaleString("nb-NO")}</span>
@@ -640,12 +726,11 @@ export default function JobDetail() {
                   </div>
                 )}
 
-                {/* Document list */}
                 {docAttachments.length > 0 && (
                   <div className="space-y-2 mb-4">
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Filer</p>
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Filer</p>
                     {docAttachments.map((att, i) => (
-                      <div key={i} className="flex items-center gap-3 rounded-xl border border-border/50 p-3 hover:bg-accent/30 transition-colors">
+                      <div key={i} className="flex items-center gap-3 rounded-xl border border-border/40 p-3 hover:bg-accent/20 transition-colors">
                         <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
                         <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium flex-1 truncate hover:underline">
                           {att.name}
@@ -662,16 +747,15 @@ export default function JobDetail() {
                   </div>
                 )}
 
-                {/* Image gallery */}
                 {imageAttachments.length > 0 ? (
                   <div>
-                    <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-2">Bilder</p>
+                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Bilder</p>
                     <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
                       {imageAttachments.map((att, i) => (
                         <div key={i} className="group relative">
                           <button
                             onClick={() => { setLightboxIndex(i); setLightboxOpen(true); }}
-                            className="block w-full aspect-square rounded-xl overflow-hidden border border-border/50 bg-muted cursor-pointer"
+                            className="block w-full aspect-square rounded-xl overflow-hidden border border-border/40 bg-muted cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
                           >
                             <img
                               src={att.url}
@@ -693,7 +777,7 @@ export default function JobDetail() {
                     </div>
                   </div>
                 ) : docAttachments.length === 0 && !offerData ? (
-                  <p className="text-sm text-muted-foreground">Ingen dokumenter eller bilder lastet opp.</p>
+                  <p className="text-sm text-muted-foreground">Ingen dokumenter eller bilder.</p>
                 ) : null}
               </SectionCard>
             </div>
@@ -702,48 +786,76 @@ export default function JobDetail() {
             <div className="lg:col-span-2 space-y-6">
 
               {/* E-post */}
-              <SectionCard>
-                <EmailComposer
-                  entityType="job"
-                  entityId={job.id}
-                  defaultSubject={`${job.customer || ""} | ${job.title}`}
-                  refCode={job.internalNumber || displayNumber}
-                  onSent={() => fetchLogs()}
-                />
-              </SectionCard>
+              <div ref={emailRef}>
+                <SectionCard>
+                  <EmailComposer
+                    entityType="job"
+                    entityId={job.id}
+                    defaultSubject={`${job.customer || ""} | ${job.title}`}
+                    refCode={job.internalNumber || displayNumber}
+                    onSent={() => fetchLogs()}
+                  />
+                </SectionCard>
+              </div>
 
-              {/* Historikk */}
-              <SectionCard>
-                <SectionTitle icon={<Clock className="h-4 w-4 text-muted-foreground" />}>Historikk</SectionTitle>
-                {logs.length > 0 ? (
-                  <div className="space-y-3 max-h-80 overflow-y-auto pr-1">
-                    {logs.map((log) => (
-                      <div key={log.id} className="flex items-start gap-3 text-sm">
-                        <div className="h-2 w-2 rounded-full bg-border mt-1.5 shrink-0" />
-                        <div className="min-w-0">
-                          <p className="font-medium text-foreground">{log.change_summary || log.action_type}</p>
-                          <p className="text-xs text-muted-foreground">
-                            {format(new Date(log.timestamp), "d. MMM yyyy HH:mm", { locale: nb })}
-                          </p>
-                        </div>
+              {/* Historikk – collapsible on mobile */}
+              <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
+                <SectionCard>
+                  <CollapsibleTrigger asChild>
+                    <button className="flex items-center justify-between w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg -m-1 p-1">
+                      <SectionTitle icon={<Clock className="h-4 w-4 text-muted-foreground" />}>
+                        Historikk
+                        {logs.length > 0 && (
+                          <span className="ml-1.5 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground leading-none">
+                            {logs.length}
+                          </span>
+                        )}
+                      </SectionTitle>
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform lg:hidden ${historyOpen ? "rotate-180" : ""}`} />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    {logs.length > 0 ? (
+                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 mt-1">
+                        {logs.map((log) => (
+                          <div key={log.id} className="flex items-start gap-2.5 text-sm">
+                            <div className="h-1.5 w-1.5 rounded-full bg-border mt-2 shrink-0" />
+                            <div className="min-w-0">
+                              <p className="text-sm text-foreground">{log.change_summary || log.action_type}</p>
+                              <p className="text-[11px] text-muted-foreground">
+                                {format(new Date(log.timestamp), "d. MMM yyyy HH:mm", { locale: nb })}
+                              </p>
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                    ))}
-                  </div>
-                ) : (
-                  <p className="text-sm text-muted-foreground">Ingen historikk registrert.</p>
-                )}
-              </SectionCard>
+                    ) : (
+                      <p className="text-sm text-muted-foreground mt-1">Ingen historikk registrert.</p>
+                    )}
+                  </CollapsibleContent>
+                </SectionCard>
+              </Collapsible>
 
-              {/* Audit info */}
-              <SectionCard>
-                <AuditInfo job={job} />
-              </SectionCard>
+              {/* Audit info – collapsible on mobile */}
+              <Collapsible defaultOpen={!isMobile}>
+                <SectionCard>
+                  <CollapsibleTrigger asChild>
+                    <button className="flex items-center justify-between w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg -m-1 p-1">
+                      <SectionTitle icon={<FileText className="h-4 w-4 text-muted-foreground" />}>Detaljer</SectionTitle>
+                      <ChevronDown className="h-4 w-4 text-muted-foreground lg:hidden" />
+                    </button>
+                  </CollapsibleTrigger>
+                  <CollapsibleContent>
+                    <AuditInfo job={job} />
+                  </CollapsibleContent>
+                </SectionCard>
+              </Collapsible>
 
               {/* Admin Debug (collapsed) */}
               {isAdmin && job.microsoftEventId && (
                 <Collapsible open={debugOpen} onOpenChange={setDebugOpen}>
                   <CollapsibleTrigger asChild>
-                    <button className="flex items-center gap-2 text-xs text-muted-foreground hover:text-foreground transition-colors w-full py-2">
+                    <button className="flex items-center gap-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors w-full py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
                       <ChevronDown className={`h-3 w-3 transition-transform ${debugOpen ? "rotate-180" : ""}`} />
                       Admin: Legacy Outlook Sync
                     </button>
@@ -754,14 +866,14 @@ export default function JobDetail() {
                         <SectionTitle icon={<CalendarCheck className="h-4 w-4 text-muted-foreground" />}>Legacy Outlook</SectionTitle>
                         <SyncBadge status={job.outlookSyncStatus} />
                       </div>
-                      <div className="space-y-2 text-sm">
+                      <div className="space-y-1.5 text-sm">
                         <div>
-                          <span className="text-muted-foreground">Event ID: </span>
-                          <span className="font-mono text-xs">{job.microsoftEventId.slice(0, 20)}…</span>
+                          <span className="text-muted-foreground text-xs">Event ID: </span>
+                          <span className="font-mono text-[11px]">{job.microsoftEventId.slice(0, 20)}…</span>
                         </div>
                         <div>
-                          <span className="text-muted-foreground">Sist synkronisert: </span>
-                          {job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}
+                          <span className="text-muted-foreground text-xs">Sist synkronisert: </span>
+                          <span className="text-sm">{job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}</span>
                         </div>
                       </div>
                       <div className="flex gap-2 mt-3">
@@ -783,7 +895,7 @@ export default function JobDetail() {
         </div>
 
         {/* ── Mobile status selector ── */}
-        <div className="sm:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border/50 bg-card/90 backdrop-blur-xl p-3 safe-area-bottom">
+        <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border/40 bg-card/90 backdrop-blur-xl p-3 safe-area-bottom">
           <Select
             value={job.status}
             onValueChange={(v) => handleStatusChange(v as JobStatus)}
