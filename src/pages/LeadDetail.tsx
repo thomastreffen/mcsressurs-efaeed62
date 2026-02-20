@@ -22,6 +22,7 @@ import {
   Mail, CalendarPlus, RefreshCw, Calendar as CalendarIcon
 } from "lucide-react";
 import { toast } from "sonner";
+import { EmailComposer } from "@/components/EmailComposer";
 
 // ─── Error Boundary ───
 class LeadDetailErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
@@ -732,6 +733,19 @@ function LeadDetailInner() {
           )}
         </div>
       ),
+    },
+    {
+      value: "email",
+      label: "E-post",
+      content: lead ? (
+        <EmailComposer
+          entityType="lead"
+          entityId={lead.id}
+          defaultTo={lead.email || undefined}
+          defaultSubject={`Ref: ${lead.lead_ref_code || ""} | ${lead.company_name}`}
+          onSent={() => fetchActivities()}
+        />
+      ) : null,
     },
     {
       value: "calendar",
