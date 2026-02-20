@@ -489,6 +489,43 @@ Deno.serve(async (req) => {
 
       log(`Fetch thread for ${entity_type}/${entity_id}`);
 
+      // ── Throttle: check last fetch time for this entity ──
+      const { data: lastFetchLog } = await supabaseAdmin
+        .from("communication_logs")
+        .select("updated_at")
+        .eq("entity_type", entity_type)
+        .eq("entity_id", entity_id)
+        .eq("mode", "thread_fetch_marker")
+        .limit(1)
+        .single();
+
+      const THROTTLE_MS = 2 * 60 * 1000; // 2 minutes
+      const lastFetchAt = lastFetchLog?.updated_at ? new Date(lastFetchLog.updated_at).getTime() : 0;
+      const now = Date.now();
+
+      if (lastFetchAt > 0 && (now - lastFetchAt) < THROTTLE_MS) {
+        log("Throttled – returning cached messages");
+        // Return cached messages from DB
+        const { data: cached } = await supabaseAdmin
+          .from("communication_logs")
+          .select("id, mode, direction, subject, to_recipients, body_preview, outlook_weblink, created_at, graph_message_id, last_error, ref_code")
+          .eq("entity_type", entity_type)
+          .eq("entity_id", entity_id)
+          .neq("mode", "thread_fetch_marker")
+          .order("created_at", { ascending: false })
+          .limit(30);
+
+        return respond({
+          success: true,
+          messages: [],
+          stored_count: 0,
+          throttled: true,
+          last_fetch_at: new Date(lastFetchAt).toISOString(),
+          ref_code: null,
+          logs,
+        });
+      }
+
       // Find existing outbound logs for this entity to get conversation_id / ref_code
       const { data: existingLogs } = await supabaseAdmin
         .from("communication_logs")
@@ -508,7 +545,6 @@ Deno.serve(async (req) => {
       let graphMessages: any[] = [];
 
       if (conversationIds.length > 0) {
-        // Primary: fetch by conversation_id(s)
         for (const convId of conversationIds.slice(0, 3)) {
           const filterStr = `conversationId eq '${convId}'`;
           const url = `${GRAPH_BASE}/me/messages?$filter=${encodeURIComponent(filterStr)}&$top=25&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,from,toRecipients,receivedDateTime,webLink,internetMessageId,conversationId,isDraft`;
@@ -555,12 +591,10 @@ Deno.serve(async (req) => {
       let storedCount = 0;
       for (const msg of uniqueMessages) {
         const fromAddr = msg.from?.emailAddress?.address || "";
-        // Skip messages sent by the current user (outbound)
         const userEmail = authUser.email?.toLowerCase() || "";
         const isFromSelf = fromAddr.toLowerCase() === userEmail;
         if (isFromSelf || msg.isDraft) continue;
 
-        // Check if already stored
         const { data: existing } = await supabaseAdmin
           .from("communication_logs")
           .select("id")
@@ -593,6 +627,36 @@ Deno.serve(async (req) => {
 
       log(`Stored ${storedCount} new inbound messages`);
 
+      // ── Update thread_fetch_marker (upsert) ──
+      const markerRow = {
+        entity_type,
+        entity_id,
+        direction: "outbound",
+        mode: "thread_fetch_marker",
+        to_recipients: [],
+        subject: "__thread_fetch_marker__",
+        created_by: authUser.id,
+        updated_at: new Date().toISOString(),
+      };
+
+      const { data: existingMarker } = await supabaseAdmin
+        .from("communication_logs")
+        .select("id")
+        .eq("entity_type", entity_type)
+        .eq("entity_id", entity_id)
+        .eq("mode", "thread_fetch_marker")
+        .limit(1)
+        .single();
+
+      if (existingMarker) {
+        await supabaseAdmin
+          .from("communication_logs")
+          .update({ updated_at: new Date().toISOString() })
+          .eq("id", existingMarker.id);
+      } else {
+        await supabaseAdmin.from("communication_logs").insert(markerRow);
+      }
+
       // Return formatted messages
       const formatted = uniqueMessages.map(msg => ({
         message_id: msg.id,
@@ -608,10 +672,13 @@ Deno.serve(async (req) => {
         is_draft: msg.isDraft || false,
       }));
 
+      const fetchTimestamp = new Date().toISOString();
+
       return respond({
         success: true,
         messages: formatted,
         stored_count: storedCount,
+        last_fetch_at: fetchTimestamp,
         ref_code: refCode,
         logs,
       });
