@@ -37,7 +37,7 @@ const salesNav = [
   { title: "Pipeline", url: "/sales/pipeline", icon: TrendingUp },
   { title: "Leads", url: "/sales/leads", icon: UserPlus },
   { title: "Kalkulasjoner", url: "/sales/calculations", icon: Calculator },
-  { title: "Tilbud", url: "/sales/offers", icon: ReceiptText },
+  { title: "Tilbudsoversikt", url: "/sales/offers", icon: ReceiptText },
 ];
 
 const projectNav = [

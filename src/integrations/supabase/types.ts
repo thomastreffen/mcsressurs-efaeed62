@@ -105,6 +105,8 @@ export type Database = {
           created_by: string
           customer_email: string | null
           customer_name: string
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           id: string
           lead_id: string | null
@@ -122,6 +124,8 @@ export type Database = {
           created_by: string
           customer_email?: string | null
           customer_name: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
           lead_id?: string | null
@@ -139,6 +143,8 @@ export type Database = {
           created_by?: string
           customer_email?: string | null
           customer_name?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           id?: string
           lead_id?: string | null
@@ -308,12 +314,16 @@ export type Database = {
       events: {
         Row: {
           address: string | null
+          archived_at: string | null
+          archived_by: string | null
           attachments: Json | null
           cancelled_at: string | null
           cancelled_by: string | null
           created_at: string
           created_by: string | null
           customer: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           description: string | null
           editing_by: string | null
           editing_started_at: string | null
@@ -337,12 +347,16 @@ export type Database = {
         }
         Insert: {
           address?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
           attachments?: Json | null
           cancelled_at?: string | null
           cancelled_by?: string | null
           created_at?: string
           created_by?: string | null
           customer?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           editing_by?: string | null
           editing_started_at?: string | null
@@ -366,12 +380,16 @@ export type Database = {
         }
         Update: {
           address?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
           attachments?: Json | null
           cancelled_at?: string | null
           cancelled_by?: string | null
           created_at?: string
           created_by?: string | null
           customer?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           description?: string | null
           editing_by?: string | null
           editing_started_at?: string | null
@@ -586,9 +604,14 @@ export type Database = {
         Row: {
           accepted_at: string | null
           accepted_ip: string | null
+          archived_at: string | null
+          archived_by: string | null
           calculation_id: string
+          content_hash: string | null
           created_at: string
           created_by: string
+          deleted_at: string | null
+          deleted_by: string | null
           generated_html_snapshot: string | null
           generated_pdf_url: string | null
           id: string
@@ -606,9 +629,14 @@ export type Database = {
         Insert: {
           accepted_at?: string | null
           accepted_ip?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
           calculation_id: string
+          content_hash?: string | null
           created_at?: string
           created_by: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           generated_html_snapshot?: string | null
           generated_pdf_url?: string | null
           id?: string
@@ -626,9 +654,14 @@ export type Database = {
         Update: {
           accepted_at?: string | null
           accepted_ip?: string | null
+          archived_at?: string | null
+          archived_by?: string | null
           calculation_id?: string
+          content_hash?: string | null
           created_at?: string
           created_by?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
           generated_html_snapshot?: string | null
           generated_pdf_url?: string | null
           id?: string
@@ -767,8 +800,16 @@ export type Database = {
         | "completed"
         | "ready_for_invoicing"
         | "invoiced"
+        | "archived"
       lead_status: "new" | "contacted" | "qualified" | "lost" | "won"
-      offer_status: "draft" | "sent" | "accepted" | "rejected" | "expired"
+      offer_status:
+        | "draft"
+        | "sent"
+        | "accepted"
+        | "rejected"
+        | "expired"
+        | "signed"
+        | "archived"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -917,9 +958,18 @@ export const Constants = {
         "completed",
         "ready_for_invoicing",
         "invoiced",
+        "archived",
       ],
       lead_status: ["new", "contacted", "qualified", "lost", "won"],
-      offer_status: ["draft", "sent", "accepted", "rejected", "expired"],
+      offer_status: [
+        "draft",
+        "sent",
+        "accepted",
+        "rejected",
+        "expired",
+        "signed",
+        "archived",
+      ],
     },
   },
 } as const
