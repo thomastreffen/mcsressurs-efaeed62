@@ -16,7 +16,8 @@ import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogD
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
 import {
   ArrowLeft, User, Loader2, Save, Clock,
-  AlertTriangle, Plus, Trash2, FileText, ArrowRightLeft, History, ShieldAlert
+  AlertTriangle, Plus, Trash2, FileText, ArrowRightLeft, History, ShieldAlert,
+  Copy, Mail, CalendarPlus, RefreshCw, ExternalLink, Calendar as CalendarIcon
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -64,6 +65,7 @@ interface Lead {
   next_action_type: string | null;
   next_action_date: string | null;
   next_action_note: string | null;
+  lead_ref_code: string | null;
 }
 
 interface Participant {
@@ -94,6 +96,18 @@ interface Offer {
   created_at: string;
 }
 
+interface CalendarLink {
+  id: string;
+  lead_id: string;
+  outlook_event_id: string;
+  event_subject: string | null;
+  event_start: string | null;
+  event_end: string | null;
+  event_location: string | null;
+  created_at: string;
+  last_synced_at: string | null;
+}
+
 // ─── Inner Component ───
 function LeadDetailInner() {
   const { id } = useParams<{ id: string }>();
@@ -107,6 +121,7 @@ function LeadDetailInner() {
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
+  const [calendarLinks, setCalendarLinks] = useState<CalendarLink[]>([]);
   const [companyUsers, setCompanyUsers] = useState<{ id: string; name: string; email: string }[]>([]);
 
   // Edit state
@@ -129,6 +144,18 @@ function LeadDetailInner() {
   const [convertDialogOpen, setConvertDialogOpen] = useState(false);
   const [convertingOfferId, setConvertingOfferId] = useState<string | null>(null);
 
+  // Meeting dialog
+  const [meetingDialogOpen, setMeetingDialogOpen] = useState(false);
+  const [meetingStart, setMeetingStart] = useState("");
+  const [meetingDuration, setMeetingDuration] = useState("60");
+  const [meetingLocation, setMeetingLocation] = useState("");
+  const [meetingSubject, setMeetingSubject] = useState("Befaring");
+  const [meetingAttendees, setMeetingAttendees] = useState<string[]>([]);
+  const [creatingMeeting, setCreatingMeeting] = useState(false);
+
+  // Email draft
+  const [creatingDraft, setCreatingDraft] = useState(false);
+
   const fetchLead = useCallback(async () => {
     if (!id) return;
     try {
@@ -140,10 +167,7 @@ function LeadDetailInner() {
         return;
       }
       const l = data as any as Lead;
-      // Ensure status is valid
-      if (!LEAD_STATUS_CONFIG[l.status]) {
-        l.status = "new";
-      }
+      if (!LEAD_STATUS_CONFIG[l.status]) l.status = "new";
       setLead(l);
       setCompanyName(l.company_name);
       setContactName(l.contact_name || "");
@@ -208,6 +232,16 @@ function LeadDetailInner() {
     }
   }, [id]);
 
+  const fetchCalendarLinks = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { data } = await supabase.from("lead_calendar_links").select("*").eq("lead_id", id).order("event_start", { ascending: false });
+      setCalendarLinks((data || []) as any as CalendarLink[]);
+    } catch (err) {
+      console.warn("[LeadDetail] Calendar links fetch error:", err);
+    }
+  }, [id]);
+
   const fetchCompanyUsers = useCallback(async () => {
     try {
       const { data } = await supabase.from("technicians").select("user_id, name, email");
@@ -222,8 +256,9 @@ function LeadDetailInner() {
     fetchParticipants();
     fetchHistory();
     fetchOffers();
+    fetchCalendarLinks();
     fetchCompanyUsers();
-  }, [fetchLead, fetchParticipants, fetchHistory, fetchOffers, fetchCompanyUsers]);
+  }, [fetchLead, fetchParticipants, fetchHistory, fetchOffers, fetchCalendarLinks, fetchCompanyUsers]);
 
   const logHistory = async (action: string, description: string, metadata?: any) => {
     try {
@@ -351,12 +386,113 @@ function LeadDetailInner() {
     navigate(`/jobs/${data!.id}`);
   };
 
+  // ─── Email Draft ───
+  const handleCreateEmailDraft = async () => {
+    if (!lead) return;
+    if (!lead.email) { toast.error("Lead har ingen e-postadresse"); return; }
+    setCreatingDraft(true);
+    try {
+      const { data, error } = await supabase.functions.invoke("create-lead-email-draft", {
+        body: { lead_id: lead.id },
+      });
+      if (error) throw error;
+      if (data?.error) { toast.error(data.error); return; }
+      toast.success("E-postutkast opprettet i Outlook");
+      if (data?.web_link) {
+        window.open(data.web_link, "_blank");
+      }
+      fetchHistory();
+    } catch (err: any) {
+      console.error("[LeadDetail] Email draft error:", err);
+      toast.error("Kunne ikke opprette e-postutkast");
+    } finally {
+      setCreatingDraft(false);
+    }
+  };
+
+  // ─── Create Meeting ───
+  const handleCreateMeeting = async () => {
+    if (!lead || !meetingStart) { toast.error("Velg dato og tid"); return; }
+    setCreatingMeeting(true);
+    try {
+      const durationMs = Number(meetingDuration) * 60 * 1000;
+      const startDate = new Date(meetingStart);
+      const endDate = new Date(startDate.getTime() + durationMs);
+
+      const { data, error } = await supabase.functions.invoke("lead-calendar-event", {
+        body: {
+          action: "create",
+          lead_id: lead.id,
+          start_time: startDate.toISOString(),
+          end_time: endDate.toISOString(),
+          location: meetingLocation || null,
+          attendee_emails: meetingAttendees,
+          subject_suffix: meetingSubject || "Befaring",
+        },
+      });
+      if (error) throw error;
+      if (data?.error) { toast.error(data.error); return; }
+      toast.success("Møte opprettet i Outlook");
+      if (data?.web_link) {
+        window.open(data.web_link, "_blank");
+      }
+      setMeetingDialogOpen(false);
+      fetchCalendarLinks();
+      fetchHistory();
+    } catch (err: any) {
+      console.error("[LeadDetail] Create meeting error:", err);
+      toast.error("Kunne ikke opprette møte");
+    } finally {
+      setCreatingMeeting(false);
+    }
+  };
+
+  // ─── Delete Calendar Link ───
+  const handleDeleteCalendarLink = async (linkId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("lead-calendar-event", {
+        body: { action: "delete", link_id: linkId },
+      });
+      if (error) throw error;
+      if (data?.error) { toast.error(data.error); return; }
+      toast.success("Møte slettet fra Outlook");
+      fetchCalendarLinks();
+      fetchHistory();
+    } catch (err) {
+      console.error("[LeadDetail] Delete calendar link error:", err);
+      toast.error("Kunne ikke slette møte");
+    }
+  };
+
+  // ─── Resync Calendar Link ───
+  const handleResyncCalendarLink = async (linkId: string) => {
+    try {
+      const { data, error } = await supabase.functions.invoke("lead-calendar-event", {
+        body: { action: "resync", link_id: linkId },
+      });
+      if (error) throw error;
+      if (data?.error) { toast.error(data.error); return; }
+      toast.success("Møte resynkronisert");
+      fetchCalendarLinks();
+    } catch (err) {
+      console.error("[LeadDetail] Resync error:", err);
+      toast.error("Kunne ikke resynkronisere");
+    }
+  };
+
+  // ─── Copy ref code ───
+  const copyRefCode = () => {
+    if (lead?.lead_ref_code) {
+      navigator.clipboard.writeText(lead.lead_ref_code);
+      toast.success("Referansekode kopiert");
+    }
+  };
+
   // ─── Loading state ───
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
 
-  // ─── Not found / no access ───
   if (notFound || !lead) {
     return (
       <div className="mx-auto max-w-md p-8 text-center space-y-4">
@@ -374,11 +510,6 @@ function LeadDetailInner() {
 
   const safeStatus = LEAD_STATUS_CONFIG[lead.status] ? lead.status : "new";
   const isOverdue = lead.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
-  const ownerName = lead.assigned_owner_user_id
-    ? companyUsers.find(u => u.id === lead.assigned_owner_user_id)?.name || "Ukjent bruker"
-    : "Ikke satt";
-
-  // Owner select value: use sentinel if no owner
   const ownerSelectValue = lead.assigned_owner_user_id && companyUsers.some(u => u.id === lead.assigned_owner_user_id)
     ? lead.assigned_owner_user_id
     : "__unset__";
@@ -386,28 +517,97 @@ function LeadDetailInner() {
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
       {/* Header */}
-      <div className="flex items-center gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/sales/leads")}>
+      <div className="flex items-start gap-3">
+        <Button variant="ghost" size="icon" onClick={() => navigate("/sales/leads")} className="mt-1">
           <ArrowLeft className="h-5 w-5" />
         </Button>
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <h1 className="text-xl sm:text-2xl font-bold">{lead.company_name}</h1>
-          <p className="text-sm text-muted-foreground">
-            Opprettet {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
-          </p>
+          <div className="flex items-center gap-2 flex-wrap mt-1">
+            {lead.lead_ref_code && (
+              <button
+                onClick={copyRefCode}
+                className="inline-flex items-center gap-1 text-xs font-mono bg-muted px-2 py-0.5 rounded hover:bg-muted/80 transition-colors"
+                title="Klikk for å kopiere"
+              >
+                {lead.lead_ref_code}
+                <Copy className="h-3 w-3 text-muted-foreground" />
+              </button>
+            )}
+            <span className="text-sm text-muted-foreground">
+              Opprettet {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
+            </span>
+          </div>
         </div>
-        <Select value={safeStatus} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
-          <SelectTrigger className="w-auto h-9">
-            <Badge className={LEAD_STATUS_CONFIG[safeStatus]?.className}>
-              {LEAD_STATUS_CONFIG[safeStatus]?.label}
-            </Badge>
-          </SelectTrigger>
-          <SelectContent>
-            {ALL_LEAD_STATUSES.map(s => (
-              <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex items-center gap-2 shrink-0">
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 hidden sm:flex"
+            disabled={creatingDraft || !lead.email}
+            onClick={handleCreateEmailDraft}
+            title={!lead.email ? "Lead har ingen e-postadresse" : ""}
+          >
+            {creatingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+            E-post
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 hidden sm:flex"
+            onClick={() => {
+              setMeetingStart("");
+              setMeetingDuration("60");
+              setMeetingLocation("");
+              setMeetingSubject("Befaring");
+              setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
+              setMeetingDialogOpen(true);
+            }}
+          >
+            <CalendarPlus className="h-4 w-4" /> Møte
+          </Button>
+          <Select value={safeStatus} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
+            <SelectTrigger className="w-auto h-9">
+              <Badge className={LEAD_STATUS_CONFIG[safeStatus]?.className}>
+                {LEAD_STATUS_CONFIG[safeStatus]?.label}
+              </Badge>
+            </SelectTrigger>
+            <SelectContent>
+              {ALL_LEAD_STATUSES.map(s => (
+                <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
+
+      {/* Mobile action buttons */}
+      <div className="flex gap-2 sm:hidden">
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 flex-1"
+          disabled={creatingDraft || !lead.email}
+          onClick={handleCreateEmailDraft}
+        >
+          {creatingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
+          Ny e-post
+        </Button>
+        <Button
+          variant="outline"
+          size="sm"
+          className="gap-1.5 flex-1"
+          onClick={() => {
+            setMeetingStart("");
+            setMeetingDuration("60");
+            setMeetingLocation("");
+            setMeetingSubject("Befaring");
+            setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
+            setMeetingDialogOpen(true);
+          }}
+        >
+          <CalendarPlus className="h-4 w-4" /> Opprett møte
+        </Button>
       </div>
 
       {/* Next Action Banner */}
@@ -429,10 +629,11 @@ function LeadDetailInner() {
       )}
 
       <Tabs defaultValue="info" className="space-y-4">
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="info">Oversikt</TabsTrigger>
           <TabsTrigger value="participants">Deltakere ({participants.length})</TabsTrigger>
           <TabsTrigger value="offers">Tilbud ({offers.length})</TabsTrigger>
+          <TabsTrigger value="calendar">Møter ({calendarLinks.length})</TabsTrigger>
           <TabsTrigger value="history">Historikk</TabsTrigger>
         </TabsList>
 
@@ -618,6 +819,67 @@ function LeadDetailInner() {
           )}
         </TabsContent>
 
+        {/* --- CALENDAR / MEETINGS TAB --- */}
+        <TabsContent value="calendar" className="space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold">Outlook-møter</h3>
+            <Button size="sm" className="gap-1.5" onClick={() => {
+              setMeetingStart("");
+              setMeetingDuration("60");
+              setMeetingLocation("");
+              setMeetingSubject("Befaring");
+              setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
+              setMeetingDialogOpen(true);
+            }}>
+              <CalendarPlus className="h-4 w-4" /> Nytt møte
+            </Button>
+          </div>
+          {calendarLinks.length === 0 ? (
+            <Card><CardContent className="py-8 text-center text-muted-foreground">
+              <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              Ingen møter opprettet ennå
+            </CardContent></Card>
+          ) : (
+            <div className="space-y-2">
+              {calendarLinks.map(link => (
+                <Card key={link.id}>
+                  <CardContent className="flex items-center gap-3 py-3">
+                    <CalendarIcon className="h-5 w-5 text-muted-foreground shrink-0" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate">{link.event_subject || "Ukjent møte"}</p>
+                      <p className="text-xs text-muted-foreground">
+                        {link.event_start ? format(new Date(link.event_start), "d. MMM yyyy HH:mm", { locale: nb }) : "—"}
+                        {link.event_end ? ` – ${format(new Date(link.event_end), "HH:mm", { locale: nb })}` : ""}
+                        {link.event_location ? ` · ${link.event_location}` : ""}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => handleResyncCalendarLink(link.id)}
+                        title="Resynkroniser"
+                      >
+                        <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon"
+                        className="h-7 w-7"
+                        onClick={() => handleDeleteCalendarLink(link.id)}
+                        title="Slett fra Outlook"
+                      >
+                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                      </Button>
+                    </div>
+                  </CardContent>
+                </Card>
+              ))}
+            </div>
+          )}
+        </TabsContent>
+
         {/* --- HISTORY TAB --- */}
         <TabsContent value="history" className="space-y-4">
           <h3 className="font-semibold">Historikk</h3>
@@ -685,6 +947,98 @@ function LeadDetailInner() {
             <Button variant="outline" onClick={() => setConvertDialogOpen(false)}>Avbryt</Button>
             <Button onClick={handleConvertToProject} className="gap-1.5">
               <ArrowRightLeft className="h-4 w-4" /> Konverter
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Create Meeting Dialog */}
+      <Dialog open={meetingDialogOpen} onOpenChange={setMeetingDialogOpen}>
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Opprett befaring / møte</DialogTitle>
+            <DialogDescription>
+              Oppretter en Outlook-kalenderinvitasjon med lead-referansen {lead.lead_ref_code || ""}.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1.5">
+              <Label>Type / tittel</Label>
+              <Select value={meetingSubject || "__befaring__"} onValueChange={v => setMeetingSubject(v === "__befaring__" ? "Befaring" : v)}>
+                <SelectTrigger><SelectValue /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="Befaring">Befaring</SelectItem>
+                  <SelectItem value="Møte">Møte</SelectItem>
+                  <SelectItem value="Oppfølging">Oppfølging</SelectItem>
+                  <SelectItem value="Presentasjon">Presentasjon</SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="space-y-1.5">
+                <Label>Dato og tid *</Label>
+                <Input type="datetime-local" value={meetingStart} onChange={e => setMeetingStart(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Varighet (min)</Label>
+                <Select value={meetingDuration} onValueChange={setMeetingDuration}>
+                  <SelectTrigger><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="30">30 min</SelectItem>
+                    <SelectItem value="60">1 time</SelectItem>
+                    <SelectItem value="90">1,5 timer</SelectItem>
+                    <SelectItem value="120">2 timer</SelectItem>
+                    <SelectItem value="180">3 timer</SelectItem>
+                    <SelectItem value="240">4 timer</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+            <div className="space-y-1.5">
+              <Label>Sted</Label>
+              <Input value={meetingLocation} onChange={e => setMeetingLocation(e.target.value)} placeholder="Adresse eller lokasjon..." />
+            </div>
+            <div className="space-y-1.5">
+              <Label>Deltakere (e-post)</Label>
+              <div className="space-y-1.5">
+                {meetingAttendees.map((email, idx) => (
+                  <div key={idx} className="flex items-center gap-2">
+                    <Input
+                      value={email}
+                      onChange={e => {
+                        const updated = [...meetingAttendees];
+                        updated[idx] = e.target.value;
+                        setMeetingAttendees(updated);
+                      }}
+                      placeholder="e-post@example.com"
+                      className="flex-1"
+                    />
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 shrink-0"
+                      onClick={() => setMeetingAttendees(meetingAttendees.filter((_, i) => i !== idx))}
+                    >
+                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
+                    </Button>
+                  </div>
+                ))}
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="gap-1 text-xs"
+                  onClick={() => setMeetingAttendees([...meetingAttendees, ""])}
+                >
+                  <Plus className="h-3 w-3" /> Legg til deltaker
+                </Button>
+              </div>
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setMeetingDialogOpen(false)}>Avbryt</Button>
+            <Button onClick={handleCreateMeeting} disabled={creatingMeeting || !meetingStart} className="gap-1.5">
+              {creatingMeeting ? <Loader2 className="h-4 w-4 animate-spin" /> : <CalendarPlus className="h-4 w-4" />}
+              Opprett møte
             </Button>
           </DialogFooter>
         </DialogContent>

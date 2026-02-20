@@ -86,6 +86,8 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
   "leads.transfer_owner": { label: "Overføre eierskap på leads", description: "Kan endre hvem som er ansvarlig eier av en lead.", category: "Leads" },
   "leads.manage_participants": { label: "Administrere deltakere på leads", description: "Kan legge til og fjerne deltakere på leads.", category: "Leads" },
   "leads.convert": { label: "Konvertere lead til prosjekt", description: "Kan konvertere et akseptert tilbud på en lead til et prosjekt.", category: "Leads" },
+  "leads.email_draft": { label: "Opprette e-postutkast fra lead", description: "Kan opprette Outlook e-postutkast koblet til en lead.", category: "Leads" },
+  "leads.create_meeting": { label: "Opprette møte/befaring fra lead", description: "Kan opprette Outlook kalenderhendelser fra en lead.", category: "Leads" },
 };
 
 /** All permission keys excluding scope (scope is handled as a dropdown) */
@@ -128,7 +130,7 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
   {
     category: "Leads",
     description: "Tilgang til leads og salgsprosess.",
-    keys: ["leads.view", "leads.create", "leads.edit", "leads.transfer_owner", "leads.manage_participants", "leads.convert"],
+    keys: ["leads.view", "leads.create", "leads.edit", "leads.transfer_owner", "leads.manage_participants", "leads.convert", "leads.email_draft", "leads.create_meeting"],
   },
 ];
 

@@ -609,6 +609,56 @@ export type Database = {
           },
         ]
       }
+      lead_calendar_links: {
+        Row: {
+          attendee_emails: string[] | null
+          created_at: string
+          created_by: string | null
+          event_end: string | null
+          event_location: string | null
+          event_start: string | null
+          event_subject: string | null
+          id: string
+          last_synced_at: string | null
+          lead_id: string
+          outlook_event_id: string
+        }
+        Insert: {
+          attendee_emails?: string[] | null
+          created_at?: string
+          created_by?: string | null
+          event_end?: string | null
+          event_location?: string | null
+          event_start?: string | null
+          event_subject?: string | null
+          id?: string
+          last_synced_at?: string | null
+          lead_id: string
+          outlook_event_id: string
+        }
+        Update: {
+          attendee_emails?: string[] | null
+          created_at?: string
+          created_by?: string | null
+          event_end?: string | null
+          event_location?: string | null
+          event_start?: string | null
+          event_subject?: string | null
+          id?: string
+          last_synced_at?: string | null
+          lead_id?: string
+          outlook_event_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "lead_calendar_links_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_history: {
         Row: {
           action: string
@@ -694,6 +744,7 @@ export type Database = {
           estimated_value: number | null
           expected_close_date: string | null
           id: string
+          lead_ref_code: string | null
           next_action_date: string | null
           next_action_note: string | null
           next_action_type:
@@ -718,6 +769,7 @@ export type Database = {
           estimated_value?: number | null
           expected_close_date?: string | null
           id?: string
+          lead_ref_code?: string | null
           next_action_date?: string | null
           next_action_note?: string | null
           next_action_type?:
@@ -742,6 +794,7 @@ export type Database = {
           estimated_value?: number | null
           expected_close_date?: string | null
           id?: string
+          lead_ref_code?: string | null
           next_action_date?: string | null
           next_action_note?: string | null
           next_action_type?:

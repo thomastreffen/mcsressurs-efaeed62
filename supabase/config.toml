@@ -29,3 +29,9 @@ verify_jwt = false
 
 [functions.generate-offer-pdf]
 verify_jwt = false
+
+[functions.create-lead-email-draft]
+verify_jwt = false
+
+[functions.lead-calendar-event]
+verify_jwt = false
