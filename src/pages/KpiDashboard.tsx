@@ -283,90 +283,116 @@ export default function KpiDashboard() {
 
 function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: string) => void }) {
   return (
-    <div className="space-y-8">
-      {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-4 w-4" />} />
-        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-4 w-4" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} />
-        <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-4 w-4" />} variant={data.failedLinks > 0 ? "error" : "default"} />
-        <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-4 w-4" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} />
+    <div className="space-y-10">
+      {/* KPI row – 4 across on 12-col grid */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
+        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-5 w-5" />} />
+        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-5 w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} />
+        <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-5 w-5" />} variant={data.failedLinks > 0 ? "error" : "default"} />
+        <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-5 w-5" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} />
       </div>
 
-      {/* Charts row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        {/* Resource load */}
-        <SectionCard title="Ressursbelastning" subtitle="Timer denne uke" icon={<BarChart3 className="h-4 w-4" />}>
-          {data.techLoad.length > 0 ? (
-            <div className="h-48">
+      {/* Resource load (8/12) + Job status (4/12) */}
+      <div className="grid grid-cols-12 gap-5">
+        <div className="col-span-12 lg:col-span-8">
+          <SectionCard title="Ressursbelastning" subtitle="Timer denne uke" icon={<BarChart3 className="h-4 w-4" />}>
+            {data.techLoad.length > 0 ? (
+              <div className="min-h-[320px] overflow-x-auto">
+                <ResponsiveContainer width="100%" height={Math.max(320, data.techLoad.length * 44)}>
+                  <BarChart data={data.techLoad} layout="vertical" margin={{ left: 0, right: 16, top: 8, bottom: 8 }}>
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} interval={0} />
+                    <Tooltip formatter={(v: number) => [`${v.toFixed(1)}t`, "Timer"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
+                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={24} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground py-12 text-center">Ingen planlagte timer</p>
+            )}
+          </SectionCard>
+        </div>
+
+        <div className="col-span-12 lg:col-span-4">
+          <SectionCard title="Jobbstatus" subtitle="Aktive jobber" icon={<PieChart className="h-4 w-4" />}>
+            {data.statusBreakdown.length > 0 ? (
+              <DonutChart data={data.statusBreakdown} />
+            ) : (
+              <p className="text-sm text-muted-foreground py-12 text-center">Ingen jobber</p>
+            )}
+          </SectionCard>
+        </div>
+      </div>
+
+      {/* Sync status – full width */}
+      <SectionCard title="Synk-status" subtitle="Kalenderkoblinger" icon={<CheckCircle2 className="h-4 w-4" />}>
+        {data.syncBreakdown.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-8">
+            <div className="h-40 w-40 shrink-0">
               <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.techLoad} layout="vertical" margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={80} tick={{ fontSize: 12, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(v: number) => [`${v.toFixed(1)}t`, "Timer"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                  <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} />
-                </BarChart>
+                <RPieChart>
+                  <Pie data={data.syncBreakdown} cx="50%" cy="50%" innerRadius={36} outerRadius={56} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                    {data.syncBreakdown.map((entry, i) => <Cell key={i} fill={entry.color} />)}
+                  </Pie>
+                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} formatter={(v: number) => [v, ""]} />
+                </RPieChart>
               </ResponsiveContainer>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground py-8 text-center">Ingen planlagte timer</p>
-          )}
-        </SectionCard>
-
-        {/* Job status donut */}
-        <SectionCard title="Jobbstatus" subtitle="Aktive jobber" icon={<PieChart className="h-4 w-4" />}>
-          {data.statusBreakdown.length > 0 ? (
-            <DonutChart data={data.statusBreakdown} />
-          ) : (
-            <p className="text-sm text-muted-foreground py-8 text-center">Ingen jobber</p>
-          )}
-        </SectionCard>
-
-        {/* Sync status donut */}
-        <SectionCard title="Synk-status" subtitle="Kalenderkoblinger" icon={<CheckCircle2 className="h-4 w-4" />}>
-          {data.syncBreakdown.length > 0 ? (
-            <DonutChart data={data.syncBreakdown} />
-          ) : (
-            <p className="text-sm text-muted-foreground py-8 text-center">Ingen koblinger</p>
-          )}
-        </SectionCard>
-      </div>
-
-      {/* Action items + recent */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <SectionCard title="Krever handling" subtitle="Oppgaver som venter" icon={<AlertTriangle className="h-4 w-4" />}>
-          <div className="space-y-2">
-            <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
-            <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
-            <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
-            <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
-          </div>
-        </SectionCard>
-
-        <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Se alle <ArrowRight className="h-3 w-3" /></Button>}>
-          <div className="space-y-1.5">
-            {data.recentJobs.map((job) => (
-              <button
-                key={job.id}
-                onClick={() => navigate(`/jobs/${job.id}`)}
-                className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
-              >
-                <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{job.title}</p>
-                  <p className="text-xs text-muted-foreground truncate">{job.internalNumber && `${job.internalNumber} · `}{job.customer}</p>
+            <div className="flex flex-wrap gap-6">
+              {data.syncBreakdown.map((d, i) => (
+                <div key={i} className="flex items-center gap-2 text-sm">
+                  <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                  <span className="text-muted-foreground">{d.name}</span>
+                  <span className="font-semibold text-foreground">{d.value}</span>
                 </div>
-                <Badge
-                  className="shrink-0 text-[10px] rounded-full px-2"
-                  style={{
-                    backgroundColor: `hsl(var(--status-${job.status.replace(/_/g, "-")}))`,
-                    color: `hsl(var(--status-${job.status.replace(/_/g, "-")}-foreground))`,
-                  }}
-                >
-                  {JOB_STATUS_CONFIG[job.status]?.label || job.status}
-                </Badge>
-              </button>
-            ))}
+              ))}
+            </div>
           </div>
-        </SectionCard>
+        ) : (
+          <p className="text-sm text-muted-foreground py-8 text-center">Ingen koblinger</p>
+        )}
+      </SectionCard>
+
+      {/* Action items (6/12) + Recent jobs (6/12) */}
+      <div className="grid grid-cols-12 gap-5">
+        <div className="col-span-12 lg:col-span-6">
+          <SectionCard title="Krever handling" subtitle="Oppgaver som venter" icon={<AlertTriangle className="h-4 w-4" />}>
+            <div className="space-y-2 min-h-[200px]">
+              <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
+              <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
+              <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
+              <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
+            </div>
+          </SectionCard>
+        </div>
+
+        <div className="col-span-12 lg:col-span-6">
+          <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Se alle <ArrowRight className="h-3 w-3" /></Button>}>
+            <div className="space-y-1.5 min-h-[200px]">
+              {data.recentJobs.map((job) => (
+                <button
+                  key={job.id}
+                  onClick={() => navigate(`/jobs/${job.id}`)}
+                  className="flex items-center gap-3 w-full rounded-xl p-3 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium truncate">{job.title}</p>
+                    <p className="text-xs text-muted-foreground truncate">{job.internalNumber && `${job.internalNumber} · `}{job.customer}</p>
+                  </div>
+                  <Badge
+                    className="shrink-0 text-[10px] rounded-full px-2"
+                    style={{
+                      backgroundColor: `hsl(var(--status-${job.status.replace(/_/g, "-")}))`,
+                      color: `hsl(var(--status-${job.status.replace(/_/g, "-")}-foreground))`,
+                    }}
+                  >
+                    {JOB_STATUS_CONFIG[job.status]?.label || job.status}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          </SectionCard>
+        </div>
       </div>
     </div>
   );
@@ -479,12 +505,12 @@ function KpiCard({ title, value, icon, variant, accent }: {
   const iconClass = accent ? "text-primary" : variant === "error" ? "text-destructive" : variant === "warning" ? "text-status-ready-for-invoicing" : "text-muted-foreground";
 
   return (
-    <div className={`rounded-2xl shadow-sm hover:shadow-md transition-shadow p-5 ${bgClass}`}>
-      <div className={`flex items-center gap-1.5 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-3`}>
+    <div className={`rounded-2xl shadow-sm hover:shadow-md transition-shadow p-6 sm:p-8 ${bgClass}`}>
+      <div className={`flex items-center gap-2 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-4`}>
         {icon}
         {title}
       </div>
-      <p className="text-3xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-4xl font-bold text-foreground tracking-tight">{value}</p>
     </div>
   );
 }
@@ -493,7 +519,7 @@ function SectionCard({ title, subtitle, icon, children, action }: {
   title: string; subtitle?: string; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl shadow-sm bg-card p-5">
+    <div className="rounded-2xl shadow-sm bg-card p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
