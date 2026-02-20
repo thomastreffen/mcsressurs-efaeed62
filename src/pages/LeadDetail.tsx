@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, Component, type ReactNode, type ErrorInfo } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { format, isPast, isToday } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -12,15 +12,39 @@ import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { Separator } from "@/components/ui/separator";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
 import {
-  ArrowLeft, Building2, User, Mail, Phone, Loader2, Save, Clock,
-  AlertTriangle, Users, Plus, Trash2, FileText, ArrowRightLeft, History
+  ArrowLeft, User, Loader2, Save, Clock,
+  AlertTriangle, Plus, Trash2, FileText, ArrowRightLeft, History, ShieldAlert
 } from "lucide-react";
 import { toast } from "sonner";
 
+// ─── Error Boundary ───
+class LeadDetailErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
+  state = { hasError: false };
+  static getDerivedStateFromError() { return { hasError: true }; }
+  componentDidCatch(error: Error, info: ErrorInfo) {
+    console.error("[LeadDetail] Render error:", error, info);
+  }
+  render() {
+    if (this.state.hasError) {
+      return (
+        <div className="mx-auto max-w-md p-8 text-center space-y-4">
+          <ShieldAlert className="h-12 w-12 mx-auto text-destructive opacity-60" />
+          <h2 className="text-lg font-semibold">Kunne ikke laste lead-detaljer</h2>
+          <p className="text-sm text-muted-foreground">
+            Prøv å oppdatere siden. Hvis problemet vedvarer, kontakt admin.
+          </p>
+          <Button variant="outline" onClick={() => window.location.reload()}>Oppdater siden</Button>
+        </div>
+      );
+    }
+    return this.props.children;
+  }
+}
+
+// ─── Types ───
 interface Lead {
   id: string;
   company_name: string;
@@ -70,13 +94,15 @@ interface Offer {
   created_at: string;
 }
 
-export default function LeadDetail() {
+// ─── Inner Component ───
+function LeadDetailInner() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
+  const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
   const [history, setHistory] = useState<HistoryEntry[]>([]);
@@ -105,60 +131,90 @@ export default function LeadDetail() {
 
   const fetchLead = useCallback(async () => {
     if (!id) return;
-    const { data } = await supabase.from("leads").select("*").eq("id", id).single();
-    if (!data) { navigate("/sales/leads"); return; }
-    const l = data as any as Lead;
-    setLead(l);
-    setCompanyName(l.company_name);
-    setContactName(l.contact_name || "");
-    setEmail(l.email || "");
-    setPhone(l.phone || "");
-    setSource(l.source || "");
-    setEstimatedValue(l.estimated_value ? String(l.estimated_value) : "");
-    setProbability(l.probability ? String(l.probability) : "50");
-    setExpectedCloseDate(l.expected_close_date || "");
-    setNotes(l.notes || "");
-    setNextActionType(l.next_action_type || "");
-    setNextActionDate(l.next_action_date ? l.next_action_date.substring(0, 16) : "");
-    setNextActionNote(l.next_action_note || "");
-    setLoading(false);
-  }, [id, navigate]);
+    try {
+      const { data, error } = await supabase.from("leads").select("*").eq("id", id).single();
+      if (error || !data) {
+        console.warn("[LeadDetail] Lead not found or access denied:", error?.message);
+        setNotFound(true);
+        setLoading(false);
+        return;
+      }
+      const l = data as any as Lead;
+      // Ensure status is valid
+      if (!LEAD_STATUS_CONFIG[l.status]) {
+        l.status = "new";
+      }
+      setLead(l);
+      setCompanyName(l.company_name);
+      setContactName(l.contact_name || "");
+      setEmail(l.email || "");
+      setPhone(l.phone || "");
+      setSource(l.source || "");
+      setEstimatedValue(l.estimated_value ? String(l.estimated_value) : "");
+      setProbability(l.probability ? String(l.probability) : "50");
+      setExpectedCloseDate(l.expected_close_date || "");
+      setNotes(l.notes || "");
+      setNextActionType(l.next_action_type || "");
+      setNextActionDate(l.next_action_date ? l.next_action_date.substring(0, 16) : "");
+      setNextActionNote(l.next_action_note || "");
+    } catch (err) {
+      console.error("[LeadDetail] Fetch error:", err);
+      setNotFound(true);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
 
   const fetchParticipants = useCallback(async () => {
     if (!id) return;
-    const { data } = await supabase.from("lead_participants").select("*").eq("lead_id", id);
-    if (!data) return;
-    // Enrich with technician names
-    const { data: techs } = await supabase.from("technicians").select("user_id, name, email");
-    const techMap = new Map((techs || []).map((t: any) => [t.user_id, t]));
-    setParticipants((data as any[]).map(p => ({
-      ...p,
-      user_name: techMap.get(p.user_id)?.name || "Ukjent",
-      user_email: techMap.get(p.user_id)?.email || "",
-    })));
+    try {
+      const { data } = await supabase.from("lead_participants").select("*").eq("lead_id", id);
+      if (!data) return;
+      const { data: techs } = await supabase.from("technicians").select("user_id, name, email");
+      const techMap = new Map((techs || []).map((t: any) => [t.user_id, t]));
+      setParticipants((data as any[]).filter(p => p.id && p.user_id).map(p => ({
+        ...p,
+        user_name: techMap.get(p.user_id)?.name || "Ukjent bruker",
+        user_email: techMap.get(p.user_id)?.email || "",
+      })));
+    } catch (err) {
+      console.warn("[LeadDetail] Participants fetch error:", err);
+    }
   }, [id]);
 
   const fetchHistory = useCallback(async () => {
     if (!id) return;
-    const { data } = await supabase.from("lead_history").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
-    if (!data) return;
-    const { data: techs } = await supabase.from("technicians").select("user_id, name");
-    const techMap = new Map((techs || []).map((t: any) => [t.user_id, t.name]));
-    setHistory((data as any[]).map(h => ({
-      ...h,
-      performer_name: techMap.get(h.performed_by) || "System",
-    })));
+    try {
+      const { data } = await supabase.from("lead_history").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
+      if (!data) return;
+      const { data: techs } = await supabase.from("technicians").select("user_id, name");
+      const techMap = new Map((techs || []).map((t: any) => [t.user_id, t.name]));
+      setHistory((data as any[]).map(h => ({
+        ...h,
+        performer_name: techMap.get(h.performed_by) || "System",
+      })));
+    } catch (err) {
+      console.warn("[LeadDetail] History fetch error:", err);
+    }
   }, [id]);
 
   const fetchOffers = useCallback(async () => {
     if (!id) return;
-    const { data } = await supabase.from("offers").select("id, offer_number, status, version, total_ex_vat, total_inc_vat, created_at").eq("lead_id", id).order("created_at", { ascending: false });
-    setOffers((data || []) as any as Offer[]);
+    try {
+      const { data } = await supabase.from("offers").select("id, offer_number, status, version, total_ex_vat, total_inc_vat, created_at").eq("lead_id", id).order("created_at", { ascending: false });
+      setOffers((data || []) as any as Offer[]);
+    } catch (err) {
+      console.warn("[LeadDetail] Offers fetch error:", err);
+    }
   }, [id]);
 
   const fetchCompanyUsers = useCallback(async () => {
-    const { data } = await supabase.from("technicians").select("user_id, name, email");
-    setCompanyUsers((data || []).map((t: any) => ({ id: t.user_id, name: t.name, email: t.email })));
+    try {
+      const { data } = await supabase.from("technicians").select("user_id, name, email");
+      setCompanyUsers((data || []).filter((t: any) => t.user_id && t.name).map((t: any) => ({ id: t.user_id, name: t.name, email: t.email })));
+    } catch (err) {
+      console.warn("[LeadDetail] Company users fetch error:", err);
+    }
   }, []);
 
   useEffect(() => {
@@ -170,9 +226,13 @@ export default function LeadDetail() {
   }, [fetchLead, fetchParticipants, fetchHistory, fetchOffers, fetchCompanyUsers]);
 
   const logHistory = async (action: string, description: string, metadata?: any) => {
-    await supabase.from("lead_history").insert({
-      lead_id: id!, action, description, performed_by: user?.id, metadata: metadata || {},
-    });
+    try {
+      await supabase.from("lead_history").insert({
+        lead_id: id!, action, description, performed_by: user?.id, metadata: metadata || {},
+      });
+    } catch (err) {
+      console.warn("[LeadDetail] Log history error:", err);
+    }
   };
 
   const handleSave = async () => {
@@ -202,11 +262,10 @@ export default function LeadDetail() {
 
   const handleStatusChange = async (newStatus: LeadStatus) => {
     if (!lead) return;
-    const oldLabel = LEAD_STATUS_CONFIG[lead.status]?.label;
-    const newLabel = LEAD_STATUS_CONFIG[newStatus]?.label;
+    const oldLabel = LEAD_STATUS_CONFIG[lead.status]?.label || lead.status;
+    const newLabel = LEAD_STATUS_CONFIG[newStatus]?.label || newStatus;
     await supabase.from("leads").update({ status: newStatus }).eq("id", lead.id);
     await logHistory("status_changed", `Status endret fra ${oldLabel} til ${newLabel}`, { from: lead.status, to: newStatus });
-    // Notify participants
     await notifyParticipants(`Status endret til ${newLabel}`, `Lead "${lead.company_name}" fikk ny status: ${newLabel}`);
     toast.success(`Status endret til ${newLabel}`);
     setLead({ ...lead, status: newStatus });
@@ -214,9 +273,8 @@ export default function LeadDetail() {
   };
 
   const handleOwnerChange = async (newOwnerId: string) => {
-    if (!lead) return;
+    if (!lead || newOwnerId === "__unset__") return;
     await supabase.from("leads").update({ assigned_owner_user_id: newOwnerId, owner_id: newOwnerId }).eq("id", lead.id);
-    // Ensure owner is participant
     await supabase.from("lead_participants").upsert({ lead_id: lead.id, user_id: newOwnerId, role: "owner" }, { onConflict: "lead_id,user_id" });
     const ownerName = companyUsers.find(u => u.id === newOwnerId)?.name || "Ukjent";
     await logHistory("owner_changed", `Eier endret til ${ownerName}`, { new_owner: newOwnerId });
@@ -261,6 +319,9 @@ export default function LeadDetail() {
     const offer = offers.find(o => o.id === convertingOfferId);
     if (!offer) return;
 
+    const techRes = await supabase.from("technicians").select("id").eq("user_id", user!.id).single();
+    if (!techRes.data?.id) { toast.error("Finner ikke montørprofil for innlogget bruker"); return; }
+
     const { data, error } = await supabase.from("events").insert({
       title: `Prosjekt - ${lead.company_name}`,
       customer: lead.company_name,
@@ -270,21 +331,18 @@ export default function LeadDetail() {
       offer_id: convertingOfferId,
       start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 8 * 3600000).toISOString(),
-      technician_id: (await supabase.from("technicians").select("id").eq("user_id", user!.id).single()).data?.id || "",
+      technician_id: techRes.data.id,
       created_by: user!.id,
       status: "scheduled",
     } as any).select("id").single();
 
     if (error) { toast.error("Feil ved konvertering", { description: error.message }); return; }
 
-    // Copy participants to job_participants
     for (const p of participants) {
       await supabase.from("job_participants").insert({ job_id: data!.id, user_id: p.user_id, role_label: p.role });
     }
 
-    // Update lead status
     await supabase.from("leads").update({ status: "won" as LeadStatus }).eq("id", lead.id);
-
     await logHistory("converted_to_project", `Konvertert til prosjekt`, { job_id: data!.id, offer_id: convertingOfferId });
     await notifyParticipants("Lead konvertert", `Lead "${lead.company_name}" er konvertert til prosjekt.`);
 
@@ -293,14 +351,37 @@ export default function LeadDetail() {
     navigate(`/jobs/${data!.id}`);
   };
 
+  // ─── Loading state ───
   if (loading) {
     return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
   }
 
-  if (!lead) return null;
+  // ─── Not found / no access ───
+  if (notFound || !lead) {
+    return (
+      <div className="mx-auto max-w-md p-8 text-center space-y-4">
+        <ShieldAlert className="h-12 w-12 mx-auto text-muted-foreground opacity-60" />
+        <h2 className="text-lg font-semibold">Lead ikke funnet</h2>
+        <p className="text-sm text-muted-foreground">
+          Du har ikke tilgang til denne leaden, eller den finnes ikke.
+        </p>
+        <Button variant="outline" onClick={() => navigate("/sales/leads")}>
+          <ArrowLeft className="h-4 w-4 mr-2" /> Tilbake til leads
+        </Button>
+      </div>
+    );
+  }
 
+  const safeStatus = LEAD_STATUS_CONFIG[lead.status] ? lead.status : "new";
   const isOverdue = lead.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
-  const acceptedOffers = offers.filter(o => o.status === "accepted");
+  const ownerName = lead.assigned_owner_user_id
+    ? companyUsers.find(u => u.id === lead.assigned_owner_user_id)?.name || "Ukjent bruker"
+    : "Ikke satt";
+
+  // Owner select value: use sentinel if no owner
+  const ownerSelectValue = lead.assigned_owner_user_id && companyUsers.some(u => u.id === lead.assigned_owner_user_id)
+    ? lead.assigned_owner_user_id
+    : "__unset__";
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
@@ -315,10 +396,10 @@ export default function LeadDetail() {
             Opprettet {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
           </p>
         </div>
-        <Select value={lead.status} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
+        <Select value={safeStatus} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
           <SelectTrigger className="w-auto h-9">
-            <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className}>
-              {LEAD_STATUS_CONFIG[lead.status]?.label}
+            <Badge className={LEAD_STATUS_CONFIG[safeStatus]?.className}>
+              {LEAD_STATUS_CONFIG[safeStatus]?.label}
             </Badge>
           </SelectTrigger>
           <SelectContent>
@@ -331,13 +412,13 @@ export default function LeadDetail() {
 
       {/* Next Action Banner */}
       {lead.next_action_date && (
-        <Card className={isOverdue ? "border-destructive bg-destructive/5" : "border-amber-300 bg-amber-50 dark:bg-amber-950/20 dark:border-amber-800"}>
+        <Card className={isOverdue ? "border-destructive bg-destructive/5" : ""}>
           <CardContent className="flex items-center gap-3 py-3">
-            {isOverdue ? <AlertTriangle className="h-5 w-5 text-destructive shrink-0" /> : <Clock className="h-5 w-5 text-amber-600 shrink-0" />}
+            {isOverdue ? <AlertTriangle className="h-5 w-5 text-destructive shrink-0" /> : <Clock className="h-5 w-5 text-muted-foreground shrink-0" />}
             <div className="flex-1">
               <p className="text-sm font-medium">
                 {isOverdue ? "Forfalt: " : "Neste aksjon: "}
-                {NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || lead.next_action_type}
+                {NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || lead.next_action_type || "Ukjent"}
                 {" — "}
                 {format(new Date(lead.next_action_date), "d. MMM yyyy HH:mm", { locale: nb })}
               </p>
@@ -391,9 +472,10 @@ export default function LeadDetail() {
               <CardContent className="space-y-3">
                 <div className="space-y-1.5">
                   <Label>Eier</Label>
-                  <Select value={lead.assigned_owner_user_id || ""} onValueChange={handleOwnerChange}>
+                  <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
                     <SelectTrigger><SelectValue placeholder="Velg eier" /></SelectTrigger>
                     <SelectContent>
+                      <SelectItem value="__unset__">Ikke satt</SelectItem>
                       {companyUsers.map(u => (
                         <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
                       ))}
@@ -562,21 +644,29 @@ export default function LeadDetail() {
       {/* Add Participant Dialog */}
       <Dialog open={addParticipantOpen} onOpenChange={setAddParticipantOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Legg til deltaker</DialogTitle></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Legg til deltaker</DialogTitle>
+            <DialogDescription>Velg en bruker å legge til som deltaker på denne leaden.</DialogDescription>
+          </DialogHeader>
           <div className="space-y-3">
             <Label>Bruker</Label>
-            <Select value={selectedUserId} onValueChange={setSelectedUserId}>
-              <SelectTrigger><SelectValue placeholder="Velg bruker" /></SelectTrigger>
-              <SelectContent>
-                {companyUsers
-                  .filter(u => !participants.some(p => p.user_id === u.id))
-                  .map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
-              </SelectContent>
-            </Select>
+            {companyUsers.filter(u => !participants.some(p => p.user_id === u.id)).length > 0 ? (
+              <Select value={selectedUserId || "__pick__"} onValueChange={v => setSelectedUserId(v === "__pick__" ? "" : v)}>
+                <SelectTrigger><SelectValue placeholder="Velg bruker" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="__pick__">Velg bruker...</SelectItem>
+                  {companyUsers
+                    .filter(u => !participants.some(p => p.user_id === u.id))
+                    .map(u => <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>)}
+                </SelectContent>
+              </Select>
+            ) : (
+              <p className="text-sm text-muted-foreground">Alle tilgjengelige brukere er allerede lagt til.</p>
+            )}
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setAddParticipantOpen(false)}>Avbryt</Button>
-            <Button onClick={addParticipant} disabled={!selectedUserId}>Legg til</Button>
+            <Button onClick={addParticipant} disabled={!selectedUserId || selectedUserId === "__pick__"}>Legg til</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -584,11 +674,13 @@ export default function LeadDetail() {
       {/* Convert to Project Dialog */}
       <Dialog open={convertDialogOpen} onOpenChange={setConvertDialogOpen}>
         <DialogContent className="max-w-sm">
-          <DialogHeader><DialogTitle>Konverter til prosjekt</DialogTitle></DialogHeader>
-          <p className="text-sm text-muted-foreground">
-            Dette oppretter et nytt prosjekt fra lead "{lead.company_name}" med det aksepterte tilbudet.
-            Deltakere kopieres til prosjektet.
-          </p>
+          <DialogHeader>
+            <DialogTitle>Konverter til prosjekt</DialogTitle>
+            <DialogDescription>
+              Dette oppretter et nytt prosjekt fra lead &quot;{lead.company_name}&quot; med det aksepterte tilbudet.
+              Deltakere kopieres til prosjektet.
+            </DialogDescription>
+          </DialogHeader>
           <DialogFooter>
             <Button variant="outline" onClick={() => setConvertDialogOpen(false)}>Avbryt</Button>
             <Button onClick={handleConvertToProject} className="gap-1.5">
@@ -598,5 +690,14 @@ export default function LeadDetail() {
         </DialogContent>
       </Dialog>
     </div>
+  );
+}
+
+// ─── Export with Error Boundary ───
+export default function LeadDetail() {
+  return (
+    <LeadDetailErrorBoundary>
+      <LeadDetailInner />
+    </LeadDetailErrorBoundary>
   );
 }
