@@ -155,6 +155,7 @@ function LeadDetailInner() {
 
   // Email draft
   const [creatingDraft, setCreatingDraft] = useState(false);
+  const [msReauthNeeded, setMsReauthNeeded] = useState(false);
 
   const fetchLead = useCallback(async () => {
     if (!id) return;
@@ -386,6 +387,24 @@ function LeadDetailInner() {
     navigate(`/jobs/${data!.id}`);
   };
 
+  // ─── Re-auth Microsoft ───
+  const handleMsReauth = () => {
+    const AZURE_CLIENT_ID = "f5605c08-b986-4626-9dec-e1446fd13702";
+    const AZURE_TENANT_ID = "e1b96c2a-c273-40b9-bb46-a2a7b570e133";
+    const redirectUri = `${window.location.origin}/auth/callback`;
+    const scope = encodeURIComponent(
+      "openid profile email User.Read Calendars.ReadWrite User.Read.All Mail.ReadWrite offline_access"
+    );
+    window.location.href =
+      `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize` +
+      `?client_id=${AZURE_CLIENT_ID}` +
+      `&response_type=code` +
+      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
+      `&scope=${scope}` +
+      `&response_mode=query` +
+      `&prompt=consent`;
+  };
+
   // ─── Email Draft ───
   const handleCreateEmailDraft = async () => {
     if (!lead) return;
@@ -396,7 +415,13 @@ function LeadDetailInner() {
         body: { lead_id: lead.id },
       });
       if (error) throw error;
+      if (data?.ms_reauth) {
+        setMsReauthNeeded(true);
+        toast.error(data.error || "Microsoft-tilkobling må fornyes");
+        return;
+      }
       if (data?.error) { toast.error(data.error); return; }
+      setMsReauthNeeded(false);
       toast.success("E-postutkast opprettet i Outlook");
       if (data?.web_link) {
         window.open(data.web_link, "_blank");
@@ -516,6 +541,19 @@ function LeadDetailInner() {
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
+      {/* MS Reauth Banner */}
+      {msReauthNeeded && (
+        <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
+          <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+          <div className="flex-1">
+            <p className="text-sm font-medium">Microsoft-tilkobling må fornyes</p>
+            <p className="text-xs text-muted-foreground">Manglende rettigheter (Mail.ReadWrite). Logg inn på nytt for å gi tilgang.</p>
+          </div>
+          <Button size="sm" variant="destructive" onClick={handleMsReauth}>
+            Koble til Microsoft på nytt
+          </Button>
+        </div>
+      )}
       {/* Header */}
       <div className="flex items-start gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate("/sales/leads")} className="mt-1">
