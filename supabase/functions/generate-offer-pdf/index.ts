@@ -102,6 +102,24 @@ serve(async (req) => {
     const assumptions = analysis?.assumptions || [];
     const riskNotes = analysis?.risk_notes || [];
 
+    // ───── LOGO ─────
+    let logoImageData: string | null = null;
+    const logoUrl = company?.logo_url;
+    if (logoUrl) {
+      try {
+        const logoRes = await fetch(logoUrl);
+        if (logoRes.ok) {
+          const logoBuffer = await logoRes.arrayBuffer();
+          const logoBytes = new Uint8Array(logoBuffer);
+          const base64 = btoa(String.fromCharCode(...logoBytes));
+          const ext = logoUrl.toLowerCase().includes(".png") ? "PNG" : "JPEG";
+          logoImageData = `data:image/${ext.toLowerCase()};base64,${base64}`;
+        }
+      } catch (e) {
+        console.warn("Could not load logo:", e);
+      }
+    }
+
     // ───── BUILD PDF ─────
     const doc = new jsPDF({ orientation: "portrait", unit: "mm", format: "a4" });
     const pageW = doc.internal.pageSize.getWidth();
@@ -129,21 +147,30 @@ serve(async (req) => {
     };
 
     // ── HEADER ──
+    let headerTextX = marginL;
+    if (logoImageData) {
+      try {
+        doc.addImage(logoImageData, "PNG", marginL, y - 5, 20, 20);
+        headerTextX = marginL + 24;
+      } catch (e) {
+        console.warn("Could not add logo to PDF:", e);
+      }
+    }
     doc.setFontSize(18);
     doc.setFont("helvetica", "bold");
     doc.setTextColor(...brandRgb);
-    doc.text(companyName, marginL, y);
+    doc.text(companyName, headerTextX, y);
     y += 6;
     doc.setFontSize(10);
     doc.setFont("helvetica", "normal");
     doc.setTextColor(100, 116, 139);
     const companySubParts = [companyAddress, `${companyPostal} ${companyCity}`.trim(), companyPhone, companyEmail].filter(Boolean);
     if (companySubParts.length > 0) {
-      doc.text(companySubParts.join(" | "), marginL, y);
+      doc.text(companySubParts.join(" | "), headerTextX, y);
       y += 4;
     }
     if (orgNumber) {
-      doc.text(`Org.nr: ${orgNumber}`, marginL, y);
+      doc.text(`Org.nr: ${orgNumber}`, headerTextX, y);
       y += 4;
     }
 

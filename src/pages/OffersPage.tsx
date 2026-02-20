@@ -11,7 +11,7 @@ import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 import { OFFER_STATUS_CONFIG, ALL_OFFER_STATUSES, type OfferStatus } from "@/lib/offer-status";
-import { Search, FileText, Loader2, ExternalLink } from "lucide-react";
+import { Search, FileText, Loader2, ExternalLink, Plus } from "lucide-react";
 
 interface Offer {
   id: string;
@@ -69,6 +69,9 @@ export default function OffersPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Tilbud</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} tilbud</p>
         </div>
+        <Button onClick={() => navigate("/sales/offers/new")} className="gap-1.5">
+          <Plus className="h-4 w-4" /> Nytt tilbud
+        </Button>
       </div>
 
       <div className="flex flex-col sm:flex-row gap-3">
