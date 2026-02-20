@@ -21,11 +21,13 @@ import AuthCallback from "./pages/AuthCallback";
 import NotFound from "./pages/NotFound";
 import ApprovalPage from "./pages/ApprovalPage";
 import OffersPage from "./pages/OffersPage";
+import NewOfferWizard from "./pages/NewOfferWizard";
 import LeadsPage from "./pages/LeadsPage";
 import PipelinePage from "./pages/PipelinePage";
 import SalesDashboard from "./pages/SalesDashboard";
 import OfferAcceptPage from "./pages/OfferAcceptPage";
 import CompanySettings from "./pages/CompanySettings";
+import TrashPage from "./pages/TrashPage";
 
 const queryClient = new QueryClient();
 
@@ -106,6 +108,14 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/sales/offers/new"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <NewOfferWizard />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Legacy routes redirect */}
               <Route path="/calculations" element={<CalculationsPage />} />
@@ -133,6 +143,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <AdminSettings />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/trash"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <TrashPage />
                   </ProtectedRoute>
                 }
               />

@@ -156,10 +156,19 @@ Deno.serve(async (req) => {
   }
 
   try {
-    const { action, event_id, performed_by } = await req.json();
+    const body = await req.json();
+    const { action, event_id, performed_by, schedules: scheduleEmails, start_time, end_time } = body;
 
-    if (!action || !event_id) {
-      return new Response(JSON.stringify({ error: "Missing action or event_id" }), {
+    if (!action) {
+      return new Response(JSON.stringify({ error: "Missing action" }), {
+        status: 400,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+    
+    // get_schedule doesn't require event_id
+    if (action !== "get_schedule" && !event_id) {
+      return new Response(JSON.stringify({ error: "Missing event_id" }), {
         status: 400,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
@@ -411,6 +420,97 @@ Deno.serve(async (req) => {
       await logAction("outlook_disconnected", `Outlook-kobling fjernet av admin`);
 
       return new Response(JSON.stringify({ status: "disconnected" }), {
+        status: 200,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // ─── ACTION: get_schedule ───
+    // Fetch busy/free schedule for given technicians
+    if (action === "get_schedule") {
+      // scheduleEmails, start_time, end_time already parsed from body above
+      
+      // We need at least one admin with MS token
+      const { data: adminRoles } = await supabaseAdmin
+        .from("user_roles")
+        .select("user_id")
+        .in("role", ["admin", "super_admin"])
+        .limit(5);
+      
+      let msToken: string | null = null;
+      for (const ar of (adminRoles || [])) {
+        msToken = await ensureValidMsToken(supabaseAdmin, ar.user_id);
+        if (msToken) break;
+      }
+      
+      if (!msToken) {
+        return new Response(JSON.stringify({ error: "No valid MS token available" }), {
+          status: 400,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      // Fetch technician emails
+      const { data: allTechs } = await supabaseAdmin.from("technicians").select("id, email, name");
+      const techEmails = (allTechs || []).map((t: any) => t.email).filter(Boolean);
+      
+      if (techEmails.length === 0) {
+        return new Response(JSON.stringify({ schedules: [] }), {
+          status: 200,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const now = new Date();
+      const scheduleStart = start_time || now.toISOString();
+      const scheduleEnd = end_time || new Date(now.getTime() + 7 * 24 * 60 * 60 * 1000).toISOString();
+
+      const graphRes = await fetch("https://graph.microsoft.com/v1.0/me/calendar/getSchedule", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${msToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          schedules: techEmails,
+          startTime: { dateTime: scheduleStart, timeZone: "Europe/Oslo" },
+          endTime: { dateTime: scheduleEnd, timeZone: "Europe/Oslo" },
+          availabilityViewInterval: 30,
+        }),
+      });
+
+      if (!graphRes.ok) {
+        const errText = await graphRes.text();
+        console.error("[outlook-sync] getSchedule failed:", graphRes.status, errText);
+        return new Response(JSON.stringify({ error: "Failed to fetch schedule: " + errText }), {
+          status: 500,
+          headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+
+      const graphData = await graphRes.json();
+      
+      // Map emails back to technician IDs
+      const emailToTech = new Map((allTechs || []).map((t: any) => [t.email.toLowerCase(), { id: t.id, name: t.name }]));
+      
+      const scheduleResults = (graphData.value || []).map((entry: any) => {
+        const tech = emailToTech.get(entry.scheduleId?.toLowerCase());
+        return {
+          technician_id: tech?.id || null,
+          technician_name: tech?.name || entry.scheduleId,
+          email: entry.scheduleId,
+          availability_view: entry.availabilityView,
+          busy_slots: (entry.scheduleItems || []).map((slot: any) => ({
+            status: slot.status,
+            subject: slot.subject || null,
+            start: slot.start?.dateTime,
+            end: slot.end?.dateTime,
+            is_private: slot.isPrivate || false,
+          })),
+        };
+      });
+
+      return new Response(JSON.stringify({ schedules: scheduleResults }), {
         status: 200,
         headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
