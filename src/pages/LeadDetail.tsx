@@ -4,20 +4,22 @@ import { format, isPast, isToday } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
+import { useActivityLog } from "@/hooks/useActivityLog";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
+import { EntityView, type EntityTab, type EntityAction } from "@/components/entity/EntityView";
+import { ActivityTimeline } from "@/components/entity/ActivityTimeline";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
 import {
-  ArrowLeft, User, Loader2, Save, Clock,
-  AlertTriangle, Plus, Trash2, FileText, ArrowRightLeft, History, ShieldAlert,
-  Copy, Mail, CalendarPlus, RefreshCw, ExternalLink, Calendar as CalendarIcon
+  User, Loader2, Save, Clock,
+  AlertTriangle, Plus, Trash2, FileText, ArrowRightLeft, ShieldAlert,
+  Mail, CalendarPlus, RefreshCw, Calendar as CalendarIcon
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -77,15 +79,6 @@ interface Participant {
   user_email?: string;
 }
 
-interface HistoryEntry {
-  id: string;
-  action: string;
-  description: string | null;
-  performed_by: string | null;
-  created_at: string;
-  performer_name?: string;
-}
-
 interface Offer {
   id: string;
   offer_number: string;
@@ -113,13 +106,13 @@ function LeadDetailInner() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { user } = useAuth();
+  const { activities, fetchActivities, logActivity } = useActivityLog("lead", id);
 
   const [lead, setLead] = useState<Lead | null>(null);
   const [loading, setLoading] = useState(true);
   const [notFound, setNotFound] = useState(false);
   const [saving, setSaving] = useState(false);
   const [participants, setParticipants] = useState<Participant[]>([]);
-  const [history, setHistory] = useState<HistoryEntry[]>([]);
   const [offers, setOffers] = useState<Offer[]>([]);
   const [calendarLinks, setCalendarLinks] = useState<CalendarLink[]>([]);
   const [companyUsers, setCompanyUsers] = useState<{ id: string; name: string; email: string }[]>([]);
@@ -162,7 +155,6 @@ function LeadDetailInner() {
     try {
       const { data, error } = await supabase.from("leads").select("*").eq("id", id).single();
       if (error || !data) {
-        console.warn("[LeadDetail] Lead not found or access denied:", error?.message);
         setNotFound(true);
         setLoading(false);
         return;
@@ -207,22 +199,6 @@ function LeadDetailInner() {
     }
   }, [id]);
 
-  const fetchHistory = useCallback(async () => {
-    if (!id) return;
-    try {
-      const { data } = await supabase.from("lead_history").select("*").eq("lead_id", id).order("created_at", { ascending: false }).limit(50);
-      if (!data) return;
-      const { data: techs } = await supabase.from("technicians").select("user_id, name");
-      const techMap = new Map((techs || []).map((t: any) => [t.user_id, t.name]));
-      setHistory((data as any[]).map(h => ({
-        ...h,
-        performer_name: techMap.get(h.performed_by) || "System",
-      })));
-    } catch (err) {
-      console.warn("[LeadDetail] History fetch error:", err);
-    }
-  }, [id]);
-
   const fetchOffers = useCallback(async () => {
     if (!id) return;
     try {
@@ -255,20 +231,17 @@ function LeadDetailInner() {
   useEffect(() => {
     fetchLead();
     fetchParticipants();
-    fetchHistory();
+    fetchActivities();
     fetchOffers();
     fetchCalendarLinks();
     fetchCompanyUsers();
-  }, [fetchLead, fetchParticipants, fetchHistory, fetchOffers, fetchCalendarLinks, fetchCompanyUsers]);
+  }, [fetchLead, fetchParticipants, fetchActivities, fetchOffers, fetchCalendarLinks, fetchCompanyUsers]);
 
-  const logHistory = async (action: string, description: string, metadata?: any) => {
-    try {
-      await supabase.from("lead_history").insert({
-        lead_id: id!, action, description, performed_by: user?.id, metadata: metadata || {},
-      });
-    } catch (err) {
-      console.warn("[LeadDetail] Log history error:", err);
-    }
+  const notifyParticipants = async (title: string, message: string) => {
+    const toNotify = participants.filter(p => p.notify_enabled && p.user_id !== user?.id);
+    if (toNotify.length === 0) return;
+    const rows = toNotify.map(p => ({ user_id: p.user_id, title, message, type: "lead_update" }));
+    await supabase.from("notifications").insert(rows);
   };
 
   const handleSave = async () => {
@@ -289,11 +262,13 @@ function LeadDetailInner() {
       next_action_note: nextActionNote.trim() || null,
     };
     await supabase.from("leads").update(payload).eq("id", lead.id);
-    await logHistory("updated", "Lead oppdatert");
+    await logActivity({ action: "updated", description: "Lead oppdatert", type: "note", performedBy: user?.id });
+    // Also write to lead_history for backward compatibility
+    await supabase.from("lead_history").insert({ lead_id: id!, action: "updated", description: "Lead oppdatert", performed_by: user?.id, metadata: {} });
     toast.success("Lead lagret");
     setSaving(false);
     fetchLead();
-    fetchHistory();
+    fetchActivities();
   };
 
   const handleStatusChange = async (newStatus: LeadStatus) => {
@@ -301,11 +276,13 @@ function LeadDetailInner() {
     const oldLabel = LEAD_STATUS_CONFIG[lead.status]?.label || lead.status;
     const newLabel = LEAD_STATUS_CONFIG[newStatus]?.label || newStatus;
     await supabase.from("leads").update({ status: newStatus }).eq("id", lead.id);
-    await logHistory("status_changed", `Status endret fra ${oldLabel} til ${newLabel}`, { from: lead.status, to: newStatus });
+    const desc = `Status endret fra ${oldLabel} til ${newLabel}`;
+    await logActivity({ action: "status_changed", description: desc, type: "status_change", title: `Status: ${newLabel}`, performedBy: user?.id, metadata: { from: lead.status, to: newStatus } });
+    await supabase.from("lead_history").insert({ lead_id: id!, action: "status_changed", description: desc, performed_by: user?.id, metadata: { from: lead.status, to: newStatus } });
     await notifyParticipants(`Status endret til ${newLabel}`, `Lead "${lead.company_name}" fikk ny status: ${newLabel}`);
     toast.success(`Status endret til ${newLabel}`);
     setLead({ ...lead, status: newStatus });
-    fetchHistory();
+    fetchActivities();
   };
 
   const handleOwnerChange = async (newOwnerId: string) => {
@@ -313,12 +290,14 @@ function LeadDetailInner() {
     await supabase.from("leads").update({ assigned_owner_user_id: newOwnerId, owner_id: newOwnerId }).eq("id", lead.id);
     await supabase.from("lead_participants").upsert({ lead_id: lead.id, user_id: newOwnerId, role: "owner" }, { onConflict: "lead_id,user_id" });
     const ownerName = companyUsers.find(u => u.id === newOwnerId)?.name || "Ukjent";
-    await logHistory("owner_changed", `Eier endret til ${ownerName}`, { new_owner: newOwnerId });
+    const desc = `Eier endret til ${ownerName}`;
+    await logActivity({ action: "owner_changed", description: desc, type: "status_change", title: `Ny eier: ${ownerName}`, performedBy: user?.id, metadata: { new_owner: newOwnerId } });
+    await supabase.from("lead_history").insert({ lead_id: lead.id, action: "owner_changed", description: desc, performed_by: user?.id, metadata: { new_owner: newOwnerId } });
     await notifyParticipants(`Ny eier: ${ownerName}`, `Lead "${lead.company_name}" fikk ny eier: ${ownerName}`);
     toast.success("Eier endret");
     fetchLead();
     fetchParticipants();
-    fetchHistory();
+    fetchActivities();
   };
 
   const addParticipant = async () => {
@@ -326,28 +305,25 @@ function LeadDetailInner() {
     const { error } = await supabase.from("lead_participants").insert({ lead_id: lead.id, user_id: selectedUserId, role: "contributor" });
     if (error) { toast.error("Kunne ikke legge til deltaker"); return; }
     const userName = companyUsers.find(u => u.id === selectedUserId)?.name || "Ukjent";
-    await logHistory("participant_added", `${userName} lagt til som deltaker`);
+    const desc = `${userName} lagt til som deltaker`;
+    await logActivity({ action: "participant_added", description: desc, type: "note", performedBy: user?.id });
+    await supabase.from("lead_history").insert({ lead_id: lead.id, action: "participant_added", description: desc, performed_by: user?.id, metadata: {} });
     toast.success("Deltaker lagt til");
     setAddParticipantOpen(false);
     setSelectedUserId("");
     fetchParticipants();
-    fetchHistory();
+    fetchActivities();
   };
 
   const removeParticipant = async (p: Participant) => {
     if (p.role === "owner") { toast.error("Kan ikke fjerne eier"); return; }
     await supabase.from("lead_participants").delete().eq("id", p.id);
-    await logHistory("participant_removed", `${p.user_name} fjernet som deltaker`);
+    const desc = `${p.user_name} fjernet som deltaker`;
+    await logActivity({ action: "participant_removed", description: desc, type: "note", performedBy: user?.id });
+    await supabase.from("lead_history").insert({ lead_id: lead!.id, action: "participant_removed", description: desc, performed_by: user?.id, metadata: {} });
     toast.success("Deltaker fjernet");
     fetchParticipants();
-    fetchHistory();
-  };
-
-  const notifyParticipants = async (title: string, message: string) => {
-    const toNotify = participants.filter(p => p.notify_enabled && p.user_id !== user?.id);
-    if (toNotify.length === 0) return;
-    const rows = toNotify.map(p => ({ user_id: p.user_id, title, message, type: "lead_update" }));
-    await supabase.from("notifications").insert(rows);
+    fetchActivities();
   };
 
   const handleConvertToProject = async () => {
@@ -363,7 +339,6 @@ function LeadDetailInner() {
       customer: lead.company_name,
       description: lead.notes || null,
       company_id: lead.company_id,
-      lead_id: lead.id,
       offer_id: convertingOfferId,
       start_time: new Date().toISOString(),
       end_time: new Date(Date.now() + 8 * 3600000).toISOString(),
@@ -379,7 +354,9 @@ function LeadDetailInner() {
     }
 
     await supabase.from("leads").update({ status: "won" as LeadStatus }).eq("id", lead.id);
-    await logHistory("converted_to_project", `Konvertert til prosjekt`, { job_id: data!.id, offer_id: convertingOfferId });
+    const desc = "Konvertert til prosjekt";
+    await logActivity({ action: "converted_to_project", description: desc, type: "status_change", title: desc, performedBy: user?.id, metadata: { job_id: data!.id, offer_id: convertingOfferId } });
+    await supabase.from("lead_history").insert({ lead_id: lead.id, action: "converted_to_project", description: desc, performed_by: user?.id, metadata: { job_id: data!.id, offer_id: convertingOfferId } });
     await notifyParticipants("Lead konvertert", `Lead "${lead.company_name}" er konvertert til prosjekt.`);
 
     toast.success("Lead konvertert til prosjekt");
@@ -392,17 +369,8 @@ function LeadDetailInner() {
     const AZURE_CLIENT_ID = "f5605c08-b986-4626-9dec-e1446fd13702";
     const AZURE_TENANT_ID = "e1b96c2a-c273-40b9-bb46-a2a7b570e133";
     const redirectUri = `${window.location.origin}/auth/callback`;
-    const scope = encodeURIComponent(
-      "openid profile email User.Read Calendars.ReadWrite User.Read.All Mail.ReadWrite offline_access"
-    );
-    window.location.href =
-      `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize` +
-      `?client_id=${AZURE_CLIENT_ID}` +
-      `&response_type=code` +
-      `&redirect_uri=${encodeURIComponent(redirectUri)}` +
-      `&scope=${scope}` +
-      `&response_mode=query` +
-      `&prompt=consent`;
+    const scope = encodeURIComponent("openid profile email User.Read Calendars.ReadWrite User.Read.All Mail.ReadWrite offline_access");
+    window.location.href = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_mode=query&prompt=consent`;
   };
 
   // ─── Email Draft ───
@@ -415,18 +383,13 @@ function LeadDetailInner() {
         body: { lead_id: lead.id },
       });
       if (error) throw error;
-      if (data?.ms_reauth) {
-        setMsReauthNeeded(true);
-        toast.error(data.error || "Microsoft-tilkobling må fornyes");
-        return;
-      }
+      if (data?.ms_reauth) { setMsReauthNeeded(true); toast.error(data.error || "Microsoft-tilkobling må fornyes"); return; }
       if (data?.error) { toast.error(data.error); return; }
       setMsReauthNeeded(false);
       toast.success("E-postutkast opprettet i Outlook");
-      if (data?.web_link) {
-        window.open(data.web_link, "_blank");
-      }
-      fetchHistory();
+      if (data?.web_link) window.open(data.web_link, "_blank");
+      await logActivity({ action: "email_draft_created", description: `E-postutkast opprettet til ${lead.email}`, type: "email", title: "E-postutkast", performedBy: user?.id, microsoftMessageId: data?.message_id });
+      fetchActivities();
     } catch (err: any) {
       console.error("[LeadDetail] Email draft error:", err);
       toast.error("Kunne ikke opprette e-postutkast");
@@ -458,12 +421,11 @@ function LeadDetailInner() {
       if (error) throw error;
       if (data?.error) { toast.error(data.error); return; }
       toast.success("Møte opprettet i Outlook");
-      if (data?.web_link) {
-        window.open(data.web_link, "_blank");
-      }
+      if (data?.web_link) window.open(data.web_link, "_blank");
+      await logActivity({ action: "meeting_created", description: `${meetingSubject} opprettet`, type: "meeting", title: meetingSubject, performedBy: user?.id, microsoftEventId: data?.outlook_event_id });
       setMeetingDialogOpen(false);
       fetchCalendarLinks();
-      fetchHistory();
+      fetchActivities();
     } catch (err: any) {
       console.error("[LeadDetail] Create meeting error:", err);
       toast.error("Kunne ikke opprette møte");
@@ -475,14 +437,13 @@ function LeadDetailInner() {
   // ─── Delete Calendar Link ───
   const handleDeleteCalendarLink = async (linkId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke("lead-calendar-event", {
-        body: { action: "delete", link_id: linkId },
-      });
+      const { data, error } = await supabase.functions.invoke("lead-calendar-event", { body: { action: "delete", link_id: linkId } });
       if (error) throw error;
       if (data?.error) { toast.error(data.error); return; }
       toast.success("Møte slettet fra Outlook");
+      await logActivity({ action: "meeting_deleted", description: "Møte slettet", type: "meeting", performedBy: user?.id });
       fetchCalendarLinks();
-      fetchHistory();
+      fetchActivities();
     } catch (err) {
       console.error("[LeadDetail] Delete calendar link error:", err);
       toast.error("Kunne ikke slette møte");
@@ -492,9 +453,7 @@ function LeadDetailInner() {
   // ─── Resync Calendar Link ───
   const handleResyncCalendarLink = async (linkId: string) => {
     try {
-      const { data, error } = await supabase.functions.invoke("lead-calendar-event", {
-        body: { action: "resync", link_id: linkId },
-      });
+      const { data, error } = await supabase.functions.invoke("lead-calendar-event", { body: { action: "resync", link_id: linkId } });
       if (error) throw error;
       if (data?.error) { toast.error(data.error); return; }
       toast.success("Møte resynkronisert");
@@ -505,43 +464,39 @@ function LeadDetailInner() {
     }
   };
 
-  // ─── Copy ref code ───
-  const copyRefCode = () => {
-    if (lead?.lead_ref_code) {
-      navigator.clipboard.writeText(lead.lead_ref_code);
-      toast.success("Referansekode kopiert");
-    }
-  };
+  // ─── Derived values ───
+  const safeStatus = lead && LEAD_STATUS_CONFIG[lead.status] ? lead.status : "new";
+  const isOverdue = lead?.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
+  const ownerSelectValue = lead?.assigned_owner_user_id && companyUsers.some(u => u.id === lead.assigned_owner_user_id)
+    ? lead.assigned_owner_user_id : "__unset__";
 
-  // ─── Loading state ───
-  if (loading) {
-    return <div className="flex items-center justify-center py-20"><Loader2 className="h-8 w-8 animate-spin text-muted-foreground" /></div>;
-  }
+  // ─── EntityView config ───
+  const entityActions: EntityAction[] = [
+    {
+      label: "E-post",
+      mobileLabel: "Ny e-post",
+      icon: <Mail className="h-4 w-4" />,
+      onClick: handleCreateEmailDraft,
+      disabled: creatingDraft || !lead?.email,
+      loading: creatingDraft,
+    },
+    {
+      label: "Møte",
+      mobileLabel: "Opprett møte",
+      icon: <CalendarPlus className="h-4 w-4" />,
+      onClick: () => {
+        setMeetingStart("");
+        setMeetingDuration("60");
+        setMeetingLocation("");
+        setMeetingSubject("Befaring");
+        setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
+        setMeetingDialogOpen(true);
+      },
+    },
+  ];
 
-  if (notFound || !lead) {
-    return (
-      <div className="mx-auto max-w-md p-8 text-center space-y-4">
-        <ShieldAlert className="h-12 w-12 mx-auto text-muted-foreground opacity-60" />
-        <h2 className="text-lg font-semibold">Lead ikke funnet</h2>
-        <p className="text-sm text-muted-foreground">
-          Du har ikke tilgang til denne leaden, eller den finnes ikke.
-        </p>
-        <Button variant="outline" onClick={() => navigate("/sales/leads")}>
-          <ArrowLeft className="h-4 w-4 mr-2" /> Tilbake til leads
-        </Button>
-      </div>
-    );
-  }
-
-  const safeStatus = LEAD_STATUS_CONFIG[lead.status] ? lead.status : "new";
-  const isOverdue = lead.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
-  const ownerSelectValue = lead.assigned_owner_user_id && companyUsers.some(u => u.id === lead.assigned_owner_user_id)
-    ? lead.assigned_owner_user_id
-    : "__unset__";
-
-  return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
-      {/* MS Reauth Banner */}
+  const banner = (
+    <>
       {msReauthNeeded && (
         <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
           <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
@@ -549,107 +504,10 @@ function LeadDetailInner() {
             <p className="text-sm font-medium">Microsoft-tilkobling må fornyes</p>
             <p className="text-xs text-muted-foreground">Manglende rettigheter (Mail.ReadWrite). Logg inn på nytt for å gi tilgang.</p>
           </div>
-          <Button size="sm" variant="destructive" onClick={handleMsReauth}>
-            Koble til Microsoft på nytt
-          </Button>
+          <Button size="sm" variant="destructive" onClick={handleMsReauth}>Koble til Microsoft på nytt</Button>
         </div>
       )}
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <Button variant="ghost" size="icon" onClick={() => navigate("/sales/leads")} className="mt-1">
-          <ArrowLeft className="h-5 w-5" />
-        </Button>
-        <div className="flex-1 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">{lead.company_name}</h1>
-          <div className="flex items-center gap-2 flex-wrap mt-1">
-            {lead.lead_ref_code && (
-              <button
-                onClick={copyRefCode}
-                className="inline-flex items-center gap-1 text-xs font-mono bg-muted px-2 py-0.5 rounded hover:bg-muted/80 transition-colors"
-                title="Klikk for å kopiere"
-              >
-                {lead.lead_ref_code}
-                <Copy className="h-3 w-3 text-muted-foreground" />
-              </button>
-            )}
-            <span className="text-sm text-muted-foreground">
-              Opprettet {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
-            </span>
-          </div>
-        </div>
-        <div className="flex items-center gap-2 shrink-0">
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 hidden sm:flex"
-            disabled={creatingDraft || !lead.email}
-            onClick={handleCreateEmailDraft}
-            title={!lead.email ? "Lead har ingen e-postadresse" : ""}
-          >
-            {creatingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-            E-post
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            className="gap-1.5 hidden sm:flex"
-            onClick={() => {
-              setMeetingStart("");
-              setMeetingDuration("60");
-              setMeetingLocation("");
-              setMeetingSubject("Befaring");
-              setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
-              setMeetingDialogOpen(true);
-            }}
-          >
-            <CalendarPlus className="h-4 w-4" /> Møte
-          </Button>
-          <Select value={safeStatus} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
-            <SelectTrigger className="w-auto h-9">
-              <Badge className={LEAD_STATUS_CONFIG[safeStatus]?.className}>
-                {LEAD_STATUS_CONFIG[safeStatus]?.label}
-              </Badge>
-            </SelectTrigger>
-            <SelectContent>
-              {ALL_LEAD_STATUSES.map(s => (
-                <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Mobile action buttons */}
-      <div className="flex gap-2 sm:hidden">
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 flex-1"
-          disabled={creatingDraft || !lead.email}
-          onClick={handleCreateEmailDraft}
-        >
-          {creatingDraft ? <Loader2 className="h-4 w-4 animate-spin" /> : <Mail className="h-4 w-4" />}
-          Ny e-post
-        </Button>
-        <Button
-          variant="outline"
-          size="sm"
-          className="gap-1.5 flex-1"
-          onClick={() => {
-            setMeetingStart("");
-            setMeetingDuration("60");
-            setMeetingLocation("");
-            setMeetingSubject("Befaring");
-            setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
-            setMeetingDialogOpen(true);
-          }}
-        >
-          <CalendarPlus className="h-4 w-4" /> Opprett møte
-        </Button>
-      </div>
-
-      {/* Next Action Banner */}
-      {lead.next_action_date && (
+      {lead?.next_action_date && (
         <Card className={isOverdue ? "border-destructive bg-destructive/5" : ""}>
           <CardContent className="flex items-center gap-3 py-3">
             {isOverdue ? <AlertTriangle className="h-5 w-5 text-destructive shrink-0" /> : <Clock className="h-5 w-5 text-muted-foreground shrink-0" />}
@@ -665,18 +523,31 @@ function LeadDetailInner() {
           </CardContent>
         </Card>
       )}
+    </>
+  );
 
-      <Tabs defaultValue="info" className="space-y-4">
-        <TabsList className="flex-wrap">
-          <TabsTrigger value="info">Oversikt</TabsTrigger>
-          <TabsTrigger value="participants">Deltakere ({participants.length})</TabsTrigger>
-          <TabsTrigger value="offers">Tilbud ({offers.length})</TabsTrigger>
-          <TabsTrigger value="calendar">Møter ({calendarLinks.length})</TabsTrigger>
-          <TabsTrigger value="history">Historikk</TabsTrigger>
-        </TabsList>
+  const statusBadge = lead ? (
+    <Select value={safeStatus} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
+      <SelectTrigger className="w-auto h-9">
+        <Badge className={LEAD_STATUS_CONFIG[safeStatus]?.className}>
+          {LEAD_STATUS_CONFIG[safeStatus]?.label}
+        </Badge>
+      </SelectTrigger>
+      <SelectContent>
+        {ALL_LEAD_STATUSES.map(s => (
+          <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
+        ))}
+      </SelectContent>
+    </Select>
+  ) : undefined;
 
-        {/* --- INFO TAB --- */}
-        <TabsContent value="info" className="space-y-4">
+  // ─── Tabs ───
+  const tabs: EntityTab[] = [
+    {
+      value: "info",
+      label: "Oversikt",
+      content: lead ? (
+        <div className="space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
             <Card>
               <CardHeader><CardTitle className="text-base">Kontaktinfo</CardTitle></CardHeader>
@@ -705,7 +576,6 @@ function LeadDetailInner() {
                 </div>
               </CardContent>
             </Card>
-
             <Card>
               <CardHeader><CardTitle className="text-base">Salgsinfo</CardTitle></CardHeader>
               <CardContent className="space-y-3">
@@ -738,8 +608,6 @@ function LeadDetailInner() {
               </CardContent>
             </Card>
           </div>
-
-          {/* Next Action */}
           <Card>
             <CardHeader><CardTitle className="text-base">Neste aksjon</CardTitle></CardHeader>
             <CardContent className="space-y-3">
@@ -767,25 +635,27 @@ function LeadDetailInner() {
               </div>
             </CardContent>
           </Card>
-
-          {/* Notes */}
           <Card>
             <CardHeader><CardTitle className="text-base">Notater</CardTitle></CardHeader>
             <CardContent>
               <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Interne notater..." />
             </CardContent>
           </Card>
-
           <div className="flex justify-end">
             <Button onClick={handleSave} disabled={saving} className="gap-1.5">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Lagre endringer
             </Button>
           </div>
-        </TabsContent>
-
-        {/* --- PARTICIPANTS TAB --- */}
-        <TabsContent value="participants" className="space-y-4">
+        </div>
+      ) : null,
+    },
+    {
+      value: "participants",
+      label: "Deltakere",
+      count: participants.length,
+      content: (
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Deltakere</h3>
             <Button size="sm" className="gap-1.5" onClick={() => setAddParticipantOpen(true)}>
@@ -815,10 +685,15 @@ function LeadDetailInner() {
               </Card>
             ))}
           </div>
-        </TabsContent>
-
-        {/* --- OFFERS TAB --- */}
-        <TabsContent value="offers" className="space-y-4">
+        </div>
+      ),
+    },
+    {
+      value: "offers",
+      label: "Tilbud",
+      count: offers.length,
+      content: (
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Tilbud knyttet til denne leaden</h3>
           </div>
@@ -855,10 +730,15 @@ function LeadDetailInner() {
               ))}
             </div>
           )}
-        </TabsContent>
-
-        {/* --- CALENDAR / MEETINGS TAB --- */}
-        <TabsContent value="calendar" className="space-y-4">
+        </div>
+      ),
+    },
+    {
+      value: "calendar",
+      label: "Møter",
+      count: calendarLinks.length,
+      content: (
+        <div className="space-y-4">
           <div className="flex items-center justify-between">
             <h3 className="font-semibold">Outlook-møter</h3>
             <Button size="sm" className="gap-1.5" onClick={() => {
@@ -892,22 +772,10 @@ function LeadDetailInner() {
                       </p>
                     </div>
                     <div className="flex items-center gap-1">
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleResyncCalendarLink(link.id)}
-                        title="Resynkroniser"
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleResyncCalendarLink(link.id)} title="Resynkroniser">
                         <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
                       </Button>
-                      <Button
-                        variant="ghost"
-                        size="icon"
-                        className="h-7 w-7"
-                        onClick={() => handleDeleteCalendarLink(link.id)}
-                        title="Slett fra Outlook"
-                      >
+                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteCalendarLink(link.id)} title="Slett fra Outlook">
                         <Trash2 className="h-3.5 w-3.5 text-destructive" />
                       </Button>
                     </div>
@@ -916,30 +784,37 @@ function LeadDetailInner() {
               ))}
             </div>
           )}
-        </TabsContent>
+        </div>
+      ),
+    },
+    {
+      value: "history",
+      label: "Historikk",
+      content: (
+        <div className="space-y-4">
+          <h3 className="font-semibold">Aktivitetslogg</h3>
+          <ActivityTimeline activities={activities} emptyMessage="Ingen hendelser loggført" />
+        </div>
+      ),
+    },
+  ];
 
-        {/* --- HISTORY TAB --- */}
-        <TabsContent value="history" className="space-y-4">
-          <h3 className="font-semibold">Historikk</h3>
-          {history.length === 0 ? (
-            <p className="text-sm text-muted-foreground py-4 text-center">Ingen hendelser loggført</p>
-          ) : (
-            <div className="space-y-2">
-              {history.map(h => (
-                <div key={h.id} className="flex gap-3 text-sm">
-                  <div className="pt-1"><History className="h-4 w-4 text-muted-foreground" /></div>
-                  <div className="flex-1">
-                    <p>{h.description}</p>
-                    <p className="text-xs text-muted-foreground">
-                      {h.performer_name} · {format(new Date(h.created_at), "d. MMM yyyy HH:mm", { locale: nb })}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          )}
-        </TabsContent>
-      </Tabs>
+  return (
+    <>
+      <EntityView
+        name={lead?.company_name || ""}
+        refCode={lead?.lead_ref_code}
+        subtitle={lead ? `Opprettet ${format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}` : undefined}
+        statusBadge={statusBadge}
+        actions={entityActions}
+        banner={banner}
+        tabs={tabs}
+        defaultTab="info"
+        onBack={() => navigate("/sales/leads")}
+        loading={loading}
+        notFound={notFound || !lead}
+        notFoundMessage="Lead ikke funnet"
+      />
 
       {/* Add Participant Dialog */}
       <Dialog open={addParticipantOpen} onOpenChange={setAddParticipantOpen}>
@@ -977,7 +852,7 @@ function LeadDetailInner() {
           <DialogHeader>
             <DialogTitle>Konverter til prosjekt</DialogTitle>
             <DialogDescription>
-              Dette oppretter et nytt prosjekt fra lead &quot;{lead.company_name}&quot; med det aksepterte tilbudet.
+              Dette oppretter et nytt prosjekt fra lead &quot;{lead?.company_name}&quot; med det aksepterte tilbudet.
               Deltakere kopieres til prosjektet.
             </DialogDescription>
           </DialogHeader>
@@ -996,7 +871,7 @@ function LeadDetailInner() {
           <DialogHeader>
             <DialogTitle>Opprett befaring / møte</DialogTitle>
             <DialogDescription>
-              Oppretter en Outlook-kalenderinvitasjon med lead-referansen {lead.lead_ref_code || ""}.
+              Oppretter en Outlook-kalenderinvitasjon med lead-referansen {lead?.lead_ref_code || ""}.
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-3">
@@ -1039,10 +914,10 @@ function LeadDetailInner() {
             <div className="space-y-1.5">
               <Label>Deltakere (e-post)</Label>
               <div className="space-y-1.5">
-                {meetingAttendees.map((email, idx) => (
+                {meetingAttendees.map((emailAddr, idx) => (
                   <div key={idx} className="flex items-center gap-2">
                     <Input
-                      value={email}
+                      value={emailAddr}
                       onChange={e => {
                         const updated = [...meetingAttendees];
                         updated[idx] = e.target.value;
@@ -1051,22 +926,12 @@ function LeadDetailInner() {
                       placeholder="e-post@example.com"
                       className="flex-1"
                     />
-                    <Button
-                      variant="ghost"
-                      size="icon"
-                      className="h-8 w-8 shrink-0"
-                      onClick={() => setMeetingAttendees(meetingAttendees.filter((_, i) => i !== idx))}
-                    >
+                    <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => setMeetingAttendees(meetingAttendees.filter((_, i) => i !== idx))}>
                       <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                     </Button>
                   </div>
                 ))}
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="gap-1 text-xs"
-                  onClick={() => setMeetingAttendees([...meetingAttendees, ""])}
-                >
+                <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setMeetingAttendees([...meetingAttendees, ""])}>
                   <Plus className="h-3 w-3" /> Legg til deltaker
                 </Button>
               </div>
@@ -1081,7 +946,7 @@ function LeadDetailInner() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
+    </>
   );
 }
 
