@@ -41,6 +41,9 @@ import {
   Trash2,
   Pencil,
   Mail,
+  Video,
+  Copy,
+  ExternalLink,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -82,6 +85,7 @@ export default function JobDetail() {
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
   const [syncLoading, setSyncLoading] = useState<string | null>(null);
+  const [meetingLoading, setMeetingLoading] = useState(false);
   const [offerData, setOfferData] = useState<any>(null);
 
   const handleOutlookAction = async (syncAction: string) => {
@@ -160,6 +164,9 @@ export default function JobDetail() {
       outlookDeletedAt: data.outlook_deleted_at ? new Date(data.outlook_deleted_at) : undefined,
       calendarDirty: data.calendar_dirty || false,
       calendarLastSyncedAt: data.calendar_last_synced_at || null,
+      meetingJoinUrl: data.meeting_join_url || null,
+      meetingId: data.meeting_id || null,
+      meetingCreatedAt: data.meeting_created_at ? new Date(data.meeting_created_at) : null,
     });
     setLoading(false);
   }, [id]);
@@ -479,6 +486,89 @@ export default function JobDetail() {
                 calendarLastSyncedAt={job.calendarLastSyncedAt}
                 onSynced={() => fetchJob()}
               />
+
+              {/* Teams Meeting Section */}
+              {isAdmin && (
+                <div className="rounded-lg border bg-card p-4 space-y-3">
+                  <h3 className="text-sm font-medium flex items-center gap-2">
+                    <Video className="h-4 w-4" />
+                    Teams-møte
+                  </h3>
+                  {job.meetingJoinUrl ? (
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 text-sm">
+                        <span className="text-muted-foreground">Møte-ID:</span>
+                        <span className="font-mono text-xs">{job.meetingId?.slice(0, 30)}…</span>
+                      </div>
+                      {job.meetingCreatedAt && (
+                        <div className="text-sm">
+                          <span className="text-muted-foreground">Opprettet:</span>{" "}
+                          {format(job.meetingCreatedAt, "d. MMM yyyy HH:mm", { locale: nb })}
+                        </div>
+                      )}
+                      <div className="text-sm">
+                        <span className="text-muted-foreground">Tidspunkt:</span>{" "}
+                        {format(job.start, "d. MMM yyyy HH:mm", { locale: nb })} – {format(job.end, "HH:mm")}
+                      </div>
+                      <div className="flex flex-wrap gap-2 pt-1">
+                        <Button size="sm" className="gap-1.5" onClick={() => window.open(job.meetingJoinUrl!, "_blank")}>
+                          <ExternalLink className="h-3.5 w-3.5" />
+                          Bli med
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5"
+                          onClick={() => {
+                            navigator.clipboard.writeText(job.meetingJoinUrl!);
+                            toast.success("Møtelenke kopiert");
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5" />
+                          Kopier lenke
+                        </Button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">Ingen Teams-møte opprettet for denne jobben.</p>
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="gap-1.5"
+                        disabled={meetingLoading}
+                        onClick={async () => {
+                          if (!user) return;
+                          setMeetingLoading(true);
+                          try {
+                            const res = await supabase.functions.invoke("teams-meeting", {
+                              body: { action: "create", job_id: job.id },
+                            });
+                            if (res.error || res.data?.error) {
+                              const errMsg = res.data?.error || String(res.error);
+                              if (res.data?.ms_reauth) {
+                                toast.error("Microsoft-tilkobling kreves", { description: "Logg inn på nytt via Microsoft." });
+                              } else {
+                                toast.error("Kunne ikke opprette møte", { description: errMsg });
+                              }
+                            } else {
+                              toast.success("Teams-møte opprettet");
+                              fetchJob();
+                              fetchLogs();
+                            }
+                          } catch {
+                            toast.error("Feil ved opprettelse av Teams-møte");
+                          }
+                          setMeetingLoading(false);
+                        }}
+                      >
+                        {meetingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
+                        Opprett Teams-møte
+                      </Button>
+                    </div>
+                  )}
+                </div>
+              )}
 
               {/* Legacy Outlook Sync Section – Admin only */}
               {isAdmin && job.microsoftEventId && (

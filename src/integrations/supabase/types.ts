@@ -477,6 +477,10 @@ export type Database = {
           id: string
           internal_number: string | null
           job_number: string | null
+          meeting_created_at: string | null
+          meeting_created_by: string | null
+          meeting_id: string | null
+          meeting_join_url: string | null
           microsoft_event_id: string | null
           offer_id: string | null
           outlook_deleted_at: string | null
@@ -514,6 +518,10 @@ export type Database = {
           id?: string
           internal_number?: string | null
           job_number?: string | null
+          meeting_created_at?: string | null
+          meeting_created_by?: string | null
+          meeting_id?: string | null
+          meeting_join_url?: string | null
           microsoft_event_id?: string | null
           offer_id?: string | null
           outlook_deleted_at?: string | null
@@ -551,6 +559,10 @@ export type Database = {
           id?: string
           internal_number?: string | null
           job_number?: string | null
+          meeting_created_at?: string | null
+          meeting_created_by?: string | null
+          meeting_id?: string | null
+          meeting_join_url?: string | null
           microsoft_event_id?: string | null
           offer_id?: string | null
           outlook_deleted_at?: string | null
