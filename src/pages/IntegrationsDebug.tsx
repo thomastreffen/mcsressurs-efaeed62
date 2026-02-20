@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +19,7 @@ import {
   AlertTriangle,
   Plug,
   CalendarCheck,
+  Zap,
 } from "lucide-react";
 
 const AZURE_CLIENT_ID = "f5605c08-b986-4626-9dec-e1446fd13702";
@@ -28,19 +29,26 @@ const EXPECTED_SCOPES = "openid profile email User.Read Calendars.ReadWrite User
 type TestResult = { status: number; ok: boolean; error?: string; data?: string };
 
 export default function IntegrationsDebug() {
-  const { session } = useAuth();
+  const { session, isAdmin } = useAuth();
   const [loading, setLoading] = useState(false);
   const [testing, setTesting] = useState(false);
   const [status, setStatus] = useState<Record<string, unknown> | null>(null);
   const [tests, setTests] = useState<Record<string, TestResult> | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [justConnected, setJustConnected] = useState(false);
+  const [syncingJobs, setSyncingJobs] = useState(false);
+  const [failedJobCount, setFailedJobCount] = useState(0);
 
   const redirectUri = `${window.location.origin}/auth/callback`;
-  const callbackUrl = redirectUri;
 
   const addLog = useCallback((msg: string) => {
     const ts = new Date().toISOString().slice(11, 23);
     setLogs((prev) => [`[${ts}] ${msg}`, ...prev].slice(0, 50));
+  }, []);
+
+  // Auto-fetch status on load
+  useEffect(() => {
+    fetchStatus();
   }, []);
 
   const fetchStatus = async () => {
@@ -54,6 +62,19 @@ export default function IntegrationsDebug() {
       setStatus(data);
       if (data.logs) data.logs.forEach((l: string) => addLog(l));
       addLog(`Status hentet. Tilkoblet: ${data.ms_connected}`);
+
+      // If connected, check for failed jobs to offer resync
+      if (data.ms_connected) {
+        const { data: failedLinks } = await supabase
+          .from("job_calendar_links")
+          .select("id")
+          .eq("user_id", session?.user?.id || "")
+          .eq("sync_status", "failed")
+          .limit(20);
+        const count = failedLinks?.length || 0;
+        setFailedJobCount(count);
+        if (count > 0) setJustConnected(true);
+      }
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : String(e);
       addLog(`FEIL: ${msg}`);
@@ -88,12 +109,8 @@ export default function IntegrationsDebug() {
     }
   };
 
-  const handleDebugConnect = () => {
-    addLog("Starter Microsoft 365 OAuth debug-flyt...");
-    addLog(`Redirect URI: ${redirectUri}`);
-    addLog(`Scopes: ${EXPECTED_SCOPES}`);
-    addLog(`Tenant: ${AZURE_TENANT_ID}`);
-
+  const handleConnect = () => {
+    addLog("Starter Microsoft 365 OAuth-flyt...");
     const scope = encodeURIComponent(EXPECTED_SCOPES);
     const authUrl =
       `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize` +
@@ -103,9 +120,44 @@ export default function IntegrationsDebug() {
       `&scope=${scope}` +
       `&response_mode=query` +
       `&prompt=consent`;
-
-    addLog(`Authorize URL generert. Redirect starter...`);
     window.location.href = authUrl;
+  };
+
+  const handleSyncFailedJobs = async () => {
+    setSyncingJobs(true);
+    try {
+      // Get failed links for this user
+      const { data: failedLinks } = await supabase
+        .from("job_calendar_links")
+        .select("job_id")
+        .eq("user_id", session?.user?.id || "")
+        .eq("sync_status", "failed")
+        .limit(20);
+
+      const jobIds = [...new Set((failedLinks || []).map(l => l.job_id))];
+      let successCount = 0;
+
+      for (const jobId of jobIds) {
+        try {
+          const { error } = await supabase.functions.invoke("ms-calendar", {
+            body: { action: "repair_sync", job_id: jobId },
+          });
+          if (!error) successCount++;
+        } catch { /* continue */ }
+      }
+
+      toast.success(`${successCount} jobb(er) klargjort for ny synk`);
+      setJustConnected(false);
+      setFailedJobCount(0);
+
+      // Notify admin
+      // (Best effort – insert notification for admins if possible)
+      addLog(`Synket ${successCount}/${jobIds.length} jobber`);
+    } catch (e: any) {
+      toast.error("Feil ved synk av jobber", { description: e.message });
+    } finally {
+      setSyncingJobs(false);
+    }
   };
 
   const copyToClipboard = (text: string) => {
@@ -113,155 +165,186 @@ export default function IntegrationsDebug() {
     toast.success("Kopiert til utklippstavle");
   };
 
+  const isConnected = status?.ms_connected === true;
+
   return (
     <div className="space-y-6 p-4 md:p-6 max-w-4xl">
       <div>
         <h1 className="text-2xl font-bold text-foreground">Integrasjoner</h1>
         <p className="text-sm text-muted-foreground">
-          Microsoft 365 – Status og feilsøking
+          Microsoft 365 – {isAdmin ? "Status og feilsøking" : "Tilkoblingsstatus"}
         </p>
       </div>
 
-      {/* Redirect URI Warning */}
-      <Card className="border-status-requested/30 bg-status-requested/5">
-        <CardContent className="pt-4">
-          <div className="flex items-start gap-3">
-            <AlertTriangle className="h-5 w-5 text-[hsl(var(--status-requested))] mt-0.5 shrink-0" />
-            <div className="space-y-2 flex-1">
-              <p className="text-sm font-medium text-foreground">
-                Hvis du ikke blir sendt tilbake hit etter innlogging, er Redirect URI feil.
-              </p>
-              <p className="text-xs text-muted-foreground">
-                Kopier denne og legg til i Entra App Registration → Authentication → Redirect URIs:
-              </p>
-              <div className="flex items-center gap-2 bg-muted rounded-md px-3 py-2">
-                <code className="text-xs text-foreground flex-1 break-all">{redirectUri}</code>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="shrink-0"
-                  onClick={() => copyToClipboard(redirectUri)}
-                >
-                  <Copy className="h-3.5 w-3.5" />
+      {/* Post-connect assist banner */}
+      {justConnected && failedJobCount > 0 && (
+        <Card className="border-primary/30 bg-primary/5">
+          <CardContent className="pt-4">
+            <div className="flex items-start gap-3">
+              <Zap className="h-5 w-5 text-primary mt-0.5 shrink-0" />
+              <div className="flex-1 space-y-2">
+                <p className="text-sm font-medium text-foreground">
+                  Microsoft er tilkoblet! {failedJobCount} jobb(er) venter på synk.
+                </p>
+                <p className="text-xs text-muted-foreground">
+                  Du har tildelte jobber som ikke ble synket til Outlook. Vil du synke dem nå?
+                </p>
+                <Button size="sm" onClick={handleSyncFailedJobs} disabled={syncingJobs} className="gap-1.5">
+                  {syncingJobs ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CalendarCheck className="h-3.5 w-3.5" />}
+                  Synk mine tildelte jobber nå
                 </Button>
               </div>
             </div>
-          </div>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
+      )}
 
-      {/* Action Buttons */}
-      <div className="flex flex-wrap gap-3">
-        <Button onClick={handleDebugConnect} className="gap-2">
-          <Plug className="h-4 w-4" />
-          Koble til Microsoft 365 (Debug)
-        </Button>
-        <Button variant="outline" onClick={fetchStatus} disabled={loading} className="gap-2">
-          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-          Hent status
-        </Button>
-        <Button variant="outline" onClick={runTests} disabled={testing} className="gap-2">
-          {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
-          Test callback og token
-        </Button>
-      </div>
-
-      {/* Status Panel */}
+      {/* Connection status (shown to everyone) */}
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">Statuspanel</CardTitle>
+          <CardTitle className="text-base">Tilkoblingsstatus</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           <StatusRow
             label="Innlogget bruker"
             value={session?.user?.email || "Ikke innlogget"}
-            sublabel={session?.user?.id?.slice(0, 8) + "..."}
           />
           <Separator />
           <StatusRow
             label="Microsoft-tilkobling"
-            value={status ? (status.ms_connected ? "Tilkoblet" : "Ikke tilkoblet") : "Ukjent"}
-            badge={status?.ms_connected ? "success" : status ? "error" : "neutral"}
+            value={status ? (isConnected ? "Tilkoblet" : "Ikke tilkoblet") : loading ? "Sjekker..." : "Ukjent"}
+            badge={isConnected ? "success" : status ? "error" : "neutral"}
           />
           <StatusRow
-            label="Refresh token"
-            value={status ? (status.ms_refresh_available ? "Finnes" : "Mangler") : "Ukjent"}
-            badge={status?.ms_refresh_available ? "success" : status ? "warning" : "neutral"}
-          />
-          <StatusRow
-            label="Token utløper"
-            value={status?.ms_expires_at ? String(status.ms_expires_at) : "N/A"}
+            label="Token-status"
+            value={status ? (status.ms_expired === false ? "Gyldig" : status.ms_expired === true ? "Utløpt" : "Ukjent") : "Ukjent"}
             badge={status?.ms_expired === false ? "success" : status?.ms_expired === true ? "error" : "neutral"}
-            sublabel={status?.ms_expired === true ? "Utløpt" : status?.ms_expired === false ? "Gyldig" : undefined}
           />
-          <Separator />
-          <StatusRow label="Forventede scopes" value={EXPECTED_SCOPES} mono />
-          <StatusRow label="Redirect URI" value={redirectUri} mono />
-          <StatusRow label="Callback URL" value={callbackUrl} mono />
-          <StatusRow label="Tenant ID" value={status?.tenant_id ? String(status.tenant_id) : AZURE_TENANT_ID} mono />
         </CardContent>
       </Card>
 
-      {/* Test Results */}
-      {tests && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Graph API-tester</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {Object.entries(tests).map(([endpoint, result]) => (
-              <div key={endpoint} className="flex items-start gap-3 p-3 rounded-md bg-muted/50">
-                {result.ok ? (
-                  <CheckCircle2 className="h-5 w-5 text-[hsl(var(--status-approved))] mt-0.5 shrink-0" />
-                ) : (
-                  <XCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
-                )}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <span className="text-sm font-medium text-foreground">{endpoint}</span>
-                    <Badge variant={result.ok ? "default" : "destructive"} className="text-xs">
-                      {result.status}
-                    </Badge>
+      {/* Actions */}
+      <div className="flex flex-wrap gap-3">
+        <Button onClick={handleConnect} className="gap-2">
+          <Plug className="h-4 w-4" />
+          {isConnected ? "Koble til på nytt" : "Koble til Microsoft 365"}
+        </Button>
+        <Button variant="outline" onClick={fetchStatus} disabled={loading} className="gap-2">
+          {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+          Oppdater status
+        </Button>
+        {isAdmin && (
+          <Button variant="outline" onClick={runTests} disabled={testing} className="gap-2">
+            {testing ? <Loader2 className="h-4 w-4 animate-spin" /> : <ExternalLink className="h-4 w-4" />}
+            Test Graph API
+          </Button>
+        )}
+      </div>
+
+      {/* Admin-only sections */}
+      {isAdmin && (
+        <>
+          {/* Redirect URI Warning */}
+          <Card className="border-status-requested/30 bg-status-requested/5">
+            <CardContent className="pt-4">
+              <div className="flex items-start gap-3">
+                <AlertTriangle className="h-5 w-5 text-[hsl(var(--status-requested))] mt-0.5 shrink-0" />
+                <div className="space-y-2 flex-1">
+                  <p className="text-sm font-medium text-foreground">
+                    Redirect URI for Entra App Registration
+                  </p>
+                  <div className="flex items-center gap-2 bg-muted rounded-md px-3 py-2">
+                    <code className="text-xs text-foreground flex-1 break-all">{redirectUri}</code>
+                    <Button variant="ghost" size="sm" className="shrink-0" onClick={() => copyToClipboard(redirectUri)}>
+                      <Copy className="h-3.5 w-3.5" />
+                    </Button>
                   </div>
-                  {result.data && (
-                    <p className="text-xs text-muted-foreground mt-1">{result.data}</p>
-                  )}
-                  {result.error && (
-                    <p className="text-xs text-destructive mt-1 break-all">{result.error}</p>
-                  )}
                 </div>
               </div>
-            ))}
-          </CardContent>
-        </Card>
-      )}
+            </CardContent>
+          </Card>
 
-      {/* Test Availability */}
-      <AvailabilityTester addLog={addLog} />
+          {/* Detailed Status Panel */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Detaljert status</CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <StatusRow
+                label="Refresh token"
+                value={status ? (status.ms_refresh_available ? "Finnes" : "Mangler") : "Ukjent"}
+                badge={status?.ms_refresh_available ? "success" : status ? "warning" : "neutral"}
+              />
+              <StatusRow
+                label="Token utløper"
+                value={status?.ms_expires_at ? String(status.ms_expires_at) : "N/A"}
+                badge={status?.ms_expired === false ? "success" : status?.ms_expired === true ? "error" : "neutral"}
+              />
+              <Separator />
+              <StatusRow label="Forventede scopes" value={EXPECTED_SCOPES} mono />
+              <StatusRow label="Redirect URI" value={redirectUri} mono />
+              <StatusRow label="Tenant ID" value={status?.tenant_id ? String(status.tenant_id) : AZURE_TENANT_ID} mono />
+            </CardContent>
+          </Card>
 
-      {/* Debug Log */}
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Debug-logg (siste 50)</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <ScrollArea className="h-64 rounded-md border bg-muted/30 p-3">
-            {logs.length === 0 ? (
-              <p className="text-xs text-muted-foreground italic">
-                Ingen logger ennå. Trykk "Hent status" for å starte.
-              </p>
-            ) : (
-              <div className="space-y-1">
-                {logs.map((line, i) => (
-                  <p key={i} className="text-xs font-mono text-foreground whitespace-pre-wrap">
-                    {line}
-                  </p>
+          {/* Test Results */}
+          {tests && (
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Graph API-tester</CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {Object.entries(tests).map(([endpoint, result]) => (
+                  <div key={endpoint} className="flex items-start gap-3 p-3 rounded-md bg-muted/50">
+                    {result.ok ? (
+                      <CheckCircle2 className="h-5 w-5 text-[hsl(var(--status-approved))] mt-0.5 shrink-0" />
+                    ) : (
+                      <XCircle className="h-5 w-5 text-destructive mt-0.5 shrink-0" />
+                    )}
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2">
+                        <span className="text-sm font-medium text-foreground">{endpoint}</span>
+                        <Badge variant={result.ok ? "default" : "destructive"} className="text-xs">
+                          {result.status}
+                        </Badge>
+                      </div>
+                      {result.data && <p className="text-xs text-muted-foreground mt-1">{result.data}</p>}
+                      {result.error && <p className="text-xs text-destructive mt-1 break-all">{result.error}</p>}
+                    </div>
+                  </div>
                 ))}
-              </div>
-            )}
-          </ScrollArea>
-        </CardContent>
-      </Card>
+              </CardContent>
+            </Card>
+          )}
+
+          {/* Test Availability */}
+          <AvailabilityTester addLog={addLog} />
+
+          {/* Debug Log */}
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base">Debug-logg (siste 50)</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <ScrollArea className="h-64 rounded-md border bg-muted/30 p-3">
+                {logs.length === 0 ? (
+                  <p className="text-xs text-muted-foreground italic">
+                    Ingen logger ennå. Trykk "Oppdater status" for å starte.
+                  </p>
+                ) : (
+                  <div className="space-y-1">
+                    {logs.map((line, i) => (
+                      <p key={i} className="text-xs font-mono text-foreground whitespace-pre-wrap">
+                        {line}
+                      </p>
+                    ))}
+                  </div>
+                )}
+              </ScrollArea>
+            </CardContent>
+          </Card>
+        </>
+      )}
     </div>
   );
 }
@@ -281,7 +364,6 @@ function AvailabilityTester({ addLog }: { addLog: (msg: string) => void }) {
     setResults(null);
     addLog("Testing availability for all technicians...");
     try {
-      // First get all technician user_ids
       const { data: techs } = await supabase.from("technicians").select("user_id");
       const userIds = (techs || []).map((t: any) => t.user_id).filter(Boolean);
 
@@ -398,9 +480,7 @@ function StatusRow({
             }`}
           />
         )}
-        <span
-          className={`text-sm text-foreground ${mono ? "font-mono text-xs break-all" : ""}`}
-        >
+        <span className={`text-sm text-foreground ${mono ? "font-mono text-xs break-all" : ""}`}>
           {value}
         </span>
         {sublabel && (

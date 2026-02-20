@@ -79,6 +79,16 @@ Deno.serve(async (req) => {
 
     const expectedScopes = "openid profile email User.Read Calendars.ReadWrite User.Read.All Mail.ReadWrite offline_access";
 
+    if (action === "check_connection") {
+      // Lightweight check: connected = has refresh token
+      const connected = hasRefreshToken && hasAccessToken;
+      log(`check_connection: connected=${connected}`);
+      return new Response(
+        JSON.stringify({ connected, has_refresh_token: hasRefreshToken, expired: isExpired, logs }),
+        { status: 200, headers: { ...corsHeaders, "Content-Type": "application/json" } }
+      );
+    }
+
     if (action === "status") {
       return new Response(
         JSON.stringify({

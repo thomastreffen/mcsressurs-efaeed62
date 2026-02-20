@@ -127,12 +127,30 @@ export function JobCalendarSync({
   const [showAudit, setShowAudit] = useState(false);
   const [expandedError, setExpandedError] = useState<string | null>(null);
   const [sendingNotify, setSendingNotify] = useState<string | null>(null);
+  const [recentNotifs, setRecentNotifs] = useState<Map<string, string>>(new Map());
 
   // Conflict modal state
   const [conflictModal, setConflictModal] = useState<{
     open: boolean;
     conflicts: AvailabilityResult[];
   }>({ open: false, conflicts: [] });
+
+  // Tech user map (must be before fetchRecentNotifs)
+  const [techUserMap, setTechUserMap] = useState<Map<string, { user_id: string; name: string }>>(new Map());
+  useEffect(() => {
+    if (!technicianIds.length) return;
+    supabase
+      .from("technicians")
+      .select("id, user_id, name")
+      .in("id", technicianIds)
+      .then(({ data }) => {
+        const map = new Map<string, { user_id: string; name: string }>();
+        for (const t of data || []) {
+          map.set(t.id, { user_id: t.user_id, name: t.name });
+        }
+        setTechUserMap(map);
+      });
+  }, [technicianIds]);
 
   const fetchLinks = useCallback(async () => {
     setLoadingLinks(true);
@@ -160,27 +178,37 @@ export function JobCalendarSync({
     setAuditEntries((data as AuditEntry[]) || []);
   }, [jobId]);
 
+  // Fetch recent ms_connect_request notifications for throttle display
+  const fetchRecentNotifs = useCallback(async () => {
+    const techUserIds = Array.from(techUserMap.values()).map(t => t.user_id);
+    if (!techUserIds.length) return;
+    const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+    const { data } = await supabase
+      .from("notifications")
+      .select("user_id, created_at")
+      .eq("type", "ms_connect_request")
+      .eq("event_id", jobId)
+      .gte("created_at", twoHoursAgo)
+      .order("created_at", { ascending: false });
+    const map = new Map<string, string>();
+    for (const n of data || []) {
+      for (const [tid, info] of techUserMap.entries()) {
+        if (info.user_id === n.user_id && !map.has(tid)) {
+          map.set(tid, n.created_at);
+        }
+      }
+    }
+    setRecentNotifs(map);
+  }, [jobId, techUserMap]);
+
   useEffect(() => {
     fetchLinks();
     fetchAudit();
   }, [fetchLinks, fetchAudit]);
 
-  // Tech user map
-  const [techUserMap, setTechUserMap] = useState<Map<string, { user_id: string; name: string }>>(new Map());
   useEffect(() => {
-    if (!technicianIds.length) return;
-    supabase
-      .from("technicians")
-      .select("id, user_id, name")
-      .in("id", technicianIds)
-      .then(({ data }) => {
-        const map = new Map<string, { user_id: string; name: string }>();
-        for (const t of data || []) {
-          map.set(t.id, { user_id: t.user_id, name: t.name });
-        }
-        setTechUserMap(map);
-      });
-  }, [technicianIds]);
+    if (techUserMap.size > 0) fetchRecentNotifs();
+  }, [techUserMap, fetchRecentNotifs]);
 
   // ── Check availability ──
   const checkAvailability = async () => {
@@ -315,6 +343,18 @@ export function JobCalendarSync({
     const techInfo = techUserMap.get(techId);
     if (!techInfo) return;
 
+    // Throttle: check if already notified in last 2 hours
+    const recentNotif = recentNotifs.get(techId);
+    if (recentNotif) {
+      const elapsed = Date.now() - new Date(recentNotif).getTime();
+      if (elapsed < 2 * 60 * 60 * 1000) {
+        toast.info("Allerede varslet", {
+          description: `Varsel ble sendt ${format(new Date(recentNotif), "d. MMM HH:mm", { locale: nb })}. Neste varsel kan sendes om ${Math.ceil((2 * 60 * 60 * 1000 - elapsed) / 60000)} min.`,
+        });
+        return;
+      }
+    }
+
     setSendingNotify(techId);
     try {
       await supabase.from("notifications").insert({
@@ -324,9 +364,8 @@ export function JobCalendarSync({
         message: `Admin ber deg koble Microsoft 365-kontoen din for å motta jobber i Outlook. Gå til Integrasjoner-siden for å koble til.`,
         event_id: jobId,
       });
-      toast.success(`Varsel sendt til ${techInfo.name}`, {
-        description: "Teknikeren vil se et varsel om å koble Microsoft.",
-      });
+      toast.success(`Varsel sendt til ${techInfo.name}`);
+      fetchRecentNotifs();
     } catch (e: any) {
       toast.error("Kunne ikke sende varsel", { description: e.message });
     } finally {
@@ -454,17 +493,24 @@ export function JobCalendarSync({
                         </Button>
                       )}
                       {parsedErr?.error_code === "missing_token" && !isExpanded && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2 text-xs gap-1"
-                          disabled={sendingNotify === tid}
-                          onClick={() => sendConnectionRequest(tid)}
-                          title="Send varsel til teknikeren om å koble Microsoft"
-                        >
-                          {sendingNotify === tid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
-                          Varsle
-                        </Button>
+                        <>
+                          {recentNotifs.has(tid) ? (
+                            <span className="text-[10px] text-muted-foreground">
+                              Varslet {format(new Date(recentNotifs.get(tid)!), "d. MMM HH:mm", { locale: nb })}
+                            </span>
+                          ) : null}
+                          <Button
+                            size="sm"
+                            variant="outline"
+                            className="h-7 px-2 text-xs gap-1"
+                            disabled={sendingNotify === tid || recentNotifs.has(tid)}
+                            onClick={() => sendConnectionRequest(tid)}
+                            title={recentNotifs.has(tid) ? "Allerede varslet nylig" : "Send varsel til teknikeren om å koble Microsoft"}
+                          >
+                            {sendingNotify === tid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                            Varsle
+                          </Button>
+                        </>
                       )}
                       {link?.calendar_event_url && (
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => window.open(link.calendar_event_url!, "_blank")} title="Åpne i Outlook">
