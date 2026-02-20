@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { format } from "date-fns";
+import { format, isPast, isToday } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -8,12 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
-import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status";
-import { Search, Plus, Loader2, Building2, User, Mail, Phone, ArrowRightLeft } from "lucide-react";
+import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
+import { Search, Plus, Loader2, Building2, AlertTriangle, Clock, User } from "lucide-react";
 import { toast } from "sonner";
 
 interface Lead {
@@ -29,6 +28,10 @@ interface Lead {
   expected_close_date: string | null;
   notes: string | null;
   created_at: string;
+  assigned_owner_user_id: string | null;
+  next_action_type: string | null;
+  next_action_date: string | null;
+  next_action_note: string | null;
 }
 
 export default function LeadsPage() {
@@ -39,24 +42,31 @@ export default function LeadsPage() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dialogOpen, setDialogOpen] = useState(false);
-  const [editLead, setEditLead] = useState<Lead | null>(null);
   const [saving, setSaving] = useState(false);
+  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
 
-  // Form state
+  // Create form state
   const [companyName, setCompanyName] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
   const [phone, setPhone] = useState("");
   const [source, setSource] = useState("");
   const [estimatedValue, setEstimatedValue] = useState("");
-  const [probability, setProbability] = useState("50");
-  const [expectedCloseDate, setExpectedCloseDate] = useState("");
-  const [notes, setNotes] = useState("");
 
   const fetchLeads = async () => {
     setLoading(true);
     const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
-    setLeads((data || []) as Lead[]);
+    const leadData = (data || []) as any as Lead[];
+    setLeads(leadData);
+
+    // Fetch owner names
+    const ownerIds = [...new Set(leadData.map(l => l.assigned_owner_user_id).filter(Boolean))];
+    if (ownerIds.length > 0) {
+      const { data: techs } = await supabase.from("technicians").select("user_id, name").in("user_id", ownerIds as string[]);
+      const map: Record<string, string> = {};
+      (techs || []).forEach((t: any) => { map[t.user_id] = t.name; });
+      setOwnerNames(map);
+    }
     setLoading(false);
   };
 
@@ -64,88 +74,37 @@ export default function LeadsPage() {
 
   const resetForm = () => {
     setCompanyName(""); setContactName(""); setEmail(""); setPhone("");
-    setSource(""); setEstimatedValue(""); setProbability("50"); setExpectedCloseDate(""); setNotes(""); setEditLead(null);
+    setSource(""); setEstimatedValue("");
   };
 
-  const openCreate = () => { resetForm(); setDialogOpen(true); };
-  const openEdit = (lead: Lead) => {
-    setEditLead(lead);
-    setCompanyName(lead.company_name);
-    setContactName(lead.contact_name || "");
-    setEmail(lead.email || "");
-    setPhone(lead.phone || "");
-    setSource(lead.source || "");
-    setEstimatedValue(lead.estimated_value ? String(lead.estimated_value) : "");
-    setProbability(lead.probability ? String(lead.probability) : "50");
-    setExpectedCloseDate(lead.expected_close_date || "");
-    setNotes(lead.notes || "");
-    setDialogOpen(true);
-  };
-
-  const handleSave = async () => {
+  const handleCreate = async () => {
     if (!companyName.trim()) { toast.error("Firmanavn er påkrevd"); return; }
     setSaving(true);
-    const payload = {
+    const { data, error } = await supabase.from("leads").insert({
       company_name: companyName.trim(),
       contact_name: contactName.trim() || null,
       email: email.trim() || null,
       phone: phone.trim() || null,
       source: source.trim() || null,
       estimated_value: Number(estimatedValue) || 0,
-      probability: Number(probability) || 50,
-      expected_close_date: expectedCloseDate || null,
-      notes: notes.trim() || null,
-    };
+      owner_id: user?.id,
+      assigned_owner_user_id: user?.id,
+    } as any).select("id").single();
 
-    if (editLead) {
-      await supabase.from("leads").update(payload).eq("id", editLead.id);
-      toast.success("Lead oppdatert");
-    } else {
-      const { data } = await supabase.from("leads").insert({ ...payload, owner_id: user?.id }).select("id").single();
-      if (data) {
-        await supabase.from("activity_log").insert({
-          entity_type: "lead", entity_id: data.id, action: "created",
-          description: `Lead opprettet: ${companyName.trim()}`, performed_by: user?.id,
-        });
-      }
+    if (data) {
+      // Add creator as owner participant
+      await supabase.from("lead_participants").insert({ lead_id: data.id, user_id: user!.id, role: "owner" });
+      await supabase.from("lead_history").insert({
+        lead_id: data.id, action: "created", description: `Lead opprettet: ${companyName.trim()}`, performed_by: user?.id,
+      });
       toast.success("Lead opprettet");
+      setDialogOpen(false);
+      resetForm();
+      navigate(`/sales/leads/${data.id}`);
+    } else {
+      toast.error("Kunne ikke opprette lead");
     }
     setSaving(false);
-    setDialogOpen(false);
-    resetForm();
-    fetchLeads();
-  };
-
-  const handleConvertToCalculation = async (lead: Lead) => {
-    const { data, error } = await supabase.from("calculations").insert({
-      customer_name: lead.company_name,
-      customer_email: lead.email,
-      project_title: `Prosjekt - ${lead.company_name}`,
-      description: lead.notes || null,
-      created_by: user!.id,
-      lead_id: lead.id,
-    }).select("id").single();
-
-    if (error) { toast.error("Kunne ikke konvertere", { description: error.message }); return; }
-
-    await supabase.from("leads").update({ status: "qualified" as LeadStatus }).eq("id", lead.id);
-    await supabase.from("activity_log").insert({
-      entity_type: "lead", entity_id: lead.id, action: "converted_to_calculation",
-      description: `Konvertert til kalkulasjon`, performed_by: user?.id,
-      metadata: { calculation_id: data.id },
-    });
-    toast.success("Lead konvertert til kalkulasjon");
-    navigate(`/calculations/${data.id}`);
-  };
-
-  const handleStatusChange = async (leadId: string, status: LeadStatus) => {
-    await supabase.from("leads").update({ status }).eq("id", leadId);
-    await supabase.from("activity_log").insert({
-      entity_type: "lead", entity_id: leadId, action: "status_changed",
-      description: `Status endret til ${LEAD_STATUS_CONFIG[status].label}`, performed_by: user?.id,
-    });
-    setLeads((prev) => prev.map((l) => l.id === leadId ? { ...l, status } : l));
-    toast.success(`Status endret til ${LEAD_STATUS_CONFIG[status].label}`);
   };
 
   const filtered = leads.filter((l) => {
@@ -166,7 +125,7 @@ export default function LeadsPage() {
           <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
           <p className="text-sm text-muted-foreground">{filtered.length} leads</p>
         </div>
-        <Button onClick={openCreate} className="gap-1.5 self-start">
+        <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 self-start">
           <Plus className="h-4 w-4" /> Ny lead
         </Button>
       </div>
@@ -195,67 +154,76 @@ export default function LeadsPage() {
             <TableHeader>
               <TableRow>
                 <TableHead>Firma</TableHead>
-                <TableHead>Kontakt</TableHead>
-                <TableHead className="hidden md:table-cell">Kilde</TableHead>
+                <TableHead className="hidden md:table-cell">Eier</TableHead>
                 <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Neste aksjon</TableHead>
                 <TableHead className="text-right">Est. verdi</TableHead>
                 <TableHead className="hidden md:table-cell">Opprettet</TableHead>
-                <TableHead />
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
                     <Building2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
                     Ingen leads funnet
                   </TableCell>
                 </TableRow>
-              ) : filtered.map((lead) => (
-                <TableRow key={lead.id} className="cursor-pointer hover:bg-muted/50" onClick={() => openEdit(lead)}>
-                  <TableCell>
-                    <p className="text-sm font-medium">{lead.company_name}</p>
-                    {lead.email && <p className="text-xs text-muted-foreground">{lead.email}</p>}
-                  </TableCell>
-                  <TableCell className="text-sm">{lead.contact_name || "—"}</TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">{lead.source || "—"}</TableCell>
-                  <TableCell>
-                    <Select value={lead.status} onValueChange={(v) => { handleStatusChange(lead.id, v as LeadStatus); }}>
-                      <SelectTrigger className="h-7 w-[120px] text-xs" onClick={(e) => e.stopPropagation()}>
-                        <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
-                          {LEAD_STATUS_CONFIG[lead.status]?.label}
-                        </Badge>
-                      </SelectTrigger>
-                      <SelectContent>
-                        {ALL_LEAD_STATUSES.map((s) => (
-                          <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </TableCell>
-                  <TableCell className="text-right font-mono text-sm">
-                    {lead.estimated_value > 0 ? `kr ${Number(lead.estimated_value).toLocaleString("nb-NO")}` : "—"}
-                  </TableCell>
-                  <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                    {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
-                  </TableCell>
-                  <TableCell>
-                    <Button variant="ghost" size="sm" className="gap-1 text-xs" onClick={(e) => { e.stopPropagation(); handleConvertToCalculation(lead); }}>
-                      <ArrowRightLeft className="h-3 w-3" /> Kalkyle
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
+              ) : filtered.map((lead) => {
+                const isOverdue = lead.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
+                return (
+                  <TableRow key={lead.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/leads/${lead.id}`)}>
+                    <TableCell>
+                      <p className="text-sm font-medium">{lead.company_name}</p>
+                      {lead.contact_name && <p className="text-xs text-muted-foreground">{lead.contact_name}</p>}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      <span className="text-sm text-muted-foreground">
+                        {lead.assigned_owner_user_id ? ownerNames[lead.assigned_owner_user_id] || "—" : "—"}
+                      </span>
+                    </TableCell>
+                    <TableCell>
+                      <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
+                        {LEAD_STATUS_CONFIG[lead.status]?.label}
+                      </Badge>
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">
+                      {lead.next_action_date ? (
+                        <div className="flex items-center gap-1.5">
+                          {isOverdue ? (
+                            <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
+                          ) : (
+                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
+                          )}
+                          <span className={`text-xs ${isOverdue ? "text-destructive font-medium" : "text-muted-foreground"}`}>
+                            {NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || ""}
+                            {" "}
+                            {format(new Date(lead.next_action_date), "d. MMM", { locale: nb })}
+                          </span>
+                        </div>
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </TableCell>
+                    <TableCell className="text-right font-mono text-sm">
+                      {lead.estimated_value > 0 ? `kr ${Number(lead.estimated_value).toLocaleString("nb-NO")}` : "—"}
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
+                      {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
+                    </TableCell>
+                  </TableRow>
+                );
+              })}
             </TableBody>
           </Table>
         </div>
       )}
 
-      {/* Create/Edit Dialog */}
+      {/* Create Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>{editLead ? "Rediger lead" : "Ny lead"}</DialogTitle>
+            <DialogTitle>Ny lead</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
@@ -286,26 +254,12 @@ export default function LeadsPage() {
               <Label>Estimert verdi (kr)</Label>
               <Input value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)} placeholder="0" type="number" />
             </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div className="space-y-1.5">
-                <Label>Sannsynlighet (%)</Label>
-                <Input value={probability} onChange={(e) => setProbability(e.target.value)} placeholder="50" type="number" min="0" max="100" />
-              </div>
-              <div className="space-y-1.5">
-                <Label>Forventet lukkedato</Label>
-                <Input value={expectedCloseDate} onChange={(e) => setExpectedCloseDate(e.target.value)} type="date" />
-              </div>
-            </div>
-            <div className="space-y-1.5">
-              <Label>Notater</Label>
-              <Textarea value={notes} onChange={(e) => setNotes(e.target.value)} placeholder="Evt. notater..." rows={3} />
-            </div>
           </div>
           <DialogFooter>
             <Button variant="outline" onClick={() => setDialogOpen(false)}>Avbryt</Button>
-            <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+            <Button onClick={handleCreate} disabled={saving} className="gap-1.5">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-              {editLead ? "Lagre" : "Opprett"}
+              Opprett
             </Button>
           </DialogFooter>
         </DialogContent>

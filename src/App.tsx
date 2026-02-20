@@ -23,6 +23,7 @@ import ApprovalPage from "./pages/ApprovalPage";
 import OffersPage from "./pages/OffersPage";
 import NewOfferWizard from "./pages/NewOfferWizard";
 import LeadsPage from "./pages/LeadsPage";
+import LeadDetail from "./pages/LeadDetail";
 import PipelinePage from "./pages/PipelinePage";
 import SalesDashboard from "./pages/SalesDashboard";
 import OfferAcceptPage from "./pages/OfferAcceptPage";
@@ -83,6 +84,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <LeadsPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/sales/leads/:id"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <LeadDetail />
                   </ProtectedRoute>
                 }
               />
