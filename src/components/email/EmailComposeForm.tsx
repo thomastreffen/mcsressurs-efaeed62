@@ -216,7 +216,7 @@ export function EmailComposeForm({
             </Label>
           </div>
           <Badge variant="outline" className="text-xs">
-            {sendNow ? "Sendes direkte fra Outlook" : "Lagres som kladd i Outlook"}
+            {sendNow ? "Sendes fra din Outlook og lagres i Sendt elementer" : "Lagres i Outlook. Kladd"}
           </Badge>
         </div>
 
@@ -232,7 +232,7 @@ export function EmailComposeForm({
             )}
             {sending
               ? (sendNow ? "Sender..." : "Oppretter...")
-              : (sendNow ? "Send e-post" : "Opprett kladd")
+              : (sendNow ? "Send" : "Opprett kladd")
             }
           </Button>
         </div>
