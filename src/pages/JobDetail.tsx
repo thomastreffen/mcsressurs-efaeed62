@@ -86,10 +86,17 @@ function SyncBadge({ status }: { status?: OutlookSyncStatus }) {
   );
 }
 
-/* ─── Card wrapper ─── */
-function SectionCard({ children, className = "" }: { children: React.ReactNode; className?: string }) {
+/* ─── Card wrapper with optional accent stripe ─── */
+function SectionCard({ children, className = "", accent }: { children: React.ReactNode; className?: string; accent?: "blue" | "orange" | "neutral" }) {
+  const accentClass = accent === "blue"
+    ? "border-l-[3px] border-l-primary"
+    : accent === "orange"
+    ? "border-l-[3px] border-l-status-ready-for-invoicing"
+    : accent === "neutral"
+    ? "border-l-[3px] border-l-border"
+    : "";
   return (
-    <div className={`rounded-2xl border border-border/60 bg-card shadow-sm p-5 ${className}`}>
+    <div className={`rounded-2xl border border-border/60 bg-card shadow-sm p-5 ${accentClass} ${className}`}>
       {children}
     </div>
   );
@@ -349,9 +356,9 @@ export default function JobDetail() {
 
   return (
     <>
-      <div className="min-h-screen bg-background">
+      <div className="min-h-screen bg-card">
         {/* ═══ Sticky Header ═══ */}
-        <div className="sticky top-0 z-30 border-b border-border/40 bg-card/80 backdrop-blur-xl">
+        <div className="sticky top-0 z-30 border-b border-primary/10 bg-gradient-to-r from-primary/[0.03] to-transparent backdrop-blur-xl">
           <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-4">
             <div className="flex items-start justify-between gap-3">
               {/* Left: back + job info */}
@@ -580,13 +587,13 @@ export default function JobDetail() {
         )}
 
         {/* ═══ Main Content: 2-col grid ═══ */}
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 pb-24 sm:pb-6">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-6">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 pb-24 sm:pb-8">
+          <div className="grid grid-cols-1 lg:grid-cols-5 gap-7">
             {/* ── LEFT COLUMN (3/5) ── */}
-            <div className="lg:col-span-3 space-y-6">
+            <div className="lg:col-span-3 space-y-7">
 
               {/* Planlegging */}
-              <SectionCard>
+              <SectionCard accent="blue">
                 <SectionTitle icon={<Clock className="h-4 w-4 text-primary" />}>Planlegging</SectionTitle>
                 <div className="space-y-3">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -640,7 +647,7 @@ export default function JobDetail() {
               </SectionCard>
 
               {/* Teams-møte */}
-              <SectionCard>
+              <SectionCard accent="blue">
                 <SectionTitle icon={<Video className="h-4 w-4 text-primary" />}>Teams-møte</SectionTitle>
                 {job.meetingJoinUrl ? (
                   <div className="space-y-3">
@@ -699,7 +706,7 @@ export default function JobDetail() {
               </SectionCard>
 
               {/* Dokumentasjon (desktop: left col, mobile: after email) */}
-              <SectionCard className="order-4 lg:order-none">
+              <SectionCard accent="neutral" className="order-4 lg:order-none">
                 <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Dokumentasjon</SectionTitle>
 
                 {offerData && (
@@ -783,11 +790,11 @@ export default function JobDetail() {
             </div>
 
             {/* ── RIGHT COLUMN (2/5) ── */}
-            <div className="lg:col-span-2 space-y-6">
+            <div className="lg:col-span-2 space-y-7">
 
               {/* E-post */}
               <div ref={emailRef}>
-                <SectionCard>
+                <SectionCard accent="orange">
                   <EmailComposer
                     entityType="job"
                     entityId={job.id}

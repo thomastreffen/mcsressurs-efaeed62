@@ -550,7 +550,7 @@ function LeadDetailInner() {
       content: lead ? (
         <div className="space-y-4">
           <div className="grid md:grid-cols-2 gap-4">
-            <Card>
+            <Card className="rounded-2xl shadow-sm">
               <CardHeader><CardTitle className="text-base">Kontaktinfo</CardTitle></CardHeader>
               <CardContent className="space-y-3">
                 <div className="space-y-1.5">
@@ -577,9 +577,31 @@ function LeadDetailInner() {
                 </div>
               </CardContent>
             </Card>
-            <Card>
+            <Card className="rounded-2xl shadow-sm">
               <CardHeader><CardTitle className="text-base">Salgsinfo</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
+              <CardContent className="space-y-4">
+                {/* Estimated value highlight */}
+                <div className="rounded-xl bg-gradient-to-r from-primary/[0.06] to-transparent p-4 -mx-1">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Estimert verdi</p>
+                  <p className="text-2xl font-bold text-foreground">
+                    kr {Number(estimatedValue || 0).toLocaleString("nb-NO")}
+                  </p>
+                  <div className="flex items-center gap-2 mt-2">
+                    <p className="text-xs text-muted-foreground">Sannsynlighet:</p>
+                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${
+                      Number(probability) >= 70
+                        ? "bg-status-approved/15 text-status-approved"
+                        : Number(probability) >= 40
+                        ? "bg-status-ready-for-invoicing/15 text-status-ready-for-invoicing"
+                        : "bg-muted text-muted-foreground"
+                    }`}>
+                      {probability}%
+                    </span>
+                    <p className="text-xs text-muted-foreground ml-auto">
+                      Vektet: <span className="font-medium text-foreground">kr {Math.round(Number(estimatedValue || 0) * Number(probability || 50) / 100).toLocaleString("nb-NO")}</span>
+                    </p>
+                  </div>
+                </div>
                 <div className="space-y-1.5">
                   <Label>Eier</Label>
                   <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
@@ -609,7 +631,7 @@ function LeadDetailInner() {
               </CardContent>
             </Card>
           </div>
-          <Card>
+          <Card className="rounded-2xl shadow-sm">
             <CardHeader><CardTitle className="text-base">Neste aksjon</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid sm:grid-cols-3 gap-3">
@@ -636,7 +658,7 @@ function LeadDetailInner() {
               </div>
             </CardContent>
           </Card>
-          <Card>
+          <Card className="rounded-2xl shadow-sm">
             <CardHeader><CardTitle className="text-base">Notater</CardTitle></CardHeader>
             <CardContent>
               <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Interne notater..." />

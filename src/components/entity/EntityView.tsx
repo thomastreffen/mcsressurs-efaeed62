@@ -97,22 +97,22 @@ export function EntityView({
   };
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
+    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-7">
       {/* Banner */}
       {banner}
 
-      {/* Header */}
-      <div className="flex items-start gap-3">
-        <Button variant="ghost" size="icon" onClick={onBack} className="mt-1">
+      {/* Header with subtle tint */}
+      <div className="flex items-start gap-3 rounded-2xl bg-gradient-to-r from-primary/[0.04] to-transparent p-4 -mx-1">
+        <Button variant="ghost" size="icon" onClick={onBack} className="mt-1 rounded-xl">
           <ArrowLeft className="h-5 w-5" />
         </Button>
         <div className="flex-1 min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold">{name}</h1>
+          <h1 className="text-xl sm:text-2xl font-bold text-foreground">{name}</h1>
           <div className="flex items-center gap-2 flex-wrap mt-1">
             {refCode && (
               <button
                 onClick={copyRefCode}
-                className="inline-flex items-center gap-1 text-xs font-mono bg-muted px-2 py-0.5 rounded hover:bg-muted/80 transition-colors"
+                className="inline-flex items-center gap-1 text-xs font-mono bg-card border border-border/60 px-2 py-0.5 rounded-lg hover:bg-accent/50 transition-colors shadow-sm"
                 title="Klikk for å kopiere"
               >
                 {refCode}
