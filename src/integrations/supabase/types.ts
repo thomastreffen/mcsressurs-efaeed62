@@ -592,6 +592,66 @@ export type Database = {
           },
         ]
       }
+      job_calendar_links: {
+        Row: {
+          calendar_event_id: string | null
+          calendar_event_url: string | null
+          created_at: string
+          id: string
+          job_id: string
+          last_error: string | null
+          last_synced_at: string | null
+          provider: string
+          sync_status: string
+          technician_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          calendar_event_id?: string | null
+          calendar_event_url?: string | null
+          created_at?: string
+          id?: string
+          job_id: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          provider?: string
+          sync_status?: string
+          technician_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          calendar_event_id?: string | null
+          calendar_event_url?: string | null
+          created_at?: string
+          id?: string
+          job_id?: string
+          last_error?: string | null
+          last_synced_at?: string | null
+          provider?: string
+          sync_status?: string
+          technician_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_calendar_links_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_calendar_links_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_participants: {
         Row: {
           created_at: string
