@@ -371,66 +371,48 @@ Deno.serve(async (req) => {
       for (const tech of techs || []) {
         const techLog = (msg: string) => log(`[${tech.name}] ${msg}`);
 
-        // ── Atomic upsert + lock via RPC-style raw query ──
+        // ── Atomic claim via DB function (SELECT FOR UPDATE) ──
         const syncHash = computeSyncHash(job, tech.user_id);
-        const now = new Date().toISOString();
 
-        // Ensure row exists (idempotent upsert)
-        await supabaseAdmin.from("job_calendar_links").upsert({
-          job_id,
-          user_id: tech.user_id,
-          technician_id: tech.id,
-          provider: "microsoft",
-        }, { onConflict: "job_id,user_id,provider", ignoreDuplicates: true });
+        const { data: claimResult, error: claimErr } = await supabaseAdmin.rpc(
+          "claim_calendar_sync",
+          {
+            _job_id: job_id,
+            _user_id: tech.user_id,
+            _technician_id: tech.id,
+            _provider: "microsoft",
+            _operation_id: operationId,
+            _lock_window_seconds: 15,
+          }
+        );
 
-        // Read with latest data
-        const { data: existingLink } = await supabaseAdmin
-          .from("job_calendar_links")
-          .select("*")
-          .eq("job_id", job_id)
-          .eq("user_id", tech.user_id)
-          .eq("provider", "microsoft")
-          .maybeSingle();
-
-        // Check if already in sync (no change needed)
-        if (
-          existingLink?.sync_status === "linked" &&
-          existingLink?.last_sync_hash === syncHash
-        ) {
-          techLog("No change detected (hash match), skipping Graph call");
-          results.push({ technician_id: tech.id, name: tech.name, status: "no_change" });
+        if (claimErr) {
+          techLog(`Claim failed: ${claimErr.message}`);
+          results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: { error_code: "lock_failed", message: "Kunne ikke låse raden", recommendation: "Prøv igjen." } });
           continue;
         }
 
-        // ── Mutex: prevent double-click (15 sec window) ──
-        if (
-          existingLink?.last_operation_at &&
-          existingLink?.last_operation_id !== operationId
-        ) {
-          const lastOpTime = new Date(existingLink.last_operation_at).getTime();
-          if (Date.now() - lastOpTime < 15_000) {
-            techLog("Another sync operation in progress (within 15s window), skipping");
-            results.push({ technician_id: tech.id, name: tech.name, status: "in_progress" });
-            continue;
-          }
+        if (claimResult?.status === "in_progress") {
+          techLog("Another sync operation in progress (DB lock), skipping");
+          results.push({ technician_id: tech.id, name: tech.name, status: "in_progress" });
+          continue;
         }
 
-        // Claim the operation atomically
-        const { data: claimed, error: claimErr } = await supabaseAdmin
-          .from("job_calendar_links")
-          .update({
-            last_operation_id: operationId,
-            last_operation_at: now,
-          })
-          .eq("job_id", job_id)
-          .eq("user_id", tech.user_id)
-          .eq("provider", "microsoft")
-          .select("id")
-          .single();
+        // Use data from the locked row
+        const existingLink = {
+          sync_status: claimResult?.sync_status,
+          last_sync_hash: claimResult?.last_sync_hash,
+          calendar_event_id: claimResult?.calendar_event_id,
+          calendar_event_url: claimResult?.calendar_event_url,
+        };
 
-        if (claimErr || !claimed) {
-          techLog(`Failed to claim lock: ${claimErr?.message}`);
-          results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: { error_code: "lock_failed", message: "Kunne ikke låse raden", recommendation: "Prøv igjen." } });
+        // Check if already in sync (no change needed)
+        if (
+          existingLink.sync_status === "linked" &&
+          existingLink.last_sync_hash === syncHash
+        ) {
+          techLog("No change detected (hash match), skipping Graph call");
+          results.push({ technician_id: tech.id, name: tech.name, status: "no_change" });
           continue;
         }
 
@@ -442,7 +424,7 @@ Deno.serve(async (req) => {
           await supabaseAdmin.from("job_calendar_links").update({
             sync_status: "failed",
             last_error: JSON.stringify(err),
-          }).eq("job_id", job_id).eq("technician_id", tech.id);
+          }).eq("job_id", job_id).eq("user_id", tech.user_id).eq("provider", "microsoft");
           results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: err });
           continue;
         }
@@ -463,7 +445,7 @@ Deno.serve(async (req) => {
             last_synced_at: new Date().toISOString(),
             last_error: null,
             last_sync_hash: syncHash,
-          }).eq("job_id", job_id).eq("technician_id", tech.id);
+          }).eq("job_id", job_id).eq("user_id", tech.user_id).eq("provider", "microsoft");
           results.push({ technician_id: tech.id, name: tech.name, status: action, event_id: eventId });
         };
 
@@ -472,7 +454,7 @@ Deno.serve(async (req) => {
           await supabaseAdmin.from("job_calendar_links").update({
             sync_status: "failed",
             last_error: JSON.stringify(err),
-          }).eq("job_id", job_id).eq("technician_id", tech.id);
+          }).eq("job_id", job_id).eq("user_id", tech.user_id).eq("provider", "microsoft");
           results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: err });
         };
 
@@ -510,7 +492,7 @@ Deno.serve(async (req) => {
               await supabaseAdmin.from("job_calendar_links").update({
                 calendar_event_id: null,
                 calendar_event_url: null,
-              }).eq("job_id", job_id).eq("technician_id", tech.id);
+              }).eq("job_id", job_id).eq("user_id", tech.user_id).eq("provider", "microsoft");
 
               // Fall through to create
               const createRes = await fetch(`${GRAPH_BASE}/me/events`, {
@@ -682,15 +664,58 @@ Deno.serve(async (req) => {
 
       log(`Repair sync for job ${job_id}`);
 
-      const { data: failedLinks } = await supabaseAdmin
+      // Get ALL non-unlinked links (both failed AND linked)
+      const { data: allLinks } = await supabaseAdmin
         .from("job_calendar_links")
         .select("*, technicians(name, user_id)")
         .eq("job_id", job_id)
-        .eq("sync_status", "failed");
+        .neq("sync_status", "unlinked");
 
       const repairActions: any[] = [];
 
-      for (const link of failedLinks || []) {
+      for (const link of allLinks || []) {
+        const tech = link.technicians;
+        const techLog2 = (msg: string) => log(`[repair][${tech?.name || link.user_id}] ${msg}`);
+
+        // ── For linked entries: verify event still exists in Graph ──
+        if (link.sync_status === "linked" && link.calendar_event_id && tech?.user_id) {
+          const msToken = await ensureValidMsToken(supabaseAdmin, tech.user_id, techLog2);
+          if (msToken) {
+            techLog2(`Verifying event ${link.calendar_event_id.slice(0, 20)}...`);
+            const verifyRes = await fetch(
+              `${GRAPH_BASE}/me/events/${link.calendar_event_id}?$select=id`,
+              { headers: { Authorization: `Bearer ${msToken}` } }
+            );
+
+            if (verifyRes.status === 404) {
+              techLog2("Event NOT found in Outlook — marking as failed/itemNotFound");
+              const err: StructuredError = {
+                error_code: "itemNotFound",
+                message: "Outlook-hendelsen finnes ikke lenger.",
+                recommendation: "Klikk 'Reparer synk' igjen for å klargjøre for ny synk.",
+              };
+              await supabaseAdmin.from("job_calendar_links").update({
+                sync_status: "failed",
+                last_error: JSON.stringify(err),
+              }).eq("id", link.id);
+              repairActions.push({ technician: tech.name, action: "verified_missing", ready_for_resync: false });
+            } else if (verifyRes.ok) {
+              techLog2("Event verified OK");
+              repairActions.push({ technician: tech.name, action: "verified_ok", ready_for_resync: false });
+            } else {
+              await verifyRes.text();
+              techLog2(`Verify returned ${verifyRes.status}, skipping`);
+              repairActions.push({ technician: tech.name, action: "verify_error", ready_for_resync: false });
+            }
+            continue;
+          } else {
+            techLog2("No token to verify event");
+            repairActions.push({ technician: tech.name, action: "needs_reauth_for_verify", ready_for_resync: false });
+            continue;
+          }
+        }
+
+        // ── For failed entries: handle based on error code ──
         let parsedError: StructuredError | null = null;
         try { parsedError = JSON.parse(link.last_error || "{}"); } catch { /* ignore */ }
 
@@ -701,22 +726,23 @@ Deno.serve(async (req) => {
             calendar_event_url: null,
             last_sync_hash: null,
           }).eq("id", link.id);
-          repairActions.push({ technician: link.technicians?.name, action: "cleared_event_id", ready_for_resync: true });
+          repairActions.push({ technician: tech?.name, action: "cleared_event_id", ready_for_resync: true });
         } else if (parsedError?.error_code === "missing_token" || parsedError?.error_code === "invalid_grant") {
-          repairActions.push({ technician: link.technicians?.name, action: "needs_reauth", ready_for_resync: false });
+          repairActions.push({ technician: tech?.name, action: "needs_reauth", ready_for_resync: false });
         } else {
           // Clear hash to force retry
           await supabaseAdmin.from("job_calendar_links").update({
             last_sync_hash: null,
           }).eq("id", link.id);
-          repairActions.push({ technician: link.technicians?.name, action: "cleared_hash", ready_for_resync: true });
+          repairActions.push({ technician: tech?.name, action: "cleared_hash", ready_for_resync: true });
         }
       }
 
       const readyCount = repairActions.filter(a => a.ready_for_resync).length;
-      log(`Repair complete: ${repairActions.length} links processed, ${readyCount} ready for resync`);
+      const verifiedMissing = repairActions.filter(a => a.action === "verified_missing").length;
+      log(`Repair complete: ${repairActions.length} links processed, ${readyCount} ready for resync, ${verifiedMissing} found missing`);
 
-      return respond({ repair_actions: repairActions, ready_for_resync: readyCount, logs });
+      return respond({ repair_actions: repairActions, ready_for_resync: readyCount, verified_missing: verifiedMissing, logs });
     }
 
     return respond({ error: "Unknown action", logs }, 400);

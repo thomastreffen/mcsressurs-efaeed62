@@ -1448,6 +1448,17 @@ export type Database = {
         Args: { _perm: string; _user_id: string }
         Returns: boolean
       }
+      claim_calendar_sync: {
+        Args: {
+          _job_id: string
+          _lock_window_seconds?: number
+          _operation_id: string
+          _provider: string
+          _technician_id: string
+          _user_id: string
+        }
+        Returns: Json
+      }
       get_user_scope: { Args: { _user_id: string }; Returns: string }
       has_role: {
         Args: {

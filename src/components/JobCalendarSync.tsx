@@ -290,7 +290,10 @@ export function JobCalendarSync({
       if (error) throw error;
 
       const readyCount = data.ready_for_resync || 0;
-      if (readyCount > 0) {
+      const verifiedMissing = data.verified_missing || 0;
+      if (verifiedMissing > 0) {
+        toast.warning(`${verifiedMissing} hendelse(r) mangler i Outlook`, { description: "Klikk 'Reparer synk' igjen for å klargjøre for ny synk." });
+      } else if (readyCount > 0) {
         toast.success(`${readyCount} tekniker(e) klargjort for ny synk`, { description: "Trykk 'Synk til Outlook' for å fullføre." });
       } else {
         toast.info("Ingen teknikere kunne repareres automatisk. Se anbefalinger.");
