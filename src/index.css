@@ -22,20 +22,26 @@
     --muted: 210 15% 93%;
     --muted-foreground: 215 12% 50%;
 
-    --accent: 213 50% 95%;
-    --accent-foreground: 213 60% 35%;
+    --accent: 28 80% 52%;
+    --accent-foreground: 0 0% 100%;
 
     --destructive: 0 72% 51%;
     --destructive-foreground: 0 0% 100%;
 
-    --border: 214 20% 90%;
+    --success: 152 60% 38%;
+    --success-foreground: 0 0% 100%;
+
+    --info: 213 50% 55%;
+    --info-foreground: 0 0% 100%;
+
+    --border: 214 20% 92%;
     --input: 214 20% 90%;
     --ring: 213 60% 42%;
 
-    --radius: 0.5rem;
+    --radius: 0.75rem;
 
     /* Status colors */
-    --status-requested: 40 85% 50%;
+    --status-requested: 28 80% 52%;
     --status-requested-foreground: 0 0% 100%;
     --status-approved: 152 60% 42%;
     --status-approved-foreground: 0 0% 100%;
@@ -43,15 +49,15 @@
     --status-time-change-proposed-foreground: 0 0% 100%;
     --status-rejected: 0 72% 51%;
     --status-rejected-foreground: 0 0% 100%;
-    --status-scheduled: 262 55% 55%;
+    --status-scheduled: 213 55% 55%;
     --status-scheduled-foreground: 0 0% 100%;
-    --status-in-progress: 185 60% 40%;
+    --status-in-progress: 213 60% 42%;
     --status-in-progress-foreground: 0 0% 100%;
     --status-completed: 152 65% 32%;
     --status-completed-foreground: 0 0% 100%;
     --status-ready-for-invoicing: 28 80% 52%;
     --status-ready-for-invoicing-foreground: 0 0% 100%;
-    --status-invoiced: 215 15% 55%;
+    --status-invoiced: 215 15% 65%;
     --status-invoiced-foreground: 0 0% 100%;
 
     --sidebar-background: 213 60% 28%;
@@ -77,10 +83,14 @@
     --secondary-foreground: 210 20% 90%;
     --muted: 215 20% 18%;
     --muted-foreground: 215 12% 60%;
-    --accent: 213 40% 20%;
-    --accent-foreground: 213 60% 70%;
+    --accent: 28 70% 50%;
+    --accent-foreground: 0 0% 100%;
     --destructive: 0 62% 30%;
     --destructive-foreground: 0 0% 100%;
+    --success: 152 50% 35%;
+    --success-foreground: 0 0% 100%;
+    --info: 213 45% 50%;
+    --info-foreground: 0 0% 100%;
     --border: 215 20% 20%;
     --input: 215 20% 20%;
     --ring: 213 60% 55%;
