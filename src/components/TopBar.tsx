@@ -25,7 +25,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useNotifications } from "@/hooks/useNotifications";
 import { NotificationDrawer } from "@/components/NotificationDrawer";
 import { cn } from "@/lib/utils";
-
+import { CompanySelector } from "@/components/CompanySelector";
 interface TopBarProps {
   onNewJob: () => void;
   onToggleSidebar?: () => void;
@@ -57,6 +57,10 @@ export function TopBar({ onNewJob, onToggleSidebar, showMenuButton }: TopBarProp
         </div>
 
         <div className="flex items-center gap-1.5 sm:gap-2">
+          {/* Company selector */}
+          <div className="hidden sm:block">
+            <CompanySelector />
+          </div>
           {/* Notification bell */}
           <Button
             variant="ghost"

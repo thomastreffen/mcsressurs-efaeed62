@@ -28,6 +28,8 @@ import SalesDashboard from "./pages/SalesDashboard";
 import OfferAcceptPage from "./pages/OfferAcceptPage";
 import CompanySettings from "./pages/CompanySettings";
 import TrashPage from "./pages/TrashPage";
+import AccessControlPage from "./pages/AccessControlPage";
+import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
 
@@ -38,6 +40,7 @@ const App = () => (
       <Sonner />
       <BrowserRouter>
         <AuthProvider>
+          <CompanyProvider>
           <Routes>
             <Route path="/login" element={<Login />} />
             <Route path="/auth/callback" element={<AuthCallback />} />
@@ -154,10 +157,19 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              <Route
+                path="/admin/access"
+                element={
+                  <ProtectedRoute requiredRoles={["super_admin"]}>
+                    <AccessControlPage />
+                  </ProtectedRoute>
+                }
+              />
             </Route>
 
             <Route path="*" element={<NotFound />} />
           </Routes>
+          </CompanyProvider>
         </AuthProvider>
       </BrowserRouter>
     </TooltipProvider>

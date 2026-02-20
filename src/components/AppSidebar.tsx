@@ -13,6 +13,7 @@ import {
   BarChart3,
   Building,
   Trash2,
+  ShieldCheck,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -49,6 +50,7 @@ const projectNav = [
 const adminNav = [
   { title: "Firma", url: "/admin/company", icon: Building, requireSuperAdmin: true },
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
+  { title: "Tilgangsstyring", url: "/admin/access", icon: ShieldCheck, requireSuperAdmin: true },
   { title: "Innstillinger", url: "/admin/settings", icon: Settings, requireAdmin: true },
   { title: "Papirkurv", url: "/admin/trash", icon: Trash2, requireAdmin: true },
 ];
