@@ -40,7 +40,7 @@ export function EmailComposeForm({
   const [showCc, setShowCc] = useState(false);
   const [subject, setSubject] = useState(defaultSubject || "");
   const [bodyText, setBodyText] = useState("");
-  const [sendNow, setSendNow] = useState(false);
+  const [sendNow, setSendNow] = useState(entityType === "lead");
   const [sending, setSending] = useState(false);
   const [lastResult, setLastResult] = useState<{ mode: string; web_link?: string; message?: string } | null>(null);
 
