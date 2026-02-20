@@ -110,6 +110,7 @@ function buildHtmlBody(job: any, jobId: string): string {
     `<b>Kunde:</b> ${normalizeText(job.customer) || "Ikke angitt"}`,
     `<b>Adresse:</b> ${normalizeText(job.address) || "Ikke angitt"}`,
     job.description ? `<b>Beskrivelse:</b> ${normalizeText(job.description)}` : null,
+    job.meeting_join_url ? `<br/><b>Teams-møte:</b> <a href="${job.meeting_join_url}">Bli med i møtet</a>` : null,
     `<br/><a href="${jobLink}">Åpne jobb i systemet</a>`,
   ].filter(Boolean).join("<br/>");
 }

@@ -65,6 +65,9 @@ export interface Job {
   outlookDeletedAt?: Date;
   calendarDirty?: boolean;
   calendarLastSyncedAt?: string | null;
+  meetingJoinUrl?: string | null;
+  meetingId?: string | null;
+  meetingCreatedAt?: Date | null;
 }
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });

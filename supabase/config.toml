@@ -44,3 +44,6 @@ verify_jwt = false
 
 [functions.ms-mail]
 verify_jwt = false
+
+[functions.teams-meeting]
+verify_jwt = false
