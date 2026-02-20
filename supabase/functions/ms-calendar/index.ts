@@ -8,9 +8,90 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-/**
- * Ensure Microsoft access token is valid for a user; refresh if expired.
- */
+// ── Structured error helpers ──
+
+interface StructuredError {
+  error_code: string;
+  message: string;
+  recommendation: string;
+  graph_status?: number;
+}
+
+function classifyGraphError(status: number, body: string): StructuredError {
+  const bodyLower = body.toLowerCase();
+  if (status === 401 || bodyLower.includes("invalid_grant") || bodyLower.includes("compacttoken")) {
+    return {
+      error_code: "invalid_grant",
+      message: "Autorisasjonstoken er utløpt eller ugyldig.",
+      recommendation: "Brukeren må logge inn på nytt via Microsoft på /settings/integrations.",
+      graph_status: status,
+    };
+  }
+  if (status === 403) {
+    return {
+      error_code: "insufficient_privileges",
+      message: "Utilstrekkelige rettigheter til brukerens kalender.",
+      recommendation: "Sjekk Graph-tillatelser (Calendars.ReadWrite) og admin consent.",
+      graph_status: status,
+    };
+  }
+  if (status === 404 || bodyLower.includes("itemnotfound")) {
+    return {
+      error_code: "itemNotFound",
+      message: "Outlook-hendelsen finnes ikke lenger.",
+      recommendation: "Klikk 'Reparer synk' for å opprette en ny hendelse.",
+      graph_status: status,
+    };
+  }
+  if (status === 429) {
+    return {
+      error_code: "throttled",
+      message: "Microsoft Graph API begrensning (for mange forespørsler).",
+      recommendation: "Vent noen minutter og prøv igjen.",
+      graph_status: status,
+    };
+  }
+  return {
+    error_code: "graph_error",
+    message: `Graph API feil: ${status}`,
+    recommendation: "Prøv igjen. Kontakt support hvis feilen vedvarer.",
+    graph_status: status,
+  };
+}
+
+function noTokenError(): StructuredError {
+  return {
+    error_code: "missing_token",
+    message: "Ingen gyldig Microsoft-token funnet.",
+    recommendation: "Brukeren må koble Microsoft-kontoen sin på /settings/integrations.",
+  };
+}
+
+// ── Sync hash for idempotency ──
+
+function computeSyncHash(job: any, userId: string): string {
+  const parts = [
+    job.start_time,
+    job.end_time,
+    job.title || "",
+    job.address || "",
+    job.description || "",
+    job.customer || "",
+    userId,
+  ];
+  // Simple hash: joined string → base64-like fingerprint
+  const str = parts.join("|");
+  let hash = 0;
+  for (let i = 0; i < str.length; i++) {
+    const chr = str.charCodeAt(i);
+    hash = ((hash << 5) - hash) + chr;
+    hash |= 0;
+  }
+  return hash.toString(36);
+}
+
+// ── Token management ──
+
 async function ensureValidMsToken(
   supabaseAdmin: any,
   userId: string,
@@ -33,7 +114,6 @@ async function ensureValidMsToken(
     return null;
   }
 
-  // Valid if >5 min left
   if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
     return accessToken;
   }
@@ -94,7 +174,6 @@ Deno.serve(async (req) => {
     });
 
   try {
-    // Auth
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) {
       return respond({ error: "Unauthorized" }, 401);
@@ -136,7 +215,6 @@ Deno.serve(async (req) => {
 
       log(`Checking availability for ${user_ids.length} users, ${start} → ${end}`);
 
-      // Get technician emails for these user_ids
       const { data: techs } = await supabaseAdmin
         .from("technicians")
         .select("id, email, name, user_id")
@@ -150,7 +228,6 @@ Deno.serve(async (req) => {
       const techEmails = techs.map((t: any) => t.email).filter(Boolean);
       log(`Technician emails: ${techEmails.join(", ")}`);
 
-      // Find an admin with valid MS token for getSchedule
       const { data: adminRoles } = await supabaseAdmin
         .from("user_roles")
         .select("user_id")
@@ -221,8 +298,12 @@ Deno.serve(async (req) => {
 
     // ─── ACTION: upsert_job_events ───
     if (action === "upsert_job_events") {
-      const { job_id, user_ids } = body;
+      const { job_id, user_ids, override_conflicts } = body;
       if (!job_id) return respond({ error: "Missing job_id", logs }, 400);
+
+      const operationId = crypto.randomUUID();
+      const startedAt = new Date().toISOString();
+      log(`Operation ${operationId}: upsert for job ${job_id}`);
 
       // Fetch job
       const { data: job, error: jobErr } = await supabaseAdmin
@@ -236,7 +317,7 @@ Deno.serve(async (req) => {
         return respond({ error: "Job not found", logs }, 404);
       }
 
-      // Determine technician user_ids to sync
+      // Determine technician user_ids
       let targetUserIds = user_ids;
       if (!targetUserIds?.length) {
         const { data: ets } = await supabaseAdmin
@@ -253,17 +334,14 @@ Deno.serve(async (req) => {
         return respond({ error: "No technicians to sync", logs }, 400);
       }
 
-      // Get technician details
       const { data: techs } = await supabaseAdmin
         .from("technicians")
         .select("id, email, name, user_id")
         .in("user_id", targetUserIds);
 
       const displayNumber = job.internal_number || job.job_number || job.id.slice(0, 8);
-      const appUrl = Deno.env.get("SUPABASE_URL")?.replace(".supabase.co", "").replace("https://", "") || "";
-      // Build a link back to the job - we'll use a generic pattern
       const jobLink = `https://mcsressurs.lovable.app/jobs/${job_id}`;
-      
+
       const subject = `JOBB ${displayNumber} | ${job.customer || "Ukjent kunde"} | ${job.title}`;
       const htmlBody = [
         `<b>Jobb:</b> ${displayNumber}`,
@@ -278,29 +356,61 @@ Deno.serve(async (req) => {
       for (const tech of techs || []) {
         const techLog = (msg: string) => log(`[${tech.name}] ${msg}`);
 
-        // Get token for this technician's user
-        const msToken = await ensureValidMsToken(supabaseAdmin, tech.user_id, techLog);
-        if (!msToken) {
-          techLog("No valid MS token, skipping");
-          await supabaseAdmin.from("job_calendar_links").upsert({
-            job_id,
-            user_id: tech.user_id,
-            technician_id: tech.id,
-            provider: "microsoft",
-            sync_status: "failed",
-            last_error: "Ingen gyldig Microsoft-token. Brukeren må logge inn på nytt.",
-          }, { onConflict: "job_id,technician_id" });
-          results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: "no_token" });
-          continue;
-        }
+        // ── Idempotency check ──
+        const syncHash = computeSyncHash(job, tech.user_id);
 
-        // Check for existing calendar link
         const { data: existingLink } = await supabaseAdmin
           .from("job_calendar_links")
           .select("*")
           .eq("job_id", job_id)
           .eq("technician_id", tech.id)
           .maybeSingle();
+
+        // Check if already in sync (no change needed)
+        if (
+          existingLink?.sync_status === "linked" &&
+          existingLink?.last_sync_hash === syncHash
+        ) {
+          techLog("No change detected (hash match), skipping Graph call");
+          results.push({ technician_id: tech.id, name: tech.name, status: "no_change" });
+          continue;
+        }
+
+        // ── Mutex: prevent double-click (15 sec window) ──
+        if (
+          existingLink?.last_operation_at &&
+          existingLink?.last_operation_id !== operationId
+        ) {
+          const lastOpTime = new Date(existingLink.last_operation_at).getTime();
+          if (Date.now() - lastOpTime < 15_000) {
+            techLog("Another sync operation in progress (within 15s window), skipping");
+            results.push({ technician_id: tech.id, name: tech.name, status: "in_progress" });
+            continue;
+          }
+        }
+
+        // Claim the operation
+        await supabaseAdmin.from("job_calendar_links").upsert({
+          job_id,
+          user_id: tech.user_id,
+          technician_id: tech.id,
+          provider: "microsoft",
+          last_operation_id: operationId,
+          last_operation_at: new Date().toISOString(),
+        }, { onConflict: "job_id,technician_id" });
+
+        // ── Get MS token ──
+        const msToken = await ensureValidMsToken(supabaseAdmin, tech.user_id, techLog);
+        if (!msToken) {
+          techLog("No valid MS token");
+          const err = noTokenError();
+          await supabaseAdmin.from("job_calendar_links").update({
+            sync_status: "failed",
+            last_error: JSON.stringify(err),
+          }).eq("job_id", job_id).eq("technician_id", tech.id);
+          results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: err });
+          continue;
+        }
 
         const eventPayload = {
           subject,
@@ -310,8 +420,29 @@ Deno.serve(async (req) => {
           location: job.address ? { displayName: job.address } : undefined,
         };
 
+        const updateLinkSuccess = async (eventId: string, webLink: string | null, action: string) => {
+          await supabaseAdmin.from("job_calendar_links").update({
+            calendar_event_id: eventId,
+            calendar_event_url: webLink,
+            sync_status: "linked",
+            last_synced_at: new Date().toISOString(),
+            last_error: null,
+            last_sync_hash: syncHash,
+          }).eq("job_id", job_id).eq("technician_id", tech.id);
+          results.push({ technician_id: tech.id, name: tech.name, status: action, event_id: eventId });
+        };
+
+        const updateLinkFailure = async (graphStatus: number, errBody: string) => {
+          const err = classifyGraphError(graphStatus, errBody);
+          await supabaseAdmin.from("job_calendar_links").update({
+            sync_status: "failed",
+            last_error: JSON.stringify(err),
+          }).eq("job_id", job_id).eq("technician_id", tech.id);
+          results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: err });
+        };
+
         if (existingLink?.calendar_event_id) {
-          // PATCH existing event
+          // ── PATCH existing event ──
           techLog(`Updating existing event ${existingLink.calendar_event_id.slice(0, 20)}...`);
           const patchRes = await fetch(
             `${GRAPH_BASE}/me/events/${existingLink.calendar_event_id}`,
@@ -327,66 +458,50 @@ Deno.serve(async (req) => {
 
           if (patchRes.ok) {
             const patchData = await patchRes.json();
-            techLog(`Event updated successfully`);
-            await supabaseAdmin.from("job_calendar_links").update({
-              sync_status: "linked",
-              last_synced_at: new Date().toISOString(),
-              last_error: null,
-              calendar_event_url: patchData.webLink || existingLink.calendar_event_url,
-            }).eq("id", existingLink.id);
-            results.push({ technician_id: tech.id, name: tech.name, status: "updated", event_id: existingLink.calendar_event_id });
+            techLog("Event updated successfully");
+            await updateLinkSuccess(
+              existingLink.calendar_event_id,
+              patchData.webLink || existingLink.calendar_event_url,
+              "updated"
+            );
           } else {
             const errText = await patchRes.text();
-            techLog(`PATCH failed: ${patchRes.status} ${errText.substring(0, 200)}`);
-            // If 404, event was deleted — create new
+            techLog(`PATCH failed: ${patchRes.status}`);
+
             if (patchRes.status === 404) {
+              // Event was deleted in Outlook, create new one
               techLog("Event not found, creating new...");
-              // Fall through to create below
-            } else {
+              // Nullify the old event ID
               await supabaseAdmin.from("job_calendar_links").update({
-                sync_status: "failed",
-                last_error: `PATCH ${patchRes.status}: ${errText.substring(0, 200)}`,
-              }).eq("id", existingLink.id);
-              results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: `PATCH ${patchRes.status}` });
-              continue;
-            }
-          }
+                calendar_event_id: null,
+                calendar_event_url: null,
+              }).eq("job_id", job_id).eq("technician_id", tech.id);
 
-          // Only reach here if PATCH returned 404
-          if (!patchRes.ok) {
-            // Create new event
-            const createRes = await fetch(`${GRAPH_BASE}/me/events`, {
-              method: "POST",
-              headers: {
-                Authorization: `Bearer ${msToken}`,
-                "Content-Type": "application/json",
-              },
-              body: JSON.stringify(eventPayload),
-            });
+              // Fall through to create
+              const createRes = await fetch(`${GRAPH_BASE}/me/events`, {
+                method: "POST",
+                headers: {
+                  Authorization: `Bearer ${msToken}`,
+                  "Content-Type": "application/json",
+                },
+                body: JSON.stringify(eventPayload),
+              });
 
-            if (createRes.ok) {
-              const createData = await createRes.json();
-              techLog(`New event created: ${createData.id?.slice(0, 20)}`);
-              await supabaseAdmin.from("job_calendar_links").update({
-                calendar_event_id: createData.id,
-                calendar_event_url: createData.webLink || null,
-                sync_status: "linked",
-                last_synced_at: new Date().toISOString(),
-                last_error: null,
-              }).eq("id", existingLink.id);
-              results.push({ technician_id: tech.id, name: tech.name, status: "created", event_id: createData.id });
+              if (createRes.ok) {
+                const createData = await createRes.json();
+                techLog(`New event created after 404: ${createData.id?.slice(0, 20)}`);
+                await updateLinkSuccess(createData.id, createData.webLink || null, "recreated");
+              } else {
+                const createErr = await createRes.text();
+                techLog(`Re-create failed: ${createRes.status}`);
+                await updateLinkFailure(createRes.status, createErr);
+              }
             } else {
-              const errText = await createRes.text();
-              techLog(`Create failed: ${createRes.status}`);
-              await supabaseAdmin.from("job_calendar_links").update({
-                sync_status: "failed",
-                last_error: `POST ${createRes.status}: ${errText.substring(0, 200)}`,
-              }).eq("id", existingLink.id);
-              results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: `POST ${createRes.status}` });
+              await updateLinkFailure(patchRes.status, errText);
             }
           }
         } else {
-          // CREATE new event
+          // ── CREATE new event ──
           techLog("Creating new Outlook event...");
           const createRes = await fetch(`${GRAPH_BASE}/me/events`, {
             method: "POST",
@@ -400,36 +515,44 @@ Deno.serve(async (req) => {
           if (createRes.ok) {
             const createData = await createRes.json();
             techLog(`Event created: ${createData.id?.slice(0, 20)}`);
-            await supabaseAdmin.from("job_calendar_links").upsert({
-              job_id,
-              user_id: tech.user_id,
-              technician_id: tech.id,
-              provider: "microsoft",
-              calendar_event_id: createData.id,
-              calendar_event_url: createData.webLink || null,
-              sync_status: "linked",
-              last_synced_at: new Date().toISOString(),
-              last_error: null,
-            }, { onConflict: "job_id,technician_id" });
-            results.push({ technician_id: tech.id, name: tech.name, status: "created", event_id: createData.id });
+            await updateLinkSuccess(createData.id, createData.webLink || null, "created");
           } else {
             const errText = await createRes.text();
-            techLog(`Create failed: ${createRes.status} ${errText.substring(0, 200)}`);
-            await supabaseAdmin.from("job_calendar_links").upsert({
-              job_id,
-              user_id: tech.user_id,
-              technician_id: tech.id,
-              provider: "microsoft",
-              sync_status: "failed",
-              last_error: `POST ${createRes.status}: ${errText.substring(0, 200)}`,
-            }, { onConflict: "job_id,technician_id" });
-            results.push({ technician_id: tech.id, name: tech.name, status: "failed", error: `POST ${createRes.status}` });
+            techLog(`Create failed: ${createRes.status}`);
+            await updateLinkFailure(createRes.status, errText);
           }
         }
       }
 
-      // Log action
-      const successCount = results.filter((r: any) => r.status !== "failed").length;
+      // ── Update dirty state ──
+      const successCount = results.filter((r: any) => r.status !== "failed" && r.status !== "in_progress").length;
+      const failureCount = results.filter((r: any) => r.status === "failed").length;
+      const allSynced = failureCount === 0 && results.length > 0;
+
+      if (allSynced) {
+        await supabaseAdmin.from("events").update({
+          calendar_dirty: false,
+          calendar_last_synced_at: new Date().toISOString(),
+        }).eq("id", job_id);
+        log("calendar_dirty cleared, all synced");
+      }
+
+      // ── Audit log ──
+      await supabaseAdmin.from("job_calendar_audit").insert({
+        job_id,
+        performed_by: authUser.id,
+        operation_id: operationId,
+        action: "upsert",
+        technicians_count: results.length,
+        successes_count: successCount,
+        failures_count: failureCount,
+        override_conflicts: !!override_conflicts,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        summary: { results: results.map((r: any) => ({ tech: r.name, status: r.status, error_code: r.error?.error_code })) },
+      });
+
+      // Legacy event_logs
       await supabaseAdmin.from("event_logs").insert({
         event_id: job_id,
         action_type: "outlook_calendar_sync",
@@ -437,7 +560,7 @@ Deno.serve(async (req) => {
         change_summary: `Outlook-synk: ${successCount}/${results.length} teknikere synkronisert`,
       });
 
-      return respond({ results, logs });
+      return respond({ results, logs, operation_id: operationId });
     }
 
     // ─── ACTION: unlink_job_events ───
@@ -445,7 +568,9 @@ Deno.serve(async (req) => {
       const { job_id, user_ids } = body;
       if (!job_id) return respond({ error: "Missing job_id", logs }, 400);
 
-      // Get links to remove
+      const operationId = crypto.randomUUID();
+      const startedAt = new Date().toISOString();
+
       let query = supabaseAdmin
         .from("job_calendar_links")
         .select("*, technicians(email, name, user_id)")
@@ -474,23 +599,36 @@ Deno.serve(async (req) => {
               }
             );
             techLog(`Delete: ${delRes.status} ${delRes.ok || delRes.status === 404 ? "OK" : "FAILED"}`);
-            // Consume body
             await delRes.text();
           } else {
             techLog("No token, cannot delete Outlook event");
           }
         }
 
-        // Update link status
         await supabaseAdmin.from("job_calendar_links").update({
           sync_status: "unlinked",
           calendar_event_id: null,
           calendar_event_url: null,
           last_error: null,
+          last_sync_hash: null,
         }).eq("id", link.id);
 
         results.push({ technician_id: link.technician_id, name: tech?.name, status: "unlinked" });
       }
+
+      // Audit
+      await supabaseAdmin.from("job_calendar_audit").insert({
+        job_id,
+        performed_by: authUser.id,
+        operation_id: operationId,
+        action: "unlink",
+        technicians_count: results.length,
+        successes_count: results.length,
+        failures_count: 0,
+        started_at: startedAt,
+        finished_at: new Date().toISOString(),
+        summary: { results },
+      });
 
       await supabaseAdmin.from("event_logs").insert({
         event_id: job_id,
@@ -500,6 +638,50 @@ Deno.serve(async (req) => {
       });
 
       return respond({ results, logs });
+    }
+
+    // ─── ACTION: repair_sync ───
+    if (action === "repair_sync") {
+      const { job_id } = body;
+      if (!job_id) return respond({ error: "Missing job_id", logs }, 400);
+
+      log(`Repair sync for job ${job_id}`);
+
+      const { data: failedLinks } = await supabaseAdmin
+        .from("job_calendar_links")
+        .select("*, technicians(name, user_id)")
+        .eq("job_id", job_id)
+        .eq("sync_status", "failed");
+
+      const repairActions: any[] = [];
+
+      for (const link of failedLinks || []) {
+        let parsedError: StructuredError | null = null;
+        try { parsedError = JSON.parse(link.last_error || "{}"); } catch { /* ignore */ }
+
+        if (parsedError?.error_code === "itemNotFound") {
+          // Nullify event ID so next upsert creates fresh
+          await supabaseAdmin.from("job_calendar_links").update({
+            calendar_event_id: null,
+            calendar_event_url: null,
+            last_sync_hash: null,
+          }).eq("id", link.id);
+          repairActions.push({ technician: link.technicians?.name, action: "cleared_event_id", ready_for_resync: true });
+        } else if (parsedError?.error_code === "missing_token" || parsedError?.error_code === "invalid_grant") {
+          repairActions.push({ technician: link.technicians?.name, action: "needs_reauth", ready_for_resync: false });
+        } else {
+          // Clear hash to force retry
+          await supabaseAdmin.from("job_calendar_links").update({
+            last_sync_hash: null,
+          }).eq("id", link.id);
+          repairActions.push({ technician: link.technicians?.name, action: "cleared_hash", ready_for_resync: true });
+        }
+      }
+
+      const readyCount = repairActions.filter(a => a.ready_for_resync).length;
+      log(`Repair complete: ${repairActions.length} links processed, ${readyCount} ready for resync`);
+
+      return respond({ repair_actions: repairActions, ready_for_resync: readyCount, logs });
     }
 
     return respond({ error: "Unknown action", logs }, 400);

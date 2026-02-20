@@ -444,6 +444,8 @@ export type Database = {
           archived_at: string | null
           archived_by: string | null
           attachments: Json | null
+          calendar_dirty: boolean
+          calendar_last_synced_at: string | null
           cancelled_at: string | null
           cancelled_by: string | null
           company_id: string | null
@@ -479,6 +481,8 @@ export type Database = {
           archived_at?: string | null
           archived_by?: string | null
           attachments?: Json | null
+          calendar_dirty?: boolean
+          calendar_last_synced_at?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
           company_id?: string | null
@@ -514,6 +518,8 @@ export type Database = {
           archived_at?: string | null
           archived_by?: string | null
           attachments?: Json | null
+          calendar_dirty?: boolean
+          calendar_last_synced_at?: string | null
           cancelled_at?: string | null
           cancelled_by?: string | null
           company_id?: string | null
@@ -652,6 +658,62 @@ export type Database = {
           },
         ]
       }
+      job_calendar_audit: {
+        Row: {
+          action: string
+          created_at: string
+          failures_count: number
+          finished_at: string | null
+          id: string
+          job_id: string
+          operation_id: string
+          override_conflicts: boolean
+          performed_by: string
+          started_at: string
+          successes_count: number
+          summary: Json | null
+          technicians_count: number
+        }
+        Insert: {
+          action: string
+          created_at?: string
+          failures_count?: number
+          finished_at?: string | null
+          id?: string
+          job_id: string
+          operation_id: string
+          override_conflicts?: boolean
+          performed_by: string
+          started_at?: string
+          successes_count?: number
+          summary?: Json | null
+          technicians_count?: number
+        }
+        Update: {
+          action?: string
+          created_at?: string
+          failures_count?: number
+          finished_at?: string | null
+          id?: string
+          job_id?: string
+          operation_id?: string
+          override_conflicts?: boolean
+          performed_by?: string
+          started_at?: string
+          successes_count?: number
+          summary?: Json | null
+          technicians_count?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_calendar_audit_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_calendar_links: {
         Row: {
           calendar_event_id: string | null
@@ -660,6 +722,9 @@ export type Database = {
           id: string
           job_id: string
           last_error: string | null
+          last_operation_at: string | null
+          last_operation_id: string | null
+          last_sync_hash: string | null
           last_synced_at: string | null
           provider: string
           sync_status: string
@@ -674,6 +739,9 @@ export type Database = {
           id?: string
           job_id: string
           last_error?: string | null
+          last_operation_at?: string | null
+          last_operation_id?: string | null
+          last_sync_hash?: string | null
           last_synced_at?: string | null
           provider?: string
           sync_status?: string
@@ -688,6 +756,9 @@ export type Database = {
           id?: string
           job_id?: string
           last_error?: string | null
+          last_operation_at?: string | null
+          last_operation_id?: string | null
+          last_sync_hash?: string | null
           last_synced_at?: string | null
           provider?: string
           sync_status?: string
