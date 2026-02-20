@@ -425,10 +425,10 @@ export default function LeadDetail() {
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
                   <Label>Type</Label>
-                  <Select value={nextActionType} onValueChange={setNextActionType}>
+                  <Select value={nextActionType || "__none__"} onValueChange={v => setNextActionType(v === "__none__" ? "" : v)}>
                     <SelectTrigger><SelectValue placeholder="Velg type" /></SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="">Ingen</SelectItem>
+                      <SelectItem value="__none__">Ingen</SelectItem>
                       {NEXT_ACTION_TYPES.map(t => (
                         <SelectItem key={t.key} value={t.key}>{t.label}</SelectItem>
                       ))}
