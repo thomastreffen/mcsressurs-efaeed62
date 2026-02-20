@@ -36,7 +36,7 @@ async function ensureValidMsToken(
         client_secret: Deno.env.get("AZURE_CLIENT_SECRET")!,
         grant_type: "refresh_token",
         refresh_token: refreshToken,
-        scope: "https://graph.microsoft.com/.default offline_access",
+        scope: "https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read offline_access",
       }),
     }
   );

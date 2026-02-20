@@ -36,7 +36,7 @@ async function ensureValidMsToken(
         client_secret: Deno.env.get("AZURE_CLIENT_SECRET")!,
         grant_type: "refresh_token",
         refresh_token: refreshToken,
-        scope: "https://graph.microsoft.com/.default offline_access",
+        scope: "https://graph.microsoft.com/Mail.ReadWrite https://graph.microsoft.com/Calendars.ReadWrite https://graph.microsoft.com/User.Read offline_access",
       }),
     }
   );
@@ -125,7 +125,7 @@ Deno.serve(async (req) => {
     // Get MS token for current user
     const msToken = await ensureValidMsToken(supabaseAdmin, userId);
     if (!msToken) {
-      return new Response(JSON.stringify({ error: "No valid Microsoft token. Please re-authenticate." }), {
+      return new Response(JSON.stringify({ error: "Microsoft-tilkobling må fornyes. Logg inn på nytt.", ms_reauth: true }), {
         status: 401, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }
@@ -174,7 +174,14 @@ Deno.serve(async (req) => {
     if (!graphRes.ok) {
       const errText = await graphRes.text();
       console.error("[create-lead-email-draft] Graph error:", graphRes.status, errText);
-      return new Response(JSON.stringify({ error: "Failed to create draft: " + errText }), {
+      const ms_reauth = graphRes.status === 401 || graphRes.status === 403;
+      return new Response(JSON.stringify({
+        error: ms_reauth
+          ? "Microsoft-tilkobling mangler rettigheter (Mail.ReadWrite). Logg inn på nytt for å gi tilgang."
+          : `Graph API feil (${graphRes.status}): ${errText}`,
+        ms_reauth,
+        graph_status: graphRes.status,
+      }), {
         status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
       });
     }

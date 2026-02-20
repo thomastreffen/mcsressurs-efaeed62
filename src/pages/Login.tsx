@@ -21,7 +21,7 @@ export default function Login() {
   const handleLogin = () => {
     const redirectUri = `${window.location.origin}/auth/callback`;
     const scope = encodeURIComponent(
-      "openid profile email User.Read Calendars.ReadWrite User.Read.All offline_access"
+      "openid profile email User.Read Calendars.ReadWrite User.Read.All Mail.ReadWrite offline_access"
     );
     const authUrl =
       `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize` +
