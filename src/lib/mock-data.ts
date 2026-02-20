@@ -63,6 +63,8 @@ export interface Job {
   outlookSyncStatus?: OutlookSyncStatus;
   outlookLastSyncedAt?: Date;
   outlookDeletedAt?: Date;
+  calendarDirty?: boolean;
+  calendarLastSyncedAt?: string | null;
 }
 
 const weekStart = startOfWeek(new Date(), { weekStartsOn: 1 });

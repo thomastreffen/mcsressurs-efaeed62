@@ -158,6 +158,8 @@ export default function JobDetail() {
       outlookSyncStatus: (data.outlook_sync_status as OutlookSyncStatus) || "not_synced",
       outlookLastSyncedAt: data.outlook_last_synced_at ? new Date(data.outlook_last_synced_at) : undefined,
       outlookDeletedAt: data.outlook_deleted_at ? new Date(data.outlook_deleted_at) : undefined,
+      calendarDirty: data.calendar_dirty || false,
+      calendarLastSyncedAt: data.calendar_last_synced_at || null,
     });
     setLoading(false);
   }, [id]);
@@ -473,6 +475,9 @@ export default function JobDetail() {
                 jobEnd={job.end}
                 technicianIds={job.technicianIds}
                 isAdmin={isAdmin}
+                calendarDirty={job.calendarDirty}
+                calendarLastSyncedAt={job.calendarLastSyncedAt}
+                onSynced={() => fetchJob()}
               />
 
               {/* Legacy Outlook Sync Section – Admin only */}
