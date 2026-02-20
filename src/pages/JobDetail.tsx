@@ -520,8 +520,8 @@ export default function JobDetail() {
               <EmailComposer
                 entityType="job"
                 entityId={job.id}
-                defaultTo={job.customer ? undefined : undefined}
-                defaultSubject={`Ref: JOBB ${displayNumber} | ${job.customer} | ${job.title}`}
+                defaultSubject={`${job.customer || ""} | ${job.title}`}
+                refCode={job.internalNumber || displayNumber}
                 onSent={() => fetchLogs()}
               />
             </TabsContent>

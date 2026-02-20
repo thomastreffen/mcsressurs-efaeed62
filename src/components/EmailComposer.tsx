@@ -11,6 +11,7 @@ import { Switch } from "@/components/ui/switch";
 import {
   Mail, Send, FileEdit, Loader2, ExternalLink,
   Plus, Trash2, ChevronDown, ChevronUp, CheckCircle, XCircle,
+  RefreshCw, ShieldAlert,
 } from "lucide-react";
 import { toast } from "sonner";
 import { format } from "date-fns";
@@ -22,7 +23,15 @@ interface EmailComposerProps {
   defaultTo?: string;
   defaultSubject?: string;
   defaultBodyHtml?: string;
+  refCode?: string | null;
   onSent?: () => void;
+}
+
+interface StructuredError {
+  error_code: string;
+  message: string;
+  recommendation: string;
+  graph_status?: number;
 }
 
 interface CommLog {
@@ -33,7 +42,16 @@ interface CommLog {
   outlook_weblink: string | null;
   created_at: string;
   graph_message_id: string | null;
+  last_error: any;
+  ref_code: string | null;
 }
+
+const MODE_CONFIG: Record<string, { label: string; icon: typeof CheckCircle; className: string }> = {
+  sent: { label: "Sendt", icon: CheckCircle, className: "text-[hsl(var(--status-approved))]" },
+  draft: { label: "Kladd", icon: FileEdit, className: "text-muted-foreground" },
+  sending: { label: "Sender...", icon: Loader2, className: "text-primary animate-spin" },
+  failed: { label: "Feilet", icon: XCircle, className: "text-destructive" },
+};
 
 export function EmailComposer({
   entityType,
@@ -41,6 +59,7 @@ export function EmailComposer({
   defaultTo,
   defaultSubject,
   defaultBodyHtml,
+  refCode,
   onSent,
 }: EmailComposerProps) {
   const { user } = useAuth();
@@ -51,11 +70,11 @@ export function EmailComposer({
   const [bodyText, setBodyText] = useState("");
   const [sendNow, setSendNow] = useState(false);
   const [sending, setSending] = useState(false);
-  const [lastResult, setLastResult] = useState<{ mode: string; web_link?: string } | null>(null);
+  const [lastResult, setLastResult] = useState<{ mode: string; web_link?: string; message?: string } | null>(null);
   const [commLogs, setCommLogs] = useState<CommLog[]>([]);
   const [logsLoading, setLogsLoading] = useState(true);
+  const [expandedError, setExpandedError] = useState<string | null>(null);
 
-  // Sync defaults when they change
   useEffect(() => {
     if (defaultTo) setToList([defaultTo]);
     if (defaultSubject) setSubject(defaultSubject);
@@ -65,7 +84,7 @@ export function EmailComposer({
     setLogsLoading(true);
     const { data } = await supabase
       .from("communication_logs")
-      .select("id, mode, subject, to_recipients, outlook_weblink, created_at, graph_message_id")
+      .select("id, mode, subject, to_recipients, outlook_weblink, created_at, graph_message_id, last_error, ref_code")
       .eq("entity_type", entityType)
       .eq("entity_id", entityId)
       .order("created_at", { ascending: false })
@@ -77,18 +96,14 @@ export function EmailComposer({
   useEffect(() => { fetchLogs(); }, [entityType, entityId]);
 
   const buildHtmlBody = () => {
-    if (defaultBodyHtml) {
-      // Prepend user text to the default template
-      const userContent = bodyText
-        .split("\n")
-        .map(line => `<p>${line || "&nbsp;"}</p>`)
-        .join("");
-      return userContent + "<br/>" + defaultBodyHtml;
-    }
-    return bodyText
+    const userContent = bodyText
       .split("\n")
       .map(line => `<p>${line || "&nbsp;"}</p>`)
       .join("");
+    if (defaultBodyHtml) {
+      return userContent + "<br/>" + defaultBodyHtml;
+    }
+    return userContent;
   };
 
   const handleSend = async () => {
@@ -113,11 +128,22 @@ export function EmailComposer({
 
       if (error) throw error;
       if (data?.ms_reauth) {
-        toast.error("Microsoft-tilkobling må fornyes", { description: "Logg inn på nytt." });
+        toast.error("Microsoft-tilkobling må fornyes", {
+          description: (data.error_info as StructuredError)?.recommendation || "Logg inn på nytt.",
+        });
         return;
       }
       if (data?.error) {
-        toast.error(data.error);
+        const errInfo = data.error_info as StructuredError | undefined;
+        toast.error(data.error, {
+          description: errInfo?.recommendation,
+        });
+        return;
+      }
+
+      if (data?.mode === "already_sent") {
+        toast.info("Denne e-posten ble allerede sendt", { description: "Duplikat-sending forhindret." });
+        setLastResult({ mode: "sent", web_link: data.web_link, message: "Allerede sendt (duplikat forhindret)" });
         return;
       }
 
@@ -132,6 +158,17 @@ export function EmailComposer({
     } finally {
       setSending(false);
     }
+  };
+
+  const handleRetry = async (logEntry: CommLog) => {
+    // Pre-fill composer with the failed email's data
+    const recipients = Array.isArray(logEntry.to_recipients)
+      ? logEntry.to_recipients.map((r: any) => r.address || r)
+      : [];
+    setToList(recipients.length > 0 ? recipients : [""]);
+    setSubject(logEntry.subject || "");
+    setSendNow(true);
+    toast.info("E-postdata lastet inn – trykk 'Send e-post' for å prøve igjen.");
   };
 
   const updateListItem = (list: string[], setList: (v: string[]) => void, idx: number, value: string) => {
@@ -152,6 +189,9 @@ export function EmailComposer({
           <CardTitle className="text-base flex items-center gap-2">
             <Mail className="h-4 w-4" />
             Ny e-post
+            {refCode && (
+              <Badge variant="outline" className="text-xs font-normal ml-auto">{refCode}</Badge>
+            )}
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
@@ -166,15 +206,16 @@ export function EmailComposer({
                   placeholder="e-post@example.com"
                   type="email"
                   className="flex-1"
+                  disabled={sending}
                 />
                 {toList.length > 1 && (
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeListItem(toList, setToList, idx)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeListItem(toList, setToList, idx)} disabled={sending}>
                     <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                   </Button>
                 )}
               </div>
             ))}
-            <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setToList([...toList, ""])}>
+            <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setToList([...toList, ""])} disabled={sending}>
               <Plus className="h-3 w-3" /> Legg til mottaker
             </Button>
           </div>
@@ -200,13 +241,14 @@ export function EmailComposer({
                     placeholder="e-post@example.com"
                     type="email"
                     className="flex-1"
+                    disabled={sending}
                   />
-                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeListItem(ccList, setCcList, idx)}>
+                  <Button variant="ghost" size="icon" className="h-8 w-8 shrink-0" onClick={() => removeListItem(ccList, setCcList, idx)} disabled={sending}>
                     <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
                   </Button>
                 </div>
               ))}
-              <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setCcList([...ccList, ""])}>
+              <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => setCcList([...ccList, ""])} disabled={sending}>
                 <Plus className="h-3 w-3" /> Legg til
               </Button>
             </div>
@@ -215,7 +257,7 @@ export function EmailComposer({
           {/* Subject */}
           <div className="space-y-1.5">
             <Label className="text-xs">Emne</Label>
-            <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Emne..." />
+            <Input value={subject} onChange={(e) => setSubject(e.target.value)} placeholder="Emne..." disabled={sending} />
           </div>
 
           {/* Body */}
@@ -226,6 +268,7 @@ export function EmailComposer({
               onChange={(e) => setBodyText(e.target.value)}
               rows={5}
               placeholder="Skriv meldingen din her..."
+              disabled={sending}
             />
             {defaultBodyHtml && (
               <p className="text-xs text-muted-foreground">Firmainformasjon legges til automatisk.</p>
@@ -235,7 +278,7 @@ export function EmailComposer({
           {/* Send mode toggle */}
           <div className="flex items-center gap-3 pt-1">
             <div className="flex items-center gap-2">
-              <Switch checked={sendNow} onCheckedChange={setSendNow} id="send-mode" />
+              <Switch checked={sendNow} onCheckedChange={setSendNow} id="send-mode" disabled={sending} />
               <Label htmlFor="send-mode" className="text-sm cursor-pointer">
                 {sendNow ? "Send nå" : "Lagre kladd"}
               </Label>
@@ -255,7 +298,10 @@ export function EmailComposer({
               ) : (
                 <FileEdit className="h-4 w-4" />
               )}
-              {sendNow ? "Send e-post" : "Opprett kladd"}
+              {sending
+                ? (sendNow ? "Sender..." : "Oppretter...")
+                : (sendNow ? "Send e-post" : "Opprett kladd")
+              }
             </Button>
           </div>
 
@@ -264,7 +310,7 @@ export function EmailComposer({
             <div className="flex items-center gap-2 p-3 rounded-lg border bg-secondary/50">
               <CheckCircle className="h-4 w-4 text-primary shrink-0" />
               <span className="text-sm flex-1">
-                {lastResult.mode === "sent" ? "E-post sendt!" : "Kladd opprettet i Outlook"}
+                {lastResult.message || (lastResult.mode === "sent" ? "E-post sendt!" : "Kladd opprettet i Outlook")}
               </span>
               {lastResult.web_link && (
                 <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => window.open(lastResult.web_link, "_blank")}>
@@ -294,30 +340,67 @@ export function EmailComposer({
                 const recipients = Array.isArray(log.to_recipients)
                   ? log.to_recipients.map((r: any) => r.address || r).join(", ")
                   : "";
+                const config = MODE_CONFIG[log.mode] || MODE_CONFIG.draft;
+                const StatusIcon = config.icon;
+                const parsedErr: StructuredError | null = log.mode === "failed" && log.last_error
+                  ? (typeof log.last_error === "string" ? JSON.parse(log.last_error) : log.last_error)
+                  : null;
+                const isExpanded = expandedError === log.id;
+
                 return (
-                  <div key={log.id} className="flex items-start gap-3 rounded-lg border p-3">
-                    {log.mode === "sent" ? (
-                      <Send className="h-4 w-4 mt-0.5 text-primary shrink-0" />
-                    ) : (
-                      <FileEdit className="h-4 w-4 mt-0.5 text-muted-foreground shrink-0" />
-                    )}
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{log.subject}</p>
-                      <p className="text-xs text-muted-foreground truncate">
-                        Til: {recipients}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(new Date(log.created_at), "d. MMM yyyy HH:mm", { locale: nb })}
-                        {" · "}
-                        <Badge variant="outline" className="text-[10px]">
-                          {log.mode === "sent" ? "Sendt" : "Kladd"}
-                        </Badge>
-                      </p>
+                  <div key={log.id} className="space-y-1">
+                    <div className="flex items-start gap-3 rounded-lg border p-3">
+                      <StatusIcon className={`h-4 w-4 mt-0.5 shrink-0 ${config.className}`} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{log.subject}</p>
+                        <p className="text-xs text-muted-foreground truncate">Til: {recipients}</p>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-xs text-muted-foreground">
+                            {format(new Date(log.created_at), "d. MMM yyyy HH:mm", { locale: nb })}
+                          </p>
+                          <Badge variant="outline" className={`text-[10px] ${log.mode === "failed" ? "border-destructive/30 text-destructive" : ""}`}>
+                            {config.label}
+                          </Badge>
+                          {log.ref_code && (
+                            <Badge variant="secondary" className="text-[10px]">{log.ref_code}</Badge>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 shrink-0">
+                        {parsedErr && (
+                          <Button size="sm" variant="ghost" className="h-7 px-2 text-xs text-destructive" onClick={() => setExpandedError(isExpanded ? null : log.id)}>
+                            {isExpanded ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+                            Detaljer
+                          </Button>
+                        )}
+                        {log.mode === "failed" && (
+                          <Button size="sm" variant="outline" className="h-7 px-2 text-xs gap-1" onClick={() => handleRetry(log)}>
+                            <RefreshCw className="h-3 w-3" /> Prøv igjen
+                          </Button>
+                        )}
+                        {log.outlook_weblink && (
+                          <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => window.open(log.outlook_weblink!, "_blank")} title="Åpne i Outlook">
+                            <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                    {log.outlook_weblink && (
-                      <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={() => window.open(log.outlook_weblink!, "_blank")} title="Åpne i Outlook">
-                        <ExternalLink className="h-3.5 w-3.5 text-muted-foreground" />
-                      </Button>
+
+                    {/* Expanded error details */}
+                    {isExpanded && parsedErr && (
+                      <div className="rounded-md bg-destructive/5 border border-destructive/20 p-3 ml-7 space-y-1">
+                        <div className="flex items-center gap-1.5">
+                          <ShieldAlert className="h-3.5 w-3.5 text-destructive shrink-0" />
+                          <p className="text-xs font-medium text-destructive">{parsedErr.message}</p>
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Kode:</span> {parsedErr.error_code}
+                          {parsedErr.graph_status && <> · <span className="font-medium">HTTP:</span> {parsedErr.graph_status}</>}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          <span className="font-medium">Anbefaling:</span> {parsedErr.recommendation}
+                        </p>
+                      </div>
                     )}
                   </div>
                 );

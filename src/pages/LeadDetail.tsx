@@ -742,7 +742,8 @@ function LeadDetailInner() {
           entityType="lead"
           entityId={lead.id}
           defaultTo={lead.email || undefined}
-          defaultSubject={`Ref: ${lead.lead_ref_code || ""} | ${lead.company_name}`}
+          defaultSubject={lead.company_name}
+          refCode={lead.lead_ref_code || undefined}
           onSent={() => fetchActivities()}
         />
       ) : null,
