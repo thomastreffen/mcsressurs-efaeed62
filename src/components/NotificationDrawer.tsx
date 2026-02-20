@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
-import { Bell, CheckCheck, Clock, AlertTriangle, XCircle, CalendarCheck } from "lucide-react";
+import { Bell, CheckCheck, Clock, AlertTriangle, XCircle, CalendarCheck, Plug } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Notification } from "@/hooks/useNotifications";
 import type { JobStatus } from "@/lib/job-status";
@@ -29,6 +29,7 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
   approval_pending: CalendarCheck,
   rejected: XCircle,
   conflict: AlertTriangle,
+  ms_connect_request: Plug,
 };
 
 const TYPE_STATUS_MAP: Record<string, JobStatus> = {
@@ -50,6 +51,11 @@ export function NotificationDrawer({
   const handleClick = (notification: Notification) => {
     if (!notification.read) {
       onMarkAsRead(notification.id);
+    }
+    if (notification.type === "ms_connect_request") {
+      navigate("/settings/integrations");
+      onOpenChange(false);
+      return;
     }
     if (notification.event_id) {
       navigate(`/jobs/${notification.event_id}`);

@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { toast } from "sonner";
@@ -25,6 +26,7 @@ import {
   ChevronDown,
   ChevronUp,
   ShieldAlert,
+  Send,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -113,6 +115,7 @@ export function JobCalendarSync({
   calendarLastSyncedAt,
   onSynced,
 }: JobCalendarSyncProps) {
+  const { user } = useAuth();
   const [links, setLinks] = useState<CalendarLink[]>([]);
   const [availability, setAvailability] = useState<AvailabilityResult[] | null>(null);
   const [loadingAvail, setLoadingAvail] = useState(false);
@@ -123,6 +126,7 @@ export function JobCalendarSync({
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
   const [showAudit, setShowAudit] = useState(false);
   const [expandedError, setExpandedError] = useState<string | null>(null);
+  const [sendingNotify, setSendingNotify] = useState<string | null>(null);
 
   // Conflict modal state
   const [conflictModal, setConflictModal] = useState<{
@@ -306,6 +310,30 @@ export function JobCalendarSync({
     }
   };
 
+  // ── Send connection request notification to technician ──
+  const sendConnectionRequest = async (techId: string) => {
+    const techInfo = techUserMap.get(techId);
+    if (!techInfo) return;
+
+    setSendingNotify(techId);
+    try {
+      await supabase.from("notifications").insert({
+        user_id: techInfo.user_id,
+        type: "ms_connect_request",
+        title: "Koble Microsoft 365",
+        message: `Admin ber deg koble Microsoft 365-kontoen din for å motta jobber i Outlook. Gå til Integrasjoner-siden for å koble til.`,
+        event_id: jobId,
+      });
+      toast.success(`Varsel sendt til ${techInfo.name}`, {
+        description: "Teknikeren vil se et varsel om å koble Microsoft.",
+      });
+    } catch (e: any) {
+      toast.error("Kunne ikke sende varsel", { description: e.message });
+    } finally {
+      setSendingNotify(null);
+    }
+  };
+
   if (!isAdmin) return null;
 
   const hasFailedLinks = links.some((l) => l.sync_status === "failed");
@@ -425,6 +453,19 @@ export function JobCalendarSync({
                           Detaljer
                         </Button>
                       )}
+                      {parsedErr?.error_code === "missing_token" && !isExpanded && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="h-7 px-2 text-xs gap-1"
+                          disabled={sendingNotify === tid}
+                          onClick={() => sendConnectionRequest(tid)}
+                          title="Send varsel til teknikeren om å koble Microsoft"
+                        >
+                          {sendingNotify === tid ? <Loader2 className="h-3 w-3 animate-spin" /> : <Send className="h-3 w-3" />}
+                          Varsle
+                        </Button>
+                      )}
                       {link?.calendar_event_url && (
                         <Button size="sm" variant="ghost" className="h-7 w-7 p-0" onClick={() => window.open(link.calendar_event_url!, "_blank")} title="Åpne i Outlook">
                           <ExternalLink className="h-3.5 w-3.5" />
@@ -445,7 +486,7 @@ export function JobCalendarSync({
 
                   {/* Expanded error details */}
                   {isExpanded && parsedErr && (
-                    <div className="rounded-md bg-destructive/5 border border-destructive/20 p-3 ml-6 space-y-1">
+                    <div className="rounded-md bg-destructive/5 border border-destructive/20 p-3 ml-6 space-y-2">
                       <div className="flex items-center gap-1.5">
                         <ShieldAlert className="h-3.5 w-3.5 text-destructive shrink-0" />
                         <p className="text-xs font-medium text-destructive">{parsedErr.message}</p>
@@ -457,6 +498,22 @@ export function JobCalendarSync({
                       <p className="text-xs text-muted-foreground">
                         <span className="font-medium">Anbefaling:</span> {parsedErr.recommendation}
                       </p>
+                      {parsedErr.error_code === "missing_token" && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="gap-1.5 text-xs mt-1"
+                          disabled={sendingNotify === tid}
+                          onClick={() => sendConnectionRequest(tid)}
+                        >
+                          {sendingNotify === tid ? (
+                            <Loader2 className="h-3 w-3 animate-spin" />
+                          ) : (
+                            <Send className="h-3 w-3" />
+                          )}
+                          Be teknikeren koble Microsoft
+                        </Button>
+                      )}
                     </div>
                   )}
                 </div>

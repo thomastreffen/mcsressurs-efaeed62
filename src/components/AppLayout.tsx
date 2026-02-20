@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
 import { AppSidebar } from "@/components/AppSidebar";
 import { MobileTabBar } from "@/components/MobileTabBar";
 import { NotificationDrawer } from "@/components/NotificationDrawer";
+import { MsConnectionBanner } from "@/components/MsConnectionBanner";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
@@ -59,6 +60,9 @@ export function AppLayout() {
               </Button>
             </div>
           </header>
+
+          {/* MS Connection banner for technicians */}
+          <MsConnectionBanner />
 
           {/* Page content */}
           <main className={`flex-1 overflow-y-auto ${isMobile ? "pb-16" : ""}`}>

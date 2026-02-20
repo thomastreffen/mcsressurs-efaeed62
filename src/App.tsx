@@ -175,14 +175,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="/settings/integrations"
-                element={
-                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                    <IntegrationsDebug />
-                  </ProtectedRoute>
-                }
-              />
+              <Route path="/settings/integrations" element={<IntegrationsDebug />} />
             </Route>
 
             <Route path="*" element={<NotFound />} />
