@@ -35,6 +35,7 @@ import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import RegulationPage from "./pages/RegulationPage";
 import FagInsightsPage from "./pages/FagInsightsPage";
 import SystemHealthPage from "./pages/SystemHealthPage";
+import DataIntegrityPage from "./pages/DataIntegrityPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -202,6 +203,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <SystemHealthPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/data-integrity"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <DataIntegrityPage />
                   </ProtectedRoute>
                 }
               />

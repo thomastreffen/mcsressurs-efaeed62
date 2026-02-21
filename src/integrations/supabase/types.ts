@@ -214,10 +214,13 @@ export type Database = {
           graph_message_id: string | null
           id: string
           internet_message_id: string | null
+          is_orphan: boolean
           last_error: Json | null
           last_operation_at: string | null
           last_operation_id: string | null
           mode: string
+          orphan_detected_at: string | null
+          orphan_reason: string | null
           outlook_weblink: string | null
           ref_code: string | null
           send_hash: string | null
@@ -238,10 +241,13 @@ export type Database = {
           graph_message_id?: string | null
           id?: string
           internet_message_id?: string | null
+          is_orphan?: boolean
           last_error?: Json | null
           last_operation_at?: string | null
           last_operation_id?: string | null
           mode?: string
+          orphan_detected_at?: string | null
+          orphan_reason?: string | null
           outlook_weblink?: string | null
           ref_code?: string | null
           send_hash?: string | null
@@ -262,10 +268,13 @@ export type Database = {
           graph_message_id?: string | null
           id?: string
           internet_message_id?: string | null
+          is_orphan?: boolean
           last_error?: Json | null
           last_operation_at?: string | null
           last_operation_id?: string | null
           mode?: string
+          orphan_detected_at?: string | null
+          orphan_reason?: string | null
           outlook_weblink?: string | null
           ref_code?: string | null
           send_hash?: string | null
@@ -747,12 +756,15 @@ export type Database = {
           calendar_event_url: string | null
           created_at: string
           id: string
+          is_orphan: boolean
           job_id: string
           last_error: string | null
           last_operation_at: string | null
           last_operation_id: string | null
           last_sync_hash: string | null
           last_synced_at: string | null
+          orphan_detected_at: string | null
+          orphan_reason: string | null
           provider: string
           sync_status: string
           technician_id: string
@@ -764,12 +776,15 @@ export type Database = {
           calendar_event_url?: string | null
           created_at?: string
           id?: string
+          is_orphan?: boolean
           job_id: string
           last_error?: string | null
           last_operation_at?: string | null
           last_operation_id?: string | null
           last_sync_hash?: string | null
           last_synced_at?: string | null
+          orphan_detected_at?: string | null
+          orphan_reason?: string | null
           provider?: string
           sync_status?: string
           technician_id: string
@@ -781,12 +796,15 @@ export type Database = {
           calendar_event_url?: string | null
           created_at?: string
           id?: string
+          is_orphan?: boolean
           job_id?: string
           last_error?: string | null
           last_operation_at?: string | null
           last_operation_id?: string | null
           last_sync_hash?: string | null
           last_synced_at?: string | null
+          orphan_detected_at?: string | null
+          orphan_reason?: string | null
           provider?: string
           sync_status?: string
           technician_id?: string
@@ -1250,6 +1268,9 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          is_orphan: boolean
+          orphan_detected_at: string | null
+          orphan_reason: string | null
           parent_id: string | null
           pinned: boolean
           pitfalls: Json | null
@@ -1278,6 +1299,9 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          is_orphan?: boolean
+          orphan_detected_at?: string | null
+          orphan_reason?: string | null
           parent_id?: string | null
           pinned?: boolean
           pitfalls?: Json | null
@@ -1306,6 +1330,9 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          is_orphan?: boolean
+          orphan_detected_at?: string | null
+          orphan_reason?: string | null
           parent_id?: string | null
           pinned?: boolean
           pitfalls?: Json | null
