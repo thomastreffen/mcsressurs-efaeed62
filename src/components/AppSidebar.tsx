@@ -17,6 +17,7 @@ import {
   Plug,
   HeartPulse,
   BookOpen,
+  Activity,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -61,6 +62,7 @@ const adminNav = [
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
   { title: "Tilgangsstyring", url: "/admin/access", icon: ShieldCheck, requireSuperAdmin: true },
   { title: "Integrasjonshelse", url: "/admin/integration-health", icon: HeartPulse, requireAdmin: true },
+  { title: "Systemhelse", url: "/admin/system-health", icon: Activity, requireAdmin: true },
   { title: "Innstillinger", url: "/admin/settings", icon: Settings, requireAdmin: true },
   { title: "Papirkurv", url: "/admin/trash", icon: Trash2, requireAdmin: true },
 ];
