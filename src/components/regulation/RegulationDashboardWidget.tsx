@@ -1,10 +1,12 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { BookOpen, ShieldCheck, ArrowRight, ThumbsUp, ThumbsDown, ShieldX } from "lucide-react";
+import { BookOpen, ShieldCheck, ArrowRight, ShieldX } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Textarea } from "@/components/ui/textarea";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { toast } from "sonner";
@@ -38,6 +40,8 @@ export function RegulationDashboardWidget() {
   const { user, isAdmin } = useAuth();
   const [drafts, setDrafts] = useState<DraftQuery[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reviewDialog, setReviewDialog] = useState<{ id: string; action: "approved" | "rejected" } | null>(null);
+  const [reviewComment, setReviewComment] = useState("");
 
   useEffect(() => {
     fetchDrafts();
@@ -56,14 +60,21 @@ export function RegulationDashboardWidget() {
     setLoading(false);
   }
 
-  const handleReview = async (id: string, status: "approved" | "rejected") => {
-    if (!user?.id) return;
+  const handleReview = async () => {
+    if (!user?.id || !reviewDialog) return;
     await supabase
       .from("regulation_queries")
-      .update({ reviewed_status: status, reviewed_by: user.id, reviewed_at: new Date().toISOString() })
-      .eq("id", id);
-    setDrafts(prev => prev.filter(d => d.id !== id));
-    toast.success(status === "approved" ? "Godkjent" : "Avvist");
+      .update({
+        reviewed_status: reviewDialog.action,
+        reviewed_by: user.id,
+        reviewed_at: new Date().toISOString(),
+        review_comment: reviewComment.trim() || null,
+      })
+      .eq("id", reviewDialog.id);
+    setDrafts(prev => prev.filter(d => d.id !== reviewDialog.id));
+    toast.success(reviewDialog.action === "approved" ? "Godkjent" : "Avvist");
+    setReviewDialog(null);
+    setReviewComment("");
   };
 
   if (loading || drafts.length === 0) return null;
@@ -116,7 +127,7 @@ export function RegulationDashboardWidget() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-success hover:bg-success/10"
-                    onClick={(e) => { e.stopPropagation(); handleReview(d.id, "approved"); }}
+                    onClick={(e) => { e.stopPropagation(); setReviewComment(""); setReviewDialog({ id: d.id, action: "approved" }); }}
                   >
                     <ShieldCheck className="h-3.5 w-3.5" />
                   </Button>
@@ -124,7 +135,7 @@ export function RegulationDashboardWidget() {
                     variant="ghost"
                     size="icon"
                     className="h-7 w-7 text-destructive hover:bg-destructive/10"
-                    onClick={(e) => { e.stopPropagation(); handleReview(d.id, "rejected"); }}
+                    onClick={(e) => { e.stopPropagation(); setReviewComment(""); setReviewDialog({ id: d.id, action: "rejected" }); }}
                   >
                     <ShieldX className="h-3.5 w-3.5" />
                   </Button>
@@ -134,6 +145,28 @@ export function RegulationDashboardWidget() {
           ))}
         </div>
       </div>
+
+      {/* Review comment dialog */}
+      <Dialog open={!!reviewDialog} onOpenChange={() => setReviewDialog(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{reviewDialog?.action === "approved" ? "Godkjenn" : "Avvis"} fagforespørsel</DialogTitle>
+          </DialogHeader>
+          <Textarea
+            value={reviewComment}
+            onChange={e => setReviewComment(e.target.value)}
+            placeholder="Valgfri kommentar (maks 200 tegn)…"
+            maxLength={200}
+            rows={3}
+          />
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setReviewDialog(null)}>Avbryt</Button>
+            <Button variant={reviewDialog?.action === "approved" ? "default" : "destructive"} onClick={handleReview}>
+              {reviewDialog?.action === "approved" ? "Godkjenn" : "Avvis"}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

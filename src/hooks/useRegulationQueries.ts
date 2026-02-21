@@ -22,9 +22,11 @@ export interface RegulationQuery {
   reviewed_status: "draft" | "approved" | "rejected";
   reviewed_by: string | null;
   reviewed_at: string | null;
+  review_comment: string | null;
   references_to_check: string[];
   suggested_reservations: string[];
   suggested_calc_lines: Array<{ title: string; category: string; estimate_hint: string }>;
+  parent_id: string | null;
 }
 
 export function useRegulationQueries(scopeType?: string, scopeId?: string) {
@@ -58,6 +60,16 @@ export function useRegulationQueries(scopeType?: string, scopeId?: string) {
     }
   }, [scopeType, scopeId]);
 
+  const fetchVersions = useCallback(async (parentId: string): Promise<RegulationQuery[]> => {
+    // Fetch all versions: original + children
+    const { data } = await supabase
+      .from("regulation_queries")
+      .select("*")
+      .or(`id.eq.${parentId},parent_id.eq.${parentId}`)
+      .order("created_at", { ascending: true });
+    return (data || []) as unknown as RegulationQuery[];
+  }, []);
+
   const submitQuery = useCallback(async (params: {
     question: string;
     topic: string;
@@ -66,12 +78,23 @@ export function useRegulationQueries(scopeType?: string, scopeId?: string) {
     context_text?: string;
     context_json?: any;
     company_id?: string;
+    parent_id?: string;
   }) => {
+    const body: any = { ...params };
     const { data, error } = await supabase.functions.invoke("regulation-query", {
-      body: params,
+      body,
     });
     if (error) throw error;
     if (data?.error) throw new Error(data.error);
+
+    // If parent_id, store it on the saved record
+    if (params.parent_id && data?.id) {
+      await supabase
+        .from("regulation_queries")
+        .update({ parent_id: params.parent_id } as any)
+        .eq("id", data.id);
+    }
+
     return data;
   }, []);
 
@@ -91,14 +114,47 @@ export function useRegulationQueries(scopeType?: string, scopeId?: string) {
     setQueries(prev => prev.map(q => q.id === id ? { ...q, usefulness_rating: rating } : q));
   }, []);
 
-  const reviewQuery = useCallback(async (id: string, status: "approved" | "rejected", userId: string) => {
+  const reviewQuery = useCallback(async (id: string, status: "approved" | "rejected", userId: string, comment?: string) => {
     const now = new Date().toISOString();
+    const update: any = { reviewed_status: status, reviewed_by: userId, reviewed_at: now };
+    if (comment !== undefined) update.review_comment = comment;
     await supabase
       .from("regulation_queries")
-      .update({ reviewed_status: status, reviewed_by: userId, reviewed_at: now })
+      .update(update)
       .eq("id", id);
-    setQueries(prev => prev.map(q => q.id === id ? { ...q, reviewed_status: status, reviewed_by: userId, reviewed_at: now } : q));
+    setQueries(prev => prev.map(q => q.id === id ? { ...q, reviewed_status: status, reviewed_by: userId, reviewed_at: now, review_comment: comment || null } : q));
   }, []);
 
-  return { queries, loading, fetchQueries, submitQuery, togglePin, rateQuery, reviewQuery };
+  const copyToScope = useCallback(async (sourceQuery: RegulationQuery, newScopeType: string, newScopeId: string) => {
+    const { error } = await supabase.from("regulation_queries").insert({
+      created_by: sourceQuery.created_by,
+      scope_type: newScopeType as any,
+      scope_id: newScopeId,
+      topic: sourceQuery.topic as any,
+      question: sourceQuery.question,
+      context_text: sourceQuery.context_text,
+      context_json: sourceQuery.context_json,
+      answer_summary: sourceQuery.answer_summary,
+      answer_detail: sourceQuery.answer_detail,
+      actions: sourceQuery.actions as any,
+      pitfalls: sourceQuery.pitfalls as any,
+      references_to_check: sourceQuery.references_to_check,
+      suggested_reservations: sourceQuery.suggested_reservations,
+      suggested_calc_lines: sourceQuery.suggested_calc_lines as any,
+      tags: sourceQuery.tags,
+      pinned: false,
+      reviewed_status: "draft",
+    });
+    if (error) throw error;
+    // Increment usage_count on source
+    await supabase.rpc("check_permission", { _user_id: sourceQuery.created_by, _perm: "dummy" }).then(() => {
+      // Just increment usage_count manually
+    });
+    await supabase
+      .from("regulation_queries")
+      .update({ usage_count: (sourceQuery.usage_count || 0) + 1 } as any)
+      .eq("id", sourceQuery.id);
+  }, []);
+
+  return { queries, loading, fetchQueries, submitQuery, togglePin, rateQuery, reviewQuery, fetchVersions, copyToScope };
 }

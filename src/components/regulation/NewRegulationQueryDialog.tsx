@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
@@ -33,6 +33,9 @@ interface Props {
   onSaved?: (query: RegulationQuery) => void;
   onAddCalcLines?: (lines: Array<{ title: string; category: string; estimate_hint: string }>) => void;
   onAddReservations?: (reservations: string[]) => void;
+  prefillQuestion?: string;
+  prefillTopic?: string;
+  parentId?: string;
 }
 
 export function NewRegulationQueryDialog({
@@ -45,13 +48,24 @@ export function NewRegulationQueryDialog({
   onSaved,
   onAddCalcLines,
   onAddReservations,
+  prefillQuestion,
+  prefillTopic,
+  parentId,
 }: Props) {
-  const [topic, setTopic] = useState<string>("NEK");
-  const [question, setQuestion] = useState("");
+  const [topic, setTopic] = useState<string>(prefillTopic || "NEK");
+  const [question, setQuestion] = useState(prefillQuestion || "");
   const [useCalcContext, setUseCalcContext] = useState(false);
   const [selectedLines, setSelectedLines] = useState<Set<string>>(new Set());
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RegulationQuery | null>(null);
+
+  // Sync prefill values when they change
+  useEffect(() => {
+    if (open) {
+      if (prefillQuestion) setQuestion(prefillQuestion);
+      if (prefillTopic) setTopic(prefillTopic);
+    }
+  }, [open, prefillQuestion, prefillTopic]);
 
   const { submitQuery, rateQuery } = useRegulationQueries();
 
@@ -75,6 +89,7 @@ export function NewRegulationQueryDialog({
         scope_id: scopeId,
         context_json: contextJson,
         company_id: companyId,
+        parent_id: parentId,
       });
 
       const saved: RegulationQuery = {
@@ -101,6 +116,8 @@ export function NewRegulationQueryDialog({
         suggested_reservations: data.suggested_reservations || [],
         suggested_calc_lines: data.suggested_calc_lines || [],
         usage_count: 0,
+        review_comment: null,
+        parent_id: null,
       };
 
       setResult(saved);
