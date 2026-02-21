@@ -9,7 +9,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Progress } from "@/components/ui/progress";
 import {
   ArrowLeft, ArrowRight, Check, Loader2, Upload, X, FileText, Image as ImageIcon,
-  Building2, FileEdit, Paperclip, Brain, Package, Sparkles, AlertTriangle,
+  Building2, FileEdit, Paperclip, Brain, Package, Sparkles, AlertTriangle, RefreshCw,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -48,6 +48,7 @@ export default function NewCalculation() {
   // Step 4
   const [aiLoading, setAiLoading] = useState(false);
   const [aiResult, setAiResult] = useState<any>(null);
+  const [aiError, setAiError] = useState<{ message: string; retryable: boolean } | null>(null);
   const [settings, setSettings] = useState({ material_multiplier: 2.0, default_hour_rate: 1080 });
 
   useEffect(() => {
@@ -145,7 +146,11 @@ export default function NewCalculation() {
   const handleAiAnalyse = async () => {
     if (!calcId) return;
     setAiLoading(true);
+    setAiError(null);
     try {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 20000);
+
       const { data, error } = await supabase.functions.invoke("generate-calculation-ai", {
         body: {
           description,
@@ -155,13 +160,22 @@ export default function NewCalculation() {
           hour_rate: settings.default_hour_rate,
         },
       });
-      if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+
+      clearTimeout(timer);
+
+      if (error) {
+        const msg = error.message || "";
+        const isRetryable = msg.includes("timeout") || msg.includes("504") || msg.includes("ai_timeout");
+        throw Object.assign(new Error(msg || "AI-analyse feilet"), { retryable: isRetryable });
+      }
+      if (data?.error) {
+        const isRetryable = data.error_code === "ai_timeout" || data.error_code === "network_error";
+        throw Object.assign(new Error(data.error), { retryable: isRetryable });
+      }
 
       setAiResult(data);
       await supabase.from("calculations").update({ ai_analysis: data }).eq("id", calcId);
 
-      // If AI returned actual items (not insufficient_data), insert them
       if (data.status !== "insufficient_data" && (data.materials?.length || data.labor?.length)) {
         await supabase.from("calculation_items").delete().eq("calculation_id", calcId).eq("suggested_by_ai", true);
         const newItems: any[] = [];
@@ -190,6 +204,8 @@ export default function NewCalculation() {
         toast.success("AI-analyse fullført", { description: `${newItems.length} poster generert` });
       }
     } catch (err: any) {
+      const retryable = err.retryable || false;
+      setAiError({ message: err.message || "Ukjent feil", retryable });
       toast.error("AI-analyse feilet", { description: err.message || "Ukjent feil" });
     }
     setAiLoading(false);
@@ -329,6 +345,20 @@ export default function NewCalculation() {
                   <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3 text-sm text-orange-800 dark:text-orange-200 flex items-start gap-2 max-w-md mx-auto">
                     <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
                     <span>Legg til en arbeidsbeskrivelse i steg 2 for bedre AI-analyse.</span>
+                  </div>
+                )}
+                {aiError && (
+                  <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-destructive flex items-start gap-2 max-w-md mx-auto">
+                    <AlertTriangle className="h-4 w-4 shrink-0 mt-0.5" />
+                    <div className="space-y-1">
+                      <span>{aiError.message}</span>
+                      {aiError.retryable && (
+                        <Button size="sm" variant="outline" onClick={handleAiAnalyse} disabled={aiLoading} className="gap-1.5 mt-1">
+                          <RefreshCw className="h-3.5 w-3.5" />
+                          Prøv igjen
+                        </Button>
+                      )}
+                    </div>
                   </div>
                 )}
                 <Button onClick={handleAiAnalyse} disabled={aiLoading || !description?.trim()} className="gap-1.5">
