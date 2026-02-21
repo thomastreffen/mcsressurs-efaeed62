@@ -8,15 +8,16 @@ import { Progress } from "@/components/ui/progress";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInDays, startOfDay } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
-  CalendarDays, AlertTriangle, Loader2, TrendingUp, ArrowRight,
+  CalendarDays, AlertTriangle, TrendingUp, ArrowRight,
   Target, BarChart3, UserPlus, ReceiptText, Unplug, XCircle,
-  Wrench, CheckCircle2, Clock, Video, PieChart,
+  Wrench, CheckCircle2, Clock, PieChart, PackageOpen, Inbox, FileQuestion,
 } from "lucide-react";
 import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 import { useAuth } from "@/hooks/useAuth";
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 import { RegulationDashboardWidget } from "@/components/regulation/RegulationDashboardWidget";
+import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 
 // ── Types ──
 
@@ -200,7 +201,7 @@ export default function KpiDashboard() {
     const stageLabels: Record<string, string> = { new: "Ny", contacted: "Kontaktet", befaring: "Befaring", qualified: "Kvalifisert", tilbud_sendt: "Tilbud sendt", forhandling: "Forhandling", won: "Vunnet" };
     const leadConversion = Object.entries(stageCounts).map(([k, v]) => ({ stage: stageLabels[k] || k, count: v }));
 
-    // Pipeline per owner (simplified - just show user_ids, would need profiles for names)
+    // Pipeline per owner
     const ownerPipeline: Record<string, number> = {};
     for (const l of openLeads) {
       const owner = l.assigned_owner_user_id || "Uten eier";
@@ -232,7 +233,7 @@ export default function KpiDashboard() {
     setLoading(false);
   }
 
-  if (loading) return <div className="flex items-center justify-center min-h-[60vh]"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (loading) return <DashboardSkeleton />;
 
   return (
     <div className="p-5 sm:p-8 space-y-8 w-full">
@@ -334,7 +335,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                 </ResponsiveContainer>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground py-12 text-center">Ingen planlagte timer</p>
+              <EmptyState icon={<BarChart3 />} message="Ingen planlagte timer denne uken" hint="Jobber som tildeles montører vil vises her" />
             )}
           </SectionCard>
         </div>
@@ -368,7 +369,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                 </div>
               </div>
             ) : (
-              <p className="text-sm text-muted-foreground py-12 text-center">Ingen jobber</p>
+              <EmptyState icon={<PieChart />} message="Ingen jobber registrert" hint="Opprett din første jobb for å se statusfordelingen" />
             )}
           </SectionCard>
         </div>
@@ -416,7 +417,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
             </div>
           </div>
         ) : (
-          <p className="text-sm text-muted-foreground py-8 text-center">Ingen koblinger</p>
+          <EmptyState icon={<Unplug />} message="Ingen kalenderkoblinger" hint="Koble montørene til Microsoft for å se synk-status" />
         )}
       </SectionCard>
 
@@ -448,13 +449,13 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
         </div>
 
         <div className="col-span-12 lg:col-span-6">
-          <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Se alle <ArrowRight className="h-3 w-3" /></Button>}>
+          <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
             <div className="space-y-1.5 min-h-[200px]">
-              {data.recentJobs.map((job) => (
+              {data.recentJobs.length > 0 ? data.recentJobs.map((job) => (
                 <button
                   key={job.id}
                   onClick={() => navigate(`/jobs/${job.id}`)}
-                  className="flex items-center gap-3 w-full rounded-xl p-3 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                  className="flex items-center gap-3 w-full rounded-xl p-3 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
                 >
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{job.title}</p>
@@ -470,7 +471,9 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                     {JOB_STATUS_CONFIG[job.status]?.label || job.status}
                   </Badge>
                 </button>
-              ))}
+              )) : (
+                <EmptyState icon={<CalendarDays />} message="Ingen jobber ennå" hint="Opprett en jobb fra kalenderen for å komme i gang" />
+              )}
             </div>
           </SectionCard>
         </div>
@@ -522,7 +525,7 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
               </ResponsiveContainer>
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground py-8 text-center">Ingen pipeline-data</p>
+            <EmptyState icon={<BarChart3 />} message="Ingen pipeline-data ennå" hint="Leads med estimert verdi vises her" />
           )}
         </SectionCard>
 
@@ -531,7 +534,7 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
           {data.leadsPerSource.length > 0 ? (
             <DonutChart data={data.leadsPerSource} />
           ) : (
-            <p className="text-sm text-muted-foreground py-8 text-center">Ingen leads</p>
+            <EmptyState icon={<PieChart />} message="Ingen aktive leads" hint="Registrer leads med kilde for å se fordelingen" />
           )}
         </SectionCard>
       </div>
@@ -542,17 +545,17 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
           <div className="space-y-2">
             <ActionItem label="Leads uten oppfølging" count={data.actionItems.leadsNoFollowup} variant="warning" onClick={() => navigate("/sales/leads")} />
             <ActionItem label="Leads uten aktivitet >7d" count={data.actionItems.leadsInactive7d} variant="warning" onClick={() => navigate("/sales/leads")} />
-            <ActionItem label="Tilbud ikke fulgt opp" count={data.actionItems.offersNotFollowed} variant="error" onClick={() => navigate("/sales/offers")} />
+            <ActionItem label="Tilbud uten oppfølging" count={data.actionItems.offersNotFollowed} variant="error" onClick={() => navigate("/sales/offers")} />
           </div>
         </SectionCard>
 
-        <SectionCard title="Siste tilbud" subtitle="" icon={<ReceiptText className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/sales/offers")} className="gap-1 text-xs h-7">Se alle <ArrowRight className="h-3 w-3" /></Button>}>
+        <SectionCard title="Siste tilbud" subtitle="" icon={<ReceiptText className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/sales/offers")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
           <div className="space-y-1.5">
-            {data.recentOffers.map((offer) => (
+            {data.recentOffers.length > 0 ? data.recentOffers.map((offer) => (
               <button
                 key={offer.id}
                 onClick={() => navigate("/sales/offers")}
-                className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 transition-colors focus-visible:ring-2 focus-visible:ring-ring"
+                className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
               >
                 <div className="flex-1 min-w-0">
                   <p className="text-sm font-medium truncate">{offer.offer_number}</p>
@@ -565,9 +568,8 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
                   {OFFER_STATUS_CONFIG[offer.status]?.label}
                 </Badge>
               </button>
-            ))}
-            {data.recentOffers.length === 0 && (
-              <p className="text-sm text-muted-foreground text-center py-4">Ingen tilbud ennå</p>
+            )) : (
+              <EmptyState icon={<ReceiptText />} message="Ingen tilbud sendt ennå" hint="Opprett et tilbud fra en kalkyle for å komme i gang" />
             )}
           </div>
         </SectionCard>
@@ -587,12 +589,12 @@ function KpiCard({ title, value, icon, variant, accent }: {
   const iconClass = accent ? "text-primary" : hasIssue && variant === "error" ? "text-destructive" : hasIssue && variant === "warning" ? "text-accent" : "text-muted-foreground";
 
   return (
-    <div className={`rounded-2xl shadow-sm hover:shadow-md transition-shadow p-6 sm:p-8 ${bgClass}`}>
+    <div className={`rounded-2xl shadow-sm p-6 sm:p-8 transition-all duration-200 hover:shadow-md hover:scale-[1.01] ${bgClass}`}>
       <div className={`flex items-center gap-2 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-4`}>
         {icon}
         {title}
       </div>
-      <p className="text-5xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-4xl sm:text-5xl font-bold text-foreground tracking-tight">{value}</p>
     </div>
   );
 }
@@ -601,7 +603,7 @@ function SectionCard({ title, subtitle, icon, children, action }: {
   title: string; subtitle?: string; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl shadow-sm bg-card p-6">
+    <div className="rounded-2xl shadow-sm bg-card p-5 sm:p-6">
       <div className="flex items-center justify-between mb-4">
         <div>
           <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
@@ -629,7 +631,7 @@ function ActionItem({ label, count, variant, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-between w-full py-2.5 px-3 rounded-xl hover:bg-secondary/60 active:bg-secondary/80 transition-colors focus-visible:ring-2 focus-visible:ring-ring cursor-pointer group"
+      className="flex items-center justify-between w-full py-2.5 px-3 rounded-xl hover:bg-secondary/60 active:bg-secondary/80 transition-colors focus-visible:ring-2 focus-visible:ring-ring cursor-pointer group min-h-[44px]"
     >
       <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{label}</span>
       <div className="flex items-center gap-2">
@@ -646,6 +648,16 @@ function ActionItem({ label, count, variant, onClick }: {
         <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
       </div>
     </button>
+  );
+}
+
+function EmptyState({ icon, message, hint }: { icon: React.ReactNode; message: string; hint?: string }) {
+  return (
+    <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
+      <div className="text-muted-foreground/30 [&>svg]:h-8 [&>svg]:w-8">{icon}</div>
+      <p className="text-sm text-muted-foreground font-medium">{message}</p>
+      {hint && <p className="text-xs text-muted-foreground/70">{hint}</p>}
+    </div>
   );
 }
 
