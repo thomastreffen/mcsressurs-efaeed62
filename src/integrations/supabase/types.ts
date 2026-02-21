@@ -1239,6 +1239,71 @@ export type Database = {
           },
         ]
       }
+      regulation_queries: {
+        Row: {
+          actions: Json | null
+          answer_detail: string | null
+          answer_summary: string | null
+          company_id: string | null
+          context_json: Json | null
+          context_text: string | null
+          created_at: string
+          created_by: string
+          id: string
+          pinned: boolean
+          pitfalls: Json | null
+          question: string
+          scope_id: string | null
+          scope_type: Database["public"]["Enums"]["regulation_scope_type"]
+          tags: string[] | null
+          topic: Database["public"]["Enums"]["regulation_topic"]
+        }
+        Insert: {
+          actions?: Json | null
+          answer_detail?: string | null
+          answer_summary?: string | null
+          company_id?: string | null
+          context_json?: Json | null
+          context_text?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          pinned?: boolean
+          pitfalls?: Json | null
+          question: string
+          scope_id?: string | null
+          scope_type?: Database["public"]["Enums"]["regulation_scope_type"]
+          tags?: string[] | null
+          topic?: Database["public"]["Enums"]["regulation_topic"]
+        }
+        Update: {
+          actions?: Json | null
+          answer_detail?: string | null
+          answer_summary?: string | null
+          company_id?: string | null
+          context_json?: Json | null
+          context_text?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          pinned?: boolean
+          pitfalls?: Json | null
+          question?: string
+          scope_id?: string | null
+          scope_type?: Database["public"]["Enums"]["regulation_scope_type"]
+          tags?: string[] | null
+          topic?: Database["public"]["Enums"]["regulation_topic"]
+        }
+        Relationships: [
+          {
+            foreignKeyName: "regulation_queries_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_permissions: {
         Row: {
           allowed: boolean
@@ -1541,6 +1606,8 @@ export type Database = {
         | "expired"
         | "signed"
         | "archived"
+      regulation_scope_type: "global" | "lead" | "quote" | "job"
+      regulation_topic: "NEK" | "FEL" | "FSE" | "FSL" | "Annet"
     }
     CompositeTypes: {
       [_ in never]: never
@@ -1717,6 +1784,8 @@ export const Constants = {
         "signed",
         "archived",
       ],
+      regulation_scope_type: ["global", "lead", "quote", "job"],
+      regulation_topic: ["NEK", "FEL", "FSE", "FSL", "Annet"],
     },
   },
 } as const
