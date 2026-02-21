@@ -29,7 +29,7 @@ export function MobileTabBar() {
               key={tab.path}
               onClick={() => navigate(tab.path)}
               className={cn(
-                "flex flex-1 flex-col items-center gap-0.5 py-2 text-[11px] font-medium transition-colors relative",
+                "flex flex-1 flex-col items-center gap-0.5 py-2.5 text-[11px] font-medium transition-colors relative min-h-[48px] active:bg-secondary/50",
                 isActive
                   ? "text-primary"
                   : "text-muted-foreground hover:text-foreground"
