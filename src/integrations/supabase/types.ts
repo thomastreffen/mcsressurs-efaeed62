@@ -1253,10 +1253,17 @@ export type Database = {
           pinned: boolean
           pitfalls: Json | null
           question: string
+          references_to_check: string[] | null
+          reviewed_at: string | null
+          reviewed_by: string | null
+          reviewed_status: string
           scope_id: string | null
           scope_type: Database["public"]["Enums"]["regulation_scope_type"]
+          suggested_calc_lines: Json | null
+          suggested_reservations: string[] | null
           tags: string[] | null
           topic: Database["public"]["Enums"]["regulation_topic"]
+          usefulness_rating: number | null
         }
         Insert: {
           actions?: Json | null
@@ -1271,10 +1278,17 @@ export type Database = {
           pinned?: boolean
           pitfalls?: Json | null
           question: string
+          references_to_check?: string[] | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewed_status?: string
           scope_id?: string | null
           scope_type?: Database["public"]["Enums"]["regulation_scope_type"]
+          suggested_calc_lines?: Json | null
+          suggested_reservations?: string[] | null
           tags?: string[] | null
           topic?: Database["public"]["Enums"]["regulation_topic"]
+          usefulness_rating?: number | null
         }
         Update: {
           actions?: Json | null
@@ -1289,10 +1303,17 @@ export type Database = {
           pinned?: boolean
           pitfalls?: Json | null
           question?: string
+          references_to_check?: string[] | null
+          reviewed_at?: string | null
+          reviewed_by?: string | null
+          reviewed_status?: string
           scope_id?: string | null
           scope_type?: Database["public"]["Enums"]["regulation_scope_type"]
+          suggested_calc_lines?: Json | null
+          suggested_reservations?: string[] | null
           tags?: string[] | null
           topic?: Database["public"]["Enums"]["regulation_topic"]
+          usefulness_rating?: number | null
         }
         Relationships: [
           {

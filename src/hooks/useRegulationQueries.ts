@@ -17,6 +17,13 @@ export interface RegulationQuery {
   pitfalls: Array<{ title: string; description: string }>;
   tags: string[];
   pinned: boolean;
+  usefulness_rating: number | null;
+  reviewed_status: "draft" | "approved" | "rejected";
+  reviewed_by: string | null;
+  reviewed_at: string | null;
+  references_to_check: string[];
+  suggested_reservations: string[];
+  suggested_calc_lines: Array<{ title: string; category: string; estimate_hint: string }>;
 }
 
 export function useRegulationQueries(scopeType?: string, scopeId?: string) {
@@ -75,5 +82,22 @@ export function useRegulationQueries(scopeType?: string, scopeId?: string) {
     setQueries(prev => prev.map(q => q.id === id ? { ...q, pinned: !pinned } : q));
   }, []);
 
-  return { queries, loading, fetchQueries, submitQuery, togglePin };
+  const rateQuery = useCallback(async (id: string, rating: number) => {
+    await supabase
+      .from("regulation_queries")
+      .update({ usefulness_rating: rating })
+      .eq("id", id);
+    setQueries(prev => prev.map(q => q.id === id ? { ...q, usefulness_rating: rating } : q));
+  }, []);
+
+  const reviewQuery = useCallback(async (id: string, status: "approved" | "rejected", userId: string) => {
+    const now = new Date().toISOString();
+    await supabase
+      .from("regulation_queries")
+      .update({ reviewed_status: status, reviewed_by: userId, reviewed_at: now })
+      .eq("id", id);
+    setQueries(prev => prev.map(q => q.id === id ? { ...q, reviewed_status: status, reviewed_by: userId, reviewed_at: now } : q));
+  }, []);
+
+  return { queries, loading, fetchQueries, submitQuery, togglePin, rateQuery, reviewQuery };
 }
