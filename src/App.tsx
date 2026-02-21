@@ -32,6 +32,7 @@ import TrashPage from "./pages/TrashPage";
 import AccessControlPage from "./pages/AccessControlPage";
 import IntegrationsDebug from "./pages/IntegrationsDebug";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
+import RegulationPage from "./pages/RegulationPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -63,6 +64,7 @@ const App = () => (
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/resource-plan" element={<ResourcePlan />} />
               <Route path="/notifications" element={<NotificationsPage />} />
+              <Route path="/fag" element={<RegulationPage />} />
 
               {/* Sales module - admin only */}
               <Route

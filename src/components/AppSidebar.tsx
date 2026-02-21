@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Plug,
   HeartPulse,
+  BookOpen,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -48,6 +49,10 @@ const salesNav = [
 const projectNav = [
   { title: "Alle jobber", url: "/jobs", icon: FolderKanban },
   { title: "Ressursplan", url: "/resource-plan", icon: CalendarDays },
+];
+
+const fagNav = [
+  { title: "Fag", url: "/fag", icon: BookOpen },
 ];
 
 const adminNav = [
@@ -130,6 +135,25 @@ export function AppSidebar() {
           <SidebarGroupContent>
             <SidebarMenu>
               {projectNav.map((item) => (
+                <SidebarMenuItem key={item.url}>
+                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
+                    <NavLink to={item.url}>
+                      <item.icon className="h-4 w-4" />
+                      <span>{item.title}</span>
+                    </NavLink>
+                  </SidebarMenuButton>
+                </SidebarMenuItem>
+              ))}
+            </SidebarMenu>
+          </SidebarGroupContent>
+        </SidebarGroup>
+
+        {/* Fag */}
+        <SidebarGroup>
+          <SidebarGroupLabel>Fag & Forskrift</SidebarGroupLabel>
+          <SidebarGroupContent>
+            <SidebarMenu>
+              {fagNav.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
                     <NavLink to={item.url}>

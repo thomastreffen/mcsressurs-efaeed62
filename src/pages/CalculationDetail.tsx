@@ -23,10 +23,10 @@ import { ConvertToJobDialog } from "@/components/ConvertToJobDialog";
 import {
   ArrowLeft, Loader2, Sparkles, FileDown, ArrowRightLeft, Plus, Trash2, Save,
   Building2, Mail, FileText, Brain, Package, Upload, X, Image as ImageIcon,
-  AlertTriangle, Paperclip, Eye, EyeOff, ExternalLink, AlertCircle, ReceiptText,
+  AlertTriangle, Paperclip, Eye, EyeOff, ExternalLink, AlertCircle, ReceiptText, BookOpen,
 } from "lucide-react";
 import { toast } from "sonner";
-
+import { NewRegulationQueryDialog } from "@/components/regulation/NewRegulationQueryDialog";
 interface CalcItem {
   id: string;
   calculation_id: string;
@@ -90,6 +90,7 @@ export default function CalculationDetail() {
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [regulationOpen, setRegulationOpen] = useState(false);
 
   const fetchCalc = useCallback(async () => {
     if (!id) return;
@@ -434,6 +435,9 @@ export default function CalculationDetail() {
             <Button onClick={handleGenerateOffer} disabled={pdfLoading || items.length === 0} variant="outline" className="gap-1.5">
               {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
               Generer tilbud
+            </Button>
+            <Button onClick={() => setRegulationOpen(true)} variant="outline" className="gap-1.5">
+              <BookOpen className="h-4 w-4" /> Spør forskrift
             </Button>
             {(calc.status === "accepted" || latestAcceptedOffer) && (
               <Button onClick={() => setConvertOpen(true)} className="gap-1.5">
@@ -870,6 +874,20 @@ export default function CalculationDetail() {
         defaultTitle={calc.project_title}
         defaultCustomer={calc.customer_name}
         defaultDescription={calc.description || undefined}
+      />
+      <NewRegulationQueryDialog
+        open={regulationOpen}
+        onOpenChange={setRegulationOpen}
+        scopeType="quote"
+        scopeId={calc.id}
+        calcLines={items.map(i => ({
+          id: i.id,
+          title: i.title,
+          description: i.description,
+          quantity: i.quantity,
+          unit: i.unit,
+          unit_price: i.unit_price,
+        }))}
       />
     </div>
   );

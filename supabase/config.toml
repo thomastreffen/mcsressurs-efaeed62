@@ -47,3 +47,6 @@ verify_jwt = false
 
 [functions.teams-meeting]
 verify_jwt = false
+
+[functions.regulation-query]
+verify_jwt = false

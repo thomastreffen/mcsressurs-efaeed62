@@ -7,6 +7,7 @@ import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
+import { RegulationJobSection } from "@/components/regulation/RegulationJobSection";
 import { AuditInfo } from "@/components/AuditInfo";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -842,6 +843,11 @@ export default function JobDetail() {
                   </CollapsibleContent>
                 </SectionCard>
               </Collapsible>
+
+              {/* Faglogg */}
+              <SectionCard>
+                <RegulationJobSection jobId={id!} />
+              </SectionCard>
 
               {/* Audit info – collapsible on mobile */}
               <Collapsible defaultOpen={!isMobile}>
