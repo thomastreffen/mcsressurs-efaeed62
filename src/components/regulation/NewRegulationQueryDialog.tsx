@@ -100,6 +100,7 @@ export function NewRegulationQueryDialog({
         references_to_check: data.references_to_check || [],
         suggested_reservations: data.suggested_reservations || [],
         suggested_calc_lines: data.suggested_calc_lines || [],
+        usage_count: 0,
       };
 
       setResult(saved);

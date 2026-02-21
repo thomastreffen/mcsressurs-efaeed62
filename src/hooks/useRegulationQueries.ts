@@ -17,6 +17,7 @@ export interface RegulationQuery {
   pitfalls: Array<{ title: string; description: string }>;
   tags: string[];
   pinned: boolean;
+  usage_count: number;
   usefulness_rating: number | null;
   reviewed_status: "draft" | "approved" | "rejected";
   reviewed_by: string | null;

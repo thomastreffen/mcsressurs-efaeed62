@@ -1263,6 +1263,7 @@ export type Database = {
           suggested_reservations: string[] | null
           tags: string[] | null
           topic: Database["public"]["Enums"]["regulation_topic"]
+          usage_count: number
           usefulness_rating: number | null
         }
         Insert: {
@@ -1288,6 +1289,7 @@ export type Database = {
           suggested_reservations?: string[] | null
           tags?: string[] | null
           topic?: Database["public"]["Enums"]["regulation_topic"]
+          usage_count?: number
           usefulness_rating?: number | null
         }
         Update: {
@@ -1313,6 +1315,7 @@ export type Database = {
           suggested_reservations?: string[] | null
           tags?: string[] | null
           topic?: Database["public"]["Enums"]["regulation_topic"]
+          usage_count?: number
           usefulness_rating?: number | null
         }
         Relationships: [
