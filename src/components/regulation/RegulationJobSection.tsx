@@ -4,6 +4,7 @@ import { Button } from "@/components/ui/button";
 import { RegulationAnswerCard } from "./RegulationAnswerCard";
 import { NewRegulationQueryDialog } from "./NewRegulationQueryDialog";
 import { useRegulationQueries } from "@/hooks/useRegulationQueries";
+import { useAuth } from "@/hooks/useAuth";
 
 interface Props {
   jobId: string;
@@ -13,11 +14,16 @@ interface Props {
 export function RegulationJobSection({ jobId, companyId }: Props) {
   const [newOpen, setNewOpen] = useState(false);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const { queries, loading, fetchQueries, togglePin } = useRegulationQueries("job", jobId);
+  const { queries, loading, fetchQueries, togglePin, rateQuery, reviewQuery } = useRegulationQueries("job", jobId);
+  const { user, isAdmin } = useAuth();
 
   useEffect(() => {
     fetchQueries();
   }, [fetchQueries]);
+
+  const handleReview = (id: string, status: "approved" | "rejected") => {
+    if (user?.id) reviewQuery(id, status, user.id);
+  };
 
   const selected = selectedId ? queries.find(q => q.id === selectedId) : null;
 
@@ -39,7 +45,13 @@ export function RegulationJobSection({ jobId, companyId }: Props) {
           <Button variant="ghost" size="sm" onClick={() => setSelectedId(null)} className="gap-1 -ml-2 text-xs h-7">
             ← Tilbake
           </Button>
-          <RegulationAnswerCard query={selected} onPin={togglePin} />
+          <RegulationAnswerCard
+            query={selected}
+            onPin={togglePin}
+            onRate={rateQuery}
+            onReview={handleReview}
+            canReview={isAdmin}
+          />
         </div>
       ) : loading ? (
         <p className="text-xs text-muted-foreground py-4 text-center">Laster…</p>

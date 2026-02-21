@@ -1,16 +1,13 @@
 import { useState, useEffect, useMemo } from "react";
-import { useNavigate, useSearchParams } from "react-router-dom";
-import { Search, Plus, Filter, BookOpen, Pin } from "lucide-react";
-import { format } from "date-fns";
-import { nb } from "date-fns/locale";
+import { useSearchParams } from "react-router-dom";
+import { Search, Plus, BookOpen, Pin } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Badge } from "@/components/ui/badge";
 import { NewRegulationQueryDialog } from "@/components/regulation/NewRegulationQueryDialog";
 import { RegulationAnswerCard } from "@/components/regulation/RegulationAnswerCard";
 import { useRegulationQueries } from "@/hooks/useRegulationQueries";
-import type { RegulationQuery } from "@/hooks/useRegulationQueries";
+import { useAuth } from "@/hooks/useAuth";
 
 const TOPICS = ["Alle", "NEK", "FEL", "FSE", "FSL", "Annet"];
 const SCOPES = [
@@ -20,27 +17,39 @@ const SCOPES = [
   { value: "quote", label: "Tilbud" },
   { value: "lead", label: "Lead" },
 ];
+const REVIEW_FILTERS = [
+  { value: "all", label: "Alle statuser" },
+  { value: "approved", label: "Kun godkjente" },
+  { value: "draft", label: "Utkast" },
+  { value: "rejected", label: "Avvist" },
+];
 
 export default function RegulationPage() {
-  const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get("id");
+  const { user, isAdmin } = useAuth();
 
   const [newOpen, setNewOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [topicFilter, setTopicFilter] = useState("Alle");
   const [scopeFilter, setScopeFilter] = useState("all");
+  const [reviewFilter, setReviewFilter] = useState("all");
 
-  const { queries, loading, fetchQueries, togglePin } = useRegulationQueries();
+  const { queries, loading, fetchQueries, togglePin, rateQuery, reviewQuery } = useRegulationQueries();
 
   useEffect(() => {
     fetchQueries();
   }, [fetchQueries]);
 
+  const handleReview = (id: string, status: "approved" | "rejected") => {
+    if (user?.id) reviewQuery(id, status, user.id);
+  };
+
   const filtered = useMemo(() => {
     let result = [...queries];
     if (topicFilter !== "Alle") result = result.filter(q => q.topic === topicFilter);
     if (scopeFilter !== "all") result = result.filter(q => q.scope_type === scopeFilter);
+    if (reviewFilter !== "all") result = result.filter(q => q.reviewed_status === reviewFilter);
     if (search.trim()) {
       const s = search.toLowerCase();
       result = result.filter(q =>
@@ -48,14 +57,13 @@ export default function RegulationPage() {
         q.answer_summary?.toLowerCase().includes(s)
       );
     }
-    // Pinned first
     result.sort((a, b) => {
       if (a.pinned && !b.pinned) return -1;
       if (!a.pinned && b.pinned) return 1;
       return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
     });
     return result;
-  }, [queries, topicFilter, scopeFilter, search]);
+  }, [queries, topicFilter, scopeFilter, reviewFilter, search]);
 
   const selectedQuery = selectedId ? queries.find(q => q.id === selectedId) : null;
 
@@ -101,15 +109,27 @@ export default function RegulationPage() {
             {SCOPES.map(s => <SelectItem key={s.value} value={s.value}>{s.label}</SelectItem>)}
           </SelectContent>
         </Select>
+        <Select value={reviewFilter} onValueChange={setReviewFilter}>
+          <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
+          <SelectContent>
+            {REVIEW_FILTERS.map(r => <SelectItem key={r.value} value={r.value}>{r.label}</SelectItem>)}
+          </SelectContent>
+        </Select>
       </div>
 
-      {/* Content - list or detail */}
+      {/* Content */}
       {selectedQuery ? (
         <div className="space-y-4">
           <Button variant="ghost" size="sm" onClick={() => setSearchParams({})} className="gap-1.5 -ml-2">
             ← Tilbake til liste
           </Button>
-          <RegulationAnswerCard query={selectedQuery} onPin={togglePin} />
+          <RegulationAnswerCard
+            query={selectedQuery}
+            onPin={togglePin}
+            onRate={rateQuery}
+            onReview={handleReview}
+            canReview={isAdmin}
+          />
         </div>
       ) : (
         <div className="space-y-3">

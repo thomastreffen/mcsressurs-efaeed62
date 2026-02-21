@@ -51,13 +51,16 @@ serve(async (req) => {
 
 Du gir faglig veiledning basert på prinsipper i disse forskriftene. Du siterer IKKE standardtekst direkte, men forklarer relevante prinsipper og krav.
 
-VIKTIG: Du MÅ alltid svare i følgende JSON-struktur med tool call. Ikke svar i fritekst.
+VIKTIG: Du MÅ alltid svare med tool call. Ikke svar i fritekst.
 
 Svarstrukturen:
 - summary: Kort oppsummering (1-2 setninger)
 - practical_meaning: Hva dette betyr i praksis for prosjektet
 - actions: Array med anbefalte tiltak (hvert element har "title" og "description")
 - pitfalls: Array med fallgruver/risiko (hvert element har "title" og "description")
+- references_to_check: Array med strenger - retningsgivende referanser brukeren bør sjekke selv (f.eks. "NEK 400 del 7-701 om våtrom", "FEL § 9 om kvalifikasjonskrav"). IKKE siter tekst, bare pek på relevante seksjoner.
+- suggested_reservations: Array med 2-5 forbehold som bør tas med i tilbud/kalkyle (f.eks. "Forutsetter at eksisterende jordelektrode er i forskriftsmessig stand")
+- suggested_calc_lines: Array med forslag til kalkylelinjer basert på spørsmålet. Hvert element har "title" (kort tittel), "category" (material|labor), "estimate_hint" (kort hint om omfang, f.eks. "2-4 timer" eller "1 stk per kurs"). Foreslå kun der det er naturlig.
 - disclaimer: Fast tekst om at dette er veiledning, ikke juridisk rådgivning
 
 Hold svarene konkrete, praktiske og relevante for en elektriker/prosjektleder i felt.`;
@@ -93,29 +96,44 @@ Spørsmål: ${question}${fullContext}`;
                     type: "array",
                     items: {
                       type: "object",
-                      properties: {
-                        title: { type: "string" },
-                        description: { type: "string" },
-                      },
+                      properties: { title: { type: "string" }, description: { type: "string" } },
                       required: ["title", "description"],
                     },
-                    description: "Anbefalte tiltak",
                   },
                   pitfalls: {
                     type: "array",
                     items: {
                       type: "object",
-                      properties: {
-                        title: { type: "string" },
-                        description: { type: "string" },
-                      },
+                      properties: { title: { type: "string" }, description: { type: "string" } },
                       required: ["title", "description"],
                     },
-                    description: "Fallgruver og risiko",
                   },
-                  disclaimer: { type: "string", description: "Forbehold" },
+                  references_to_check: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "Relevante forskriftsseksjoner å sjekke (ikke sitat, kun retning)",
+                  },
+                  suggested_reservations: {
+                    type: "array",
+                    items: { type: "string" },
+                    description: "2-5 forbehold for tilbud/kalkyle",
+                  },
+                  suggested_calc_lines: {
+                    type: "array",
+                    items: {
+                      type: "object",
+                      properties: {
+                        title: { type: "string" },
+                        category: { type: "string", enum: ["material", "labor"] },
+                        estimate_hint: { type: "string" },
+                      },
+                      required: ["title", "category", "estimate_hint"],
+                    },
+                    description: "Forslag til kalkylelinjer",
+                  },
+                  disclaimer: { type: "string" },
                 },
-                required: ["summary", "practical_meaning", "actions", "pitfalls", "disclaimer"],
+                required: ["summary", "practical_meaning", "actions", "pitfalls", "references_to_check", "suggested_reservations", "suggested_calc_lines", "disclaimer"],
               },
             },
           },
@@ -127,14 +145,12 @@ Spørsmål: ${question}${fullContext}`;
     if (!response.ok) {
       if (response.status === 429) {
         return new Response(JSON.stringify({ error: "For mange forespørsler. Prøv igjen om litt." }), {
-          status: 429,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 429, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       if (response.status === 402) {
         return new Response(JSON.stringify({ error: "AI-kreditter er oppbrukt." }), {
-          status: 402,
-          headers: { ...corsHeaders, "Content-Type": "application/json" },
+          status: 402, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
       }
       const t = await response.text();
@@ -151,12 +167,14 @@ Spørsmål: ${question}${fullContext}`;
         ? JSON.parse(toolCall.function.arguments)
         : toolCall.function.arguments;
     } else {
-      // Fallback
       parsed = {
         summary: aiData.choices?.[0]?.message?.content || "Kunne ikke generere svar",
         practical_meaning: "",
         actions: [],
         pitfalls: [],
+        references_to_check: [],
+        suggested_reservations: [],
+        suggested_calc_lines: [],
         disclaimer: "AI gir veiledning – original forskrift må sjekkes ved tvil.",
       };
     }
@@ -175,13 +193,15 @@ Spørsmål: ${question}${fullContext}`;
       answer_detail: parsed.practical_meaning,
       actions: parsed.actions || [],
       pitfalls: parsed.pitfalls || [],
+      references_to_check: parsed.references_to_check || [],
+      suggested_reservations: parsed.suggested_reservations || [],
+      suggested_calc_lines: parsed.suggested_calc_lines || [],
       tags: [],
       pinned: false,
     }).select().single();
 
     if (saveError) {
       console.error("Save error:", saveError);
-      // Still return answer even if save fails
     }
 
     return new Response(JSON.stringify({

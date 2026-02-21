@@ -888,6 +888,24 @@ export default function CalculationDetail() {
           unit: i.unit,
           unit_price: i.unit_price,
         }))}
+        onAddCalcLines={async (lines) => {
+          if (!calc) return;
+          for (const line of lines) {
+            const isLabor = line.category === "labor";
+            await supabase.from("calculation_items").insert({
+              calculation_id: calc.id,
+              type: isLabor ? "labor" : "material",
+              title: line.title,
+              description: `Fra fagforespørsel: ${line.estimate_hint}`,
+              quantity: 1,
+              unit: isLabor ? "timer" : "stk",
+              unit_price: isLabor ? settings.default_hour_rate : 0,
+              total_price: isLabor ? settings.default_hour_rate : 0,
+              suggested_by_ai: true,
+            });
+          }
+          fetchCalc();
+        }}
       />
     </div>
   );

@@ -9,6 +9,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { toast } from "sonner";
 import { useRegulationQueries } from "@/hooks/useRegulationQueries";
 import { RegulationAnswerCard } from "./RegulationAnswerCard";
+import { RegulationCalcSuggestions } from "./RegulationCalcSuggestions";
 import type { RegulationQuery } from "@/hooks/useRegulationQueries";
 
 const TOPICS = ["NEK", "FEL", "FSE", "FSL", "Annet"] as const;
@@ -30,6 +31,8 @@ interface Props {
   companyId?: string;
   calcLines?: CalcLine[];
   onSaved?: (query: RegulationQuery) => void;
+  onAddCalcLines?: (lines: Array<{ title: string; category: string; estimate_hint: string }>) => void;
+  onAddReservations?: (reservations: string[]) => void;
 }
 
 export function NewRegulationQueryDialog({
@@ -40,6 +43,8 @@ export function NewRegulationQueryDialog({
   companyId,
   calcLines,
   onSaved,
+  onAddCalcLines,
+  onAddReservations,
 }: Props) {
   const [topic, setTopic] = useState<string>("NEK");
   const [question, setQuestion] = useState("");
@@ -48,7 +53,7 @@ export function NewRegulationQueryDialog({
   const [submitting, setSubmitting] = useState(false);
   const [result, setResult] = useState<RegulationQuery | null>(null);
 
-  const { submitQuery } = useRegulationQueries();
+  const { submitQuery, rateQuery } = useRegulationQueries();
 
   const handleSubmit = async () => {
     if (!question.trim()) {
@@ -88,6 +93,13 @@ export function NewRegulationQueryDialog({
         pitfalls: data.pitfalls || [],
         tags: [],
         pinned: false,
+        usefulness_rating: null,
+        reviewed_status: "draft",
+        reviewed_by: null,
+        reviewed_at: null,
+        references_to_check: data.references_to_check || [],
+        suggested_reservations: data.suggested_reservations || [],
+        suggested_calc_lines: data.suggested_calc_lines || [],
       };
 
       setResult(saved);
@@ -102,7 +114,6 @@ export function NewRegulationQueryDialog({
 
   const handleClose = () => {
     onOpenChange(false);
-    // Reset after animation
     setTimeout(() => {
       setQuestion("");
       setResult(null);
@@ -205,7 +216,18 @@ export function NewRegulationQueryDialog({
             </>
           ) : (
             <div className="space-y-4">
-              <RegulationAnswerCard query={result} />
+              <RegulationAnswerCard query={result} onRate={rateQuery} />
+
+              {/* Calc line suggestions */}
+              {(result.suggested_calc_lines?.length > 0 || result.suggested_reservations?.length > 0) && (
+                <RegulationCalcSuggestions
+                  suggestedLines={result.suggested_calc_lines || []}
+                  suggestedReservations={result.suggested_reservations || []}
+                  onAddCalcLines={onAddCalcLines}
+                  onAddReservations={onAddReservations}
+                />
+              )}
+
               <div className="flex gap-2">
                 <Button variant="outline" onClick={handleClose} className="flex-1">
                   Lukk
