@@ -33,6 +33,7 @@ import AccessControlPage from "./pages/AccessControlPage";
 import IntegrationsDebug from "./pages/IntegrationsDebug";
 import IntegrationHealthPage from "./pages/IntegrationHealthPage";
 import RegulationPage from "./pages/RegulationPage";
+import FagInsightsPage from "./pages/FagInsightsPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -184,6 +185,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <IntegrationHealthPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/fag-insights"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <FagInsightsPage />
                   </ProtectedRoute>
                 }
               />

@@ -9,6 +9,7 @@ import { RegulationAnswerCard } from "@/components/regulation/RegulationAnswerCa
 import { RegulationLibrary } from "@/components/regulation/RegulationLibrary";
 import { useRegulationQueries } from "@/hooks/useRegulationQueries";
 import { useAuth } from "@/hooks/useAuth";
+import type { RegulationQuery } from "@/hooks/useRegulationQueries";
 
 const TOPICS = ["Alle", "NEK", "FEL", "FSE", "FSL", "Annet"];
 const SCOPES = [
@@ -36,22 +37,46 @@ export default function RegulationPage() {
   const [topicFilter, setTopicFilter] = useState("Alle");
   const [scopeFilter, setScopeFilter] = useState("all");
   const [reviewFilter, setReviewFilter] = useState(filterParam || "all");
+  const [prefillQuery, setPrefillQuery] = useState<RegulationQuery | null>(null);
+  const [versions, setVersions] = useState<RegulationQuery[]>([]);
 
-  const { queries, loading, fetchQueries, togglePin, rateQuery, reviewQuery } = useRegulationQueries();
+  const { queries, loading, fetchQueries, fetchVersions, togglePin, rateQuery, reviewQuery } = useRegulationQueries();
 
   useEffect(() => {
     fetchQueries();
   }, [fetchQueries]);
 
-  // Sync URL filter param
   useEffect(() => {
     if (filterParam && filterParam !== reviewFilter) {
       setReviewFilter(filterParam);
     }
   }, [filterParam]);
 
-  const handleReview = (id: string, status: "approved" | "rejected") => {
-    if (user?.id) reviewQuery(id, status, user.id);
+  // Load versions when a query is selected
+  useEffect(() => {
+    if (selectedId) {
+      const q = queries.find(q => q.id === selectedId);
+      if (q) {
+        const rootId = q.parent_id || q.id;
+        fetchVersions(rootId).then(setVersions);
+      }
+    } else {
+      setVersions([]);
+    }
+  }, [selectedId, queries, fetchVersions]);
+
+  const handleReview = (id: string, status: "approved" | "rejected", comment?: string) => {
+    if (user?.id) reviewQuery(id, status, user.id, comment);
+  };
+
+  const handleCreateRevision = (query: RegulationQuery) => {
+    setPrefillQuery(query);
+    setNewOpen(true);
+  };
+
+  const handlePrefillNew = (query: RegulationQuery) => {
+    setPrefillQuery(query);
+    setNewOpen(true);
   };
 
   const filtered = useMemo(() => {
@@ -89,7 +114,7 @@ export default function RegulationPage() {
             Forskriftsoppslag og faglig veiledning (NEK, FEL, FSE, FSL)
           </p>
         </div>
-        <Button onClick={() => setNewOpen(true)} className="gap-1.5">
+        <Button onClick={() => { setPrefillQuery(null); setNewOpen(true); }} className="gap-1.5">
           <Plus className="h-4 w-4" />
           Ny forespørsel
         </Button>
@@ -138,14 +163,15 @@ export default function RegulationPage() {
             onRate={rateQuery}
             onReview={handleReview}
             canReview={isAdmin}
+            versions={versions}
+            onSelectVersion={(id) => setSearchParams({ id })}
+            onCreateRevision={handleCreateRevision}
           />
         </div>
       ) : (
         <div className="space-y-6">
-          {/* Library section */}
-          <RegulationLibrary queries={queries} />
+          <RegulationLibrary queries={queries} onPrefillNew={handlePrefillNew} />
 
-          {/* Query list */}
           <div className="space-y-3">
             {loading ? (
               <div className="text-center py-12 text-muted-foreground">Laster…</div>
@@ -178,6 +204,9 @@ export default function RegulationPage() {
         open={newOpen}
         onOpenChange={setNewOpen}
         onSaved={() => fetchQueries()}
+        prefillQuestion={prefillQuery?.question}
+        prefillTopic={prefillQuery?.topic}
+        parentId={prefillQuery?.reviewed_status === "rejected" ? (prefillQuery.parent_id || prefillQuery.id) : undefined}
       />
     </div>
   );

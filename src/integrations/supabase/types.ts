@@ -1250,10 +1250,12 @@ export type Database = {
           created_at: string
           created_by: string
           id: string
+          parent_id: string | null
           pinned: boolean
           pitfalls: Json | null
           question: string
           references_to_check: string[] | null
+          review_comment: string | null
           reviewed_at: string | null
           reviewed_by: string | null
           reviewed_status: string
@@ -1276,10 +1278,12 @@ export type Database = {
           created_at?: string
           created_by: string
           id?: string
+          parent_id?: string | null
           pinned?: boolean
           pitfalls?: Json | null
           question: string
           references_to_check?: string[] | null
+          review_comment?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           reviewed_status?: string
@@ -1302,10 +1306,12 @@ export type Database = {
           created_at?: string
           created_by?: string
           id?: string
+          parent_id?: string | null
           pinned?: boolean
           pitfalls?: Json | null
           question?: string
           references_to_check?: string[] | null
+          review_comment?: string | null
           reviewed_at?: string | null
           reviewed_by?: string | null
           reviewed_status?: string
@@ -1324,6 +1330,13 @@ export type Database = {
             columns: ["company_id"]
             isOneToOne: false
             referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "regulation_queries_parent_id_fkey"
+            columns: ["parent_id"]
+            isOneToOne: false
+            referencedRelation: "regulation_queries"
             referencedColumns: ["id"]
           },
         ]

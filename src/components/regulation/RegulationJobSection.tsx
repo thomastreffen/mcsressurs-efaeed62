@@ -21,8 +21,8 @@ export function RegulationJobSection({ jobId, companyId }: Props) {
     fetchQueries();
   }, [fetchQueries]);
 
-  const handleReview = (id: string, status: "approved" | "rejected") => {
-    if (user?.id) reviewQuery(id, status, user.id);
+  const handleReview = (id: string, status: "approved" | "rejected", comment?: string) => {
+    if (user?.id) reviewQuery(id, status, user.id, comment);
   };
 
   const selected = selectedId ? queries.find(q => q.id === selectedId) : null;

@@ -53,6 +53,7 @@ const projectNav = [
 
 const fagNav = [
   { title: "Fag", url: "/fag", icon: BookOpen },
+  { title: "Fag-innsikt", url: "/admin/fag-insights", icon: BarChart3, requireAdmin: true },
 ];
 
 const adminNav = [
@@ -153,7 +154,9 @@ export function AppSidebar() {
           <SidebarGroupLabel>Fag & Forskrift</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {fagNav.map((item) => (
+              {fagNav
+                .filter((item) => !item.requireAdmin || isAdmin)
+                .map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
                     <NavLink to={item.url}>
