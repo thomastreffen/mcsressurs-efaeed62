@@ -69,18 +69,24 @@ Hold svarene konkrete, praktiske og relevante for en elektriker/prosjektleder i 
 
 Spørsmål: ${question}${fullContext}`;
 
-    const response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${LOVABLE_API_KEY}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
+    const aiController = new AbortController();
+    const aiTimeout = setTimeout(() => aiController.abort(), 20000);
+
+    let response: Response;
+    try {
+      response = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
+        method: "POST",
+        signal: aiController.signal,
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            { role: "system", content: systemPrompt },
+            { role: "user", content: userPrompt },
+          ],
         tools: [
           {
             type: "function",
@@ -141,6 +147,16 @@ Spørsmål: ${question}${fullContext}`;
         tool_choice: { type: "function", function: { name: "regulation_answer" } },
       }),
     });
+    } catch (fetchErr: any) {
+      clearTimeout(aiTimeout);
+      if (fetchErr.name === "AbortError") {
+        return new Response(JSON.stringify({ error: "Forespørselen tok for lang tid. Prøv igjen.", error_code: "ai_timeout" }), {
+          status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" },
+        });
+      }
+      throw fetchErr;
+    }
+    clearTimeout(aiTimeout);
 
     if (!response.ok) {
       if (response.status === 429) {
