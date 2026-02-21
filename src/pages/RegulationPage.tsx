@@ -1,11 +1,12 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSearchParams } from "react-router-dom";
-import { Search, Plus, BookOpen, Pin } from "lucide-react";
+import { Search, Plus, BookOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { NewRegulationQueryDialog } from "@/components/regulation/NewRegulationQueryDialog";
 import { RegulationAnswerCard } from "@/components/regulation/RegulationAnswerCard";
+import { RegulationLibrary } from "@/components/regulation/RegulationLibrary";
 import { useRegulationQueries } from "@/hooks/useRegulationQueries";
 import { useAuth } from "@/hooks/useAuth";
 
@@ -27,19 +28,27 @@ const REVIEW_FILTERS = [
 export default function RegulationPage() {
   const [searchParams, setSearchParams] = useSearchParams();
   const selectedId = searchParams.get("id");
+  const filterParam = searchParams.get("filter");
   const { user, isAdmin } = useAuth();
 
   const [newOpen, setNewOpen] = useState(false);
   const [search, setSearch] = useState("");
   const [topicFilter, setTopicFilter] = useState("Alle");
   const [scopeFilter, setScopeFilter] = useState("all");
-  const [reviewFilter, setReviewFilter] = useState("all");
+  const [reviewFilter, setReviewFilter] = useState(filterParam || "all");
 
   const { queries, loading, fetchQueries, togglePin, rateQuery, reviewQuery } = useRegulationQueries();
 
   useEffect(() => {
     fetchQueries();
   }, [fetchQueries]);
+
+  // Sync URL filter param
+  useEffect(() => {
+    if (filterParam && filterParam !== reviewFilter) {
+      setReviewFilter(filterParam);
+    }
+  }, [filterParam]);
 
   const handleReview = (id: string, status: "approved" | "rejected") => {
     if (user?.id) reviewQuery(id, status, user.id);
@@ -132,30 +141,36 @@ export default function RegulationPage() {
           />
         </div>
       ) : (
-        <div className="space-y-3">
-          {loading ? (
-            <div className="text-center py-12 text-muted-foreground">Laster…</div>
-          ) : filtered.length === 0 ? (
-            <div className="text-center py-12 space-y-3">
-              <BookOpen className="h-10 w-10 mx-auto text-muted-foreground/40" />
-              <p className="text-muted-foreground">
-                {queries.length === 0 ? "Ingen fagforespørsler ennå" : "Ingen treff"}
-              </p>
-              <Button variant="outline" onClick={() => setNewOpen(true)} className="gap-1.5">
-                <Plus className="h-4 w-4" />
-                Opprett første forespørsel
-              </Button>
-            </div>
-          ) : (
-            filtered.map(q => (
-              <RegulationAnswerCard
-                key={q.id}
-                query={q}
-                compact
-                onClick={() => setSearchParams({ id: q.id })}
-              />
-            ))
-          )}
+        <div className="space-y-6">
+          {/* Library section */}
+          <RegulationLibrary queries={queries} />
+
+          {/* Query list */}
+          <div className="space-y-3">
+            {loading ? (
+              <div className="text-center py-12 text-muted-foreground">Laster…</div>
+            ) : filtered.length === 0 ? (
+              <div className="text-center py-12 space-y-3">
+                <BookOpen className="h-10 w-10 mx-auto text-muted-foreground/40" />
+                <p className="text-muted-foreground">
+                  {queries.length === 0 ? "Ingen fagforespørsler ennå" : "Ingen treff"}
+                </p>
+                <Button variant="outline" onClick={() => setNewOpen(true)} className="gap-1.5">
+                  <Plus className="h-4 w-4" />
+                  Opprett første forespørsel
+                </Button>
+              </div>
+            ) : (
+              filtered.map(q => (
+                <RegulationAnswerCard
+                  key={q.id}
+                  query={q}
+                  compact
+                  onClick={() => setSearchParams({ id: q.id })}
+                />
+              ))
+            )}
+          </div>
         </div>
       )}
 

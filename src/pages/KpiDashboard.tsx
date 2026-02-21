@@ -16,6 +16,7 @@ import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 import { useAuth } from "@/hooks/useAuth";
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
+import { RegulationDashboardWidget } from "@/components/regulation/RegulationDashboardWidget";
 
 // ── Types ──
 
@@ -418,6 +419,9 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
           <p className="text-sm text-muted-foreground py-8 text-center">Ingen koblinger</p>
         )}
       </SectionCard>
+
+      {/* Fag widget */}
+      <RegulationDashboardWidget />
 
       {/* Action items (6/12) + Recent jobs (6/12) */}
       <div className="grid grid-cols-12 gap-5">

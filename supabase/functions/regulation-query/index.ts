@@ -204,6 +204,55 @@ Spørsmål: ${question}${fullContext}`;
       console.error("Save error:", saveError);
     }
 
+    // Create notification for reviewers when scope is job or quote
+    if (saved && (scope_type === "job" || scope_type === "quote") && scope_id) {
+      try {
+        const supabaseAdmin = createClient(supabaseUrl, Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!);
+        
+        // Check throttle: no more than 1 notification per scope_id per 2 hours
+        const twoHoursAgo = new Date(Date.now() - 2 * 60 * 60 * 1000).toISOString();
+        const { count } = await supabaseAdmin
+          .from("notifications")
+          .select("id", { count: "exact", head: true })
+          .eq("type", "regulation_review_needed")
+          .eq("event_id", scope_id)
+          .gte("created_at", twoHoursAgo);
+
+        if (!count || count === 0) {
+          // Find users with regulation.review permission
+          const { data: reviewerAssignments } = await supabaseAdmin
+            .from("role_permissions")
+            .select("role_id")
+            .eq("permission_key", "regulation.review")
+            .eq("allowed", true);
+
+          if (reviewerAssignments && reviewerAssignments.length > 0) {
+            const roleIds = reviewerAssignments.map(r => r.role_id);
+            const { data: userAssignments } = await supabaseAdmin
+              .from("user_role_assignments")
+              .select("user_id")
+              .in("role_id", roleIds);
+
+            if (userAssignments) {
+              const uniqueUserIds = [...new Set(userAssignments.map(u => u.user_id))].filter(uid => uid !== user.id);
+              const notifications = uniqueUserIds.map(uid => ({
+                user_id: uid,
+                type: "regulation_review_needed",
+                title: `Ny fagforespørsel krever godkjenning`,
+                message: `${topic}: ${question.substring(0, 80)}${question.length > 80 ? "…" : ""}`,
+                event_id: scope_id,
+              }));
+              if (notifications.length > 0) {
+                await supabaseAdmin.from("notifications").insert(notifications);
+              }
+            }
+          }
+        }
+      } catch (notifErr) {
+        console.error("Notification error (non-critical):", notifErr);
+      }
+    }
+
     return new Response(JSON.stringify({
       id: saved?.id,
       ...parsed,

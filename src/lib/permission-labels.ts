@@ -88,6 +88,9 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
   "leads.convert": { label: "Konvertere lead til prosjekt", description: "Kan konvertere et akseptert tilbud på en lead til et prosjekt.", category: "Leads" },
   "leads.email_draft": { label: "Opprette e-postutkast fra lead", description: "Kan opprette Outlook e-postutkast koblet til en lead.", category: "Leads" },
   "leads.create_meeting": { label: "Opprette møte/befaring fra lead", description: "Kan opprette Outlook kalenderhendelser fra en lead.", category: "Leads" },
+
+  // Regulation
+  "regulation.review": { label: "Godkjenne fagforespørsler", description: "Kan godkjenne eller avvise fagforespørsler som faglig ansvarlig.", category: "Fag" },
 };
 
 /** All permission keys excluding scope (scope is handled as a dropdown) */
@@ -131,6 +134,11 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
     category: "Leads",
     description: "Tilgang til leads og salgsprosess.",
     keys: ["leads.view", "leads.create", "leads.edit", "leads.transfer_owner", "leads.manage_participants", "leads.convert", "leads.email_draft", "leads.create_meeting"],
+  },
+  {
+    category: "Fag",
+    description: "Tilgang til fagmodul og forskriftsoppslag.",
+    keys: ["regulation.review"],
   },
 ];
 
