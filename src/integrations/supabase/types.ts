@@ -1514,6 +1514,50 @@ export type Database = {
           },
         ]
       }
+      job_risk_items: {
+        Row: {
+          category: string
+          created_at: string
+          id: string
+          job_id: string
+          label: string
+          severity: string
+          source_type: string
+          status: string
+          updated_at: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          id?: string
+          job_id: string
+          label: string
+          severity?: string
+          source_type?: string
+          status?: string
+          updated_at?: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          id?: string
+          job_id?: string
+          label?: string
+          severity?: string
+          source_type?: string
+          status?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_risk_items_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_summaries: {
         Row: {
           created_at: string
