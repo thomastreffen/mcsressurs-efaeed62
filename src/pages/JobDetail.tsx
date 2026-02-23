@@ -62,6 +62,7 @@ import {
 } from "@/components/ui/collapsible";
 import type { OutlookSyncStatus } from "@/lib/mock-data";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { MobileActionBar } from "@/components/MobileActionBar";
 
 /* ─── Sync Status Badge (small pill) ─── */
 const SYNC_STATUS_MAP: Record<string, { label: string; variant: "ok" | "warn" | "error" | "muted" }> = {
@@ -602,7 +603,7 @@ export default function JobDetail() {
         )}
 
         {/* ═══ Main Content: 2-col grid ═══ */}
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 pb-24 sm:pb-8">
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 pb-28 md:pb-8">
           <div className="grid grid-cols-1 lg:grid-cols-5 gap-7">
             {/* ── LEFT COLUMN (3/5) ── */}
             <div className="lg:col-span-3 space-y-7">
@@ -927,23 +928,15 @@ export default function JobDetail() {
           </div>
         </div>
 
-        {/* ── Mobile status selector ── */}
-        <div className="md:hidden fixed bottom-0 left-0 right-0 z-30 border-t border-border/40 bg-card/90 backdrop-blur-xl p-3 safe-area-bottom">
-          <Select
-            value={job.status}
-            onValueChange={(v) => handleStatusChange(v as JobStatus)}
-            disabled={statusUpdating}
-          >
-            <SelectTrigger className="rounded-xl">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {ALL_STATUSES.filter((s) => canSetStatus(role, s)).map((s) => (
-                <SelectItem key={s} value={s}>{JOB_STATUS_CONFIG[s].label}</SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
+        {/* ── Mobile Action Bar ── */}
+        <MobileActionBar
+          job={{ id: job.id, status: job.status, title: job.title }}
+          onStatusChanged={(newStatus) => {
+            setJob((prev) => prev ? { ...prev, status: newStatus } : null);
+            fetchLogs();
+          }}
+          onScrollToEmail={scrollToEmail}
+        />
       </div>
 
       {/* Dialogs */}
