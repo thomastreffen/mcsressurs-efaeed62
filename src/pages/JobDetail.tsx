@@ -8,9 +8,9 @@ import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
-import { RegulationJobSection } from "@/components/regulation/RegulationJobSection";
-import { ContractJobSection } from "@/components/contracts/ContractJobSection";
+
 import { DocumentCenter } from "@/components/DocumentCenter";
+import { JobRiskPanel } from "@/components/risk/JobRiskPanel";
 import { AuditInfo } from "@/components/AuditInfo";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -973,13 +973,10 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── RISIKO ── */}
-            <TabsContent value="risiko" className="mt-5 space-y-6">
+            <TabsContent value="risiko" className="mt-5">
               <SectionCard>
-                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Kontraktstatus</SectionTitle>
-                <ContractJobSection jobId={id!} />
-              </SectionCard>
-              <SectionCard>
-                <RegulationJobSection jobId={id!} />
+                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Risikooversikt</SectionTitle>
+                <JobRiskPanel jobId={id!} companyId={undefined} />
               </SectionCard>
             </TabsContent>
 
