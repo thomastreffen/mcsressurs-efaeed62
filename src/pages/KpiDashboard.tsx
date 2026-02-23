@@ -8,9 +8,9 @@ import { Progress } from "@/components/ui/progress";
 import { format, startOfWeek, endOfWeek, startOfMonth, endOfMonth, differenceInDays, startOfDay } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
-  CalendarDays, AlertTriangle, TrendingUp, ArrowRight,
+  CalendarDays, AlertTriangle, TrendingUp, ArrowRight, ChevronRight,
   Target, BarChart3, UserPlus, ReceiptText, Unplug, XCircle,
-  Wrench, CheckCircle2, Clock, PieChart, PackageOpen, Inbox, FileQuestion,
+  Wrench, CheckCircle2, Clock, PieChart, PackageOpen, Inbox, FileQuestion, Plus,
 } from "lucide-react";
 import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 import { RegulationDashboardWidget } from "@/components/regulation/RegulationDashboardWidget";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
+import { useIsMobile } from "@/hooks/use-mobile";
 
 // ── Types ──
 
@@ -201,14 +202,20 @@ export default function KpiDashboard() {
     const stageLabels: Record<string, string> = { new: "Ny", contacted: "Kontaktet", befaring: "Befaring", qualified: "Kvalifisert", tilbud_sendt: "Tilbud sendt", forhandling: "Forhandling", won: "Vunnet" };
     const leadConversion = Object.entries(stageCounts).map(([k, v]) => ({ stage: stageLabels[k] || k, count: v }));
 
-    // Pipeline per owner
+    // Pipeline per owner – resolve tech names
+    const techNameMap = new Map<string, string>();
+    for (const t of techs) { if (t.user_id) techNameMap.set(t.user_id, t.name); }
+
     const ownerPipeline: Record<string, number> = {};
     for (const l of openLeads) {
       const owner = l.assigned_owner_user_id || "Uten eier";
       ownerPipeline[owner] = (ownerPipeline[owner] || 0) + (Number(l.estimated_value || 0) * (Number(l.probability || 50) / 100));
     }
     const pipelinePerOwner = Object.entries(ownerPipeline)
-      .map(([k, v]) => ({ name: k === "Uten eier" ? "Uten eier" : `Selger ${k.slice(0, 6)}..`, value: Math.round(v) }))
+      .map(([k, v]) => ({
+        name: k === "Uten eier" ? "Uten eier" : (techNameMap.get(k) || "Ukjent selger"),
+        value: Math.round(v),
+      }))
       .sort((a, b) => b.value - a.value)
       .slice(0, 5);
 
@@ -236,12 +243,12 @@ export default function KpiDashboard() {
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="p-5 sm:p-8 space-y-8 w-full">
+    <div className="p-4 sm:p-5 md:p-8 space-y-5 sm:space-y-8 w-full pb-24 lg:pb-8">
       {/* Header with toggle */}
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold text-foreground">Dashboard</h1>
-          <p className="text-sm text-muted-foreground">
+          <h1 className="text-lg sm:text-xl md:text-2xl font-bold text-foreground">Dashboard</h1>
+          <p className="text-xs sm:text-sm text-muted-foreground">
             Uke {format(new Date(), "w", { locale: nb })} · {format(new Date(), "MMMM yyyy", { locale: nb })}
           </p>
         </div>
@@ -284,6 +291,8 @@ export default function KpiDashboard() {
 // ── Ops Dashboard ──
 
 function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: string) => void }) {
+  const isMobile = useIsMobile();
+
   const techChartData = useMemo(() => {
     const sorted = data.techLoad.filter(t => t.hours > 0).sort((a, b) => b.hours - a.hours);
     const top = sorted.slice(0, 8);
@@ -302,6 +311,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
 
   const renderBarLabel = (props: any) => {
     const { x, y, width, height, value } = props;
+    if (isMobile) return null; // skip labels on mobile to avoid clipping
     return (
       <text x={x + width + 6} y={y + height / 2} fill="hsl(215, 12%, 50%)" fontSize={11} dominantBaseline="central">
         {Math.round(value)} t
@@ -310,105 +320,105 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
   };
 
   return (
-    <div className="space-y-10">
+    <div className="space-y-5 sm:space-y-8 md:space-y-10">
       {/* KPI row */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-5 w-5" />} onClick={() => navigate("/jobs")} />
-        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-5 w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} onClick={() => navigate("/jobs")} />
-        <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-5 w-5" />} variant={data.failedLinks > 0 ? "error" : "default"} onClick={() => navigate("/admin/integration-health")} />
-        <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-5 w-5" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} onClick={() => navigate("/admin/integration-health")} />
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
+        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-4 w-4 sm:h-5 sm:w-5" />} onClick={() => navigate("/jobs")} />
+        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} onClick={() => navigate("/jobs")} />
+        <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.failedLinks > 0 ? "error" : "default"} onClick={() => navigate("/admin/integration-health")} />
+        <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} onClick={() => navigate("/admin/integration-health")} />
       </div>
 
       {/* Resource load (8/12) + Job status (4/12) */}
-      <div className="grid grid-cols-12 gap-5">
-        <div className="col-span-12 lg:col-span-8">
-          <SectionCard title="Ressursbelastning" subtitle={`Totalt planlagt: ${Math.round(totalPlannedHours)} t · Montører med jobb: ${techsWithJobs}`} icon={<BarChart3 className="h-4 w-4" />}>
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-3 sm:gap-5">
+        <div className="lg:col-span-8">
+          <SectionCard title="Ressursbelastning" subtitle={`Totalt: ${Math.round(totalPlannedHours)} t · ${techsWithJobs} montører`} icon={<BarChart3 className="h-4 w-4" />}>
             {techChartData.length > 0 ? (
-              <div style={{ minHeight: 260 }}>
-                <ResponsiveContainer width="100%" height={Math.max(260, techChartData.length * 34)}>
-                  <BarChart data={techChartData} layout="vertical" margin={{ left: 0, right: 40, top: 4, bottom: 4 }}>
+              <div className="w-full" style={{ minHeight: isMobile ? 180 : 260 }}>
+                <ResponsiveContainer width="100%" height={Math.max(isMobile ? 180 : 260, techChartData.length * (isMobile ? 28 : 34))}>
+                  <BarChart data={techChartData} layout="vertical" margin={{ left: 0, right: isMobile ? 8 : 40, top: 4, bottom: 4 }}>
                     <XAxis type="number" hide />
-                    <YAxis type="category" dataKey="name" width={100} tick={{ fontSize: 12, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} interval={0} />
+                    <YAxis type="category" dataKey="name" width={isMobile ? 70 : 100} tick={{ fontSize: isMobile ? 10 : 12, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} interval={0} />
                     <Tooltip formatter={(v: number) => [`${v.toFixed(1)}t`, "Timer"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={18} maxBarSize={22} label={renderBarLabel} />
+                    <Bar dataKey="hours" radius={[0, 6, 6, 0]} fill={BLUE} barSize={isMobile ? 14 : 18} maxBarSize={22} label={renderBarLabel} />
                   </BarChart>
                 </ResponsiveContainer>
               </div>
             ) : (
-              <EmptyState icon={<BarChart3 />} message="Ingen planlagte timer denne uken" hint="Jobber som tildeles montører vil vises her" />
+              <EmptyState icon={<BarChart3 />} message="Ingen planlagte timer denne uken" ctaLabel="Opprett ny jobb" onCta={() => navigate("/resource-plan")} />
             )}
           </SectionCard>
         </div>
 
-        <div className="col-span-12 lg:col-span-4">
+        <div className="lg:col-span-4">
           <SectionCard title="Jobbstatus" subtitle="Aktive jobber" icon={<PieChart className="h-4 w-4" />}>
             {data.statusBreakdown.length > 0 ? (
-              <div className="flex flex-col items-center gap-4">
-                <div className="h-48 w-48 relative">
+              <div className="flex flex-col items-center gap-3 sm:gap-4">
+                <div className="h-36 w-36 sm:h-48 sm:w-48 relative">
                   <ResponsiveContainer width="100%" height="100%">
                     <RPieChart>
-                      <Pie data={data.statusBreakdown} cx="50%" cy="50%" innerRadius={48} outerRadius={72} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                      <Pie data={data.statusBreakdown} cx="50%" cy="50%" innerRadius={isMobile ? 36 : 48} outerRadius={isMobile ? 56 : 72} paddingAngle={2} dataKey="value" strokeWidth={0}>
                         {data.statusBreakdown.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                       </Pie>
                       <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} formatter={(v: number) => [v, ""]} />
                     </RPieChart>
                   </ResponsiveContainer>
                   <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                    <span className="text-3xl font-bold text-foreground">{totalJobs}</span>
+                    <span className="text-2xl sm:text-3xl font-bold text-foreground">{totalJobs}</span>
                     <span className="text-[10px] text-muted-foreground uppercase tracking-wider">Totalt</span>
                   </div>
                 </div>
-                <div className="flex flex-wrap justify-center gap-x-4 gap-y-1.5">
+                <div className="flex flex-wrap justify-center gap-x-3 sm:gap-x-4 gap-y-1">
                   {data.statusBreakdown.map((d, i) => (
-                    <div key={i} className="flex items-center gap-1.5 text-xs">
-                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
-                      <span className="text-muted-foreground">{d.name}</span>
+                    <div key={i} className="flex items-center gap-1.5 text-[11px] sm:text-xs">
+                      <div className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                      <span className="text-muted-foreground truncate max-w-[80px]">{d.name}</span>
                       <span className="font-medium text-foreground">{d.value}</span>
                     </div>
                   ))}
                 </div>
               </div>
             ) : (
-              <EmptyState icon={<PieChart />} message="Ingen jobber registrert" hint="Opprett din første jobb for å se statusfordelingen" />
+              <EmptyState icon={<PieChart />} message="Ingen jobber registrert" ctaLabel="Opprett ny jobb" onCta={() => navigate("/resource-plan")} />
             )}
           </SectionCard>
         </div>
       </div>
 
-      {/* Sync status – full width */}
+      {/* Sync status */}
       <SectionCard title="Synk-status" subtitle="Kalenderkoblinger" icon={<CheckCircle2 className="h-4 w-4" />}>
         {data.syncBreakdown.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-8">
-            <div className="h-40 w-40 shrink-0 relative">
+          <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-8">
+            <div className="h-32 w-32 sm:h-40 sm:w-40 shrink-0 relative">
               <ResponsiveContainer width="100%" height="100%">
                 <RPieChart>
-                  <Pie data={data.syncBreakdown} cx="50%" cy="50%" innerRadius={36} outerRadius={56} paddingAngle={2} dataKey="value" strokeWidth={0}>
+                  <Pie data={data.syncBreakdown} cx="50%" cy="50%" innerRadius={isMobile ? 28 : 36} outerRadius={isMobile ? 48 : 56} paddingAngle={2} dataKey="value" strokeWidth={0}>
                     {data.syncBreakdown.map((entry, i) => <Cell key={i} fill={entry.color} />)}
                   </Pie>
                   <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} formatter={(v: number) => [v, ""]} />
                 </RPieChart>
               </ResponsiveContainer>
               <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-2xl font-bold text-foreground">{totalSync}</span>
+                <span className="text-xl sm:text-2xl font-bold text-foreground">{totalSync}</span>
               </div>
             </div>
-            <div className="flex flex-col gap-3">
-              <div className="flex items-center gap-6">
+            <div className="flex flex-col gap-2 sm:gap-3">
+              <div className="flex items-center gap-4 sm:gap-6">
                 <div className="flex items-center gap-2">
                   <CheckCircle2 className="h-4 w-4 text-status-approved" />
-                  <span className="text-sm text-muted-foreground">OK</span>
-                  <span className="text-lg font-semibold text-foreground">{syncOk}</span>
+                  <span className="text-xs sm:text-sm text-muted-foreground">OK</span>
+                  <span className="text-base sm:text-lg font-semibold text-foreground">{syncOk}</span>
                 </div>
                 <div className="flex items-center gap-2">
                   <XCircle className="h-4 w-4 text-destructive" />
-                  <span className="text-sm text-muted-foreground">Feil</span>
-                  <span className="text-lg font-semibold text-foreground">{syncFail}</span>
+                  <span className="text-xs sm:text-sm text-muted-foreground">Feil</span>
+                  <span className="text-base sm:text-lg font-semibold text-foreground">{syncFail}</span>
                 </div>
               </div>
-              <div className="flex flex-wrap gap-4">
+              <div className="flex flex-wrap gap-3 sm:gap-4">
                 {data.syncBreakdown.map((d, i) => (
-                  <div key={i} className="flex items-center gap-2 text-sm">
-                    <div className="h-3 w-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+                  <div key={i} className="flex items-center gap-1.5 sm:gap-2 text-xs sm:text-sm">
+                    <div className="h-2.5 w-2.5 sm:h-3 sm:w-3 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
                     <span className="text-muted-foreground">{d.name}</span>
                     <span className="font-semibold text-foreground">{d.value}</span>
                   </div>
@@ -417,66 +427,63 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
             </div>
           </div>
         ) : (
-          <EmptyState icon={<Unplug />} message="Ingen kalenderkoblinger" hint="Koble montørene til Microsoft for å se synk-status" />
+          <EmptyState icon={<Unplug />} message="Ingen kalenderkoblinger" ctaLabel="Se integrasjoner" onCta={() => navigate("/admin/integration-health")} />
         )}
       </SectionCard>
 
       {/* Fag widget */}
       <RegulationDashboardWidget />
 
-      {/* Action items (6/12) + Recent jobs (6/12) */}
-      <div className="grid grid-cols-12 gap-5">
-        <div className="col-span-12 lg:col-span-6">
-          <div className="rounded-2xl shadow-sm bg-card overflow-hidden">
-            <div className="h-1 bg-accent/60" />
-            <div className="p-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-                    <AlertTriangle className="h-4 w-4" /> Krever handling
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">Oppgaver som venter</p>
-                </div>
+      {/* Action items + Recent jobs */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-5">
+        <div className="rounded-2xl shadow-sm bg-card overflow-hidden">
+          <div className="h-1 bg-accent/60" />
+          <div className="p-4 sm:p-6">
+            <div className="flex items-center justify-between mb-3 sm:mb-4">
+              <div>
+                <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
+                  <AlertTriangle className="h-4 w-4" /> Krever handling
+                </h3>
+                <p className="text-[11px] text-muted-foreground mt-0.5">Oppgaver som venter</p>
               </div>
-              <div className="space-y-1 min-h-[200px]">
-                <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
-                <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
-                <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
-                <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
-              </div>
+            </div>
+            <div className="space-y-1">
+              <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
+              <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
+              <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
+              <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
             </div>
           </div>
         </div>
 
-        <div className="col-span-12 lg:col-span-6">
-          <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
-            <div className="space-y-1.5 min-h-[200px]">
-              {data.recentJobs.length > 0 ? data.recentJobs.map((job) => (
-                <button
-                  key={job.id}
-                  onClick={() => navigate(`/jobs/${job.id}`)}
-                  className="flex items-center gap-3 w-full rounded-xl p-3 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
+        <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
+          <div className="space-y-1">
+            {data.recentJobs.length > 0 ? data.recentJobs.map((job) => (
+              <button
+                key={job.id}
+                onClick={() => navigate(`/jobs/${job.id}`)}
+                className="flex items-center gap-2 sm:gap-3 w-full rounded-xl p-2.5 sm:p-3 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
+              >
+                <div className="flex-1 min-w-0">
+                  <p className="text-sm font-medium truncate leading-tight">{job.title}</p>
+                  <p className="text-xs text-muted-foreground truncate leading-tight">{job.internalNumber && `${job.internalNumber} · `}{job.customer}</p>
+                </div>
+                <Badge
+                  className="shrink-0 text-[10px] rounded-full px-2"
+                  style={{
+                    backgroundColor: `hsl(var(--status-${job.status.replace(/_/g, "-")}))`,
+                    color: `hsl(var(--status-${job.status.replace(/_/g, "-")}-foreground))`,
+                  }}
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{job.title}</p>
-                    <p className="text-xs text-muted-foreground truncate">{job.internalNumber && `${job.internalNumber} · `}{job.customer}</p>
-                  </div>
-                  <Badge
-                    className="shrink-0 text-[10px] rounded-full px-2"
-                    style={{
-                      backgroundColor: `hsl(var(--status-${job.status.replace(/_/g, "-")}))`,
-                      color: `hsl(var(--status-${job.status.replace(/_/g, "-")}-foreground))`,
-                    }}
-                  >
-                    {JOB_STATUS_CONFIG[job.status]?.label || job.status}
-                  </Badge>
-                </button>
-              )) : (
-                <EmptyState icon={<CalendarDays />} message="Ingen jobber ennå" hint="Opprett en jobb fra kalenderen for å komme i gang" />
-              )}
-            </div>
-          </SectionCard>
-        </div>
+                  {JOB_STATUS_CONFIG[job.status]?.label || job.status}
+                </Badge>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 hidden sm:block" />
+              </button>
+            )) : (
+              <EmptyState icon={<CalendarDays />} message="Ingen jobber ennå" ctaLabel="Opprett ny jobb" onCta={() => navigate("/resource-plan")} />
+            )}
+          </div>
+        </SectionCard>
       </div>
     </div>
   );
@@ -485,10 +492,12 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
 // ── Sales Dashboard View ──
 
 function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (path: string) => void }) {
+  const isMobile = useIsMobile();
+
   return (
-    <div className="space-y-8">
+    <div className="space-y-5 sm:space-y-8">
       {/* KPI row */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 sm:gap-4">
         <KpiCard title="Leads denne mnd" value={data.leadsThisMonth} icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate("/sales/leads")} />
         <KpiCard title="Konverteringsrate" value={`${data.conversionRate.toFixed(0)}%`} icon={<Target className="h-4 w-4" />} onClick={() => navigate("/sales/pipeline")} />
         <KpiCard title="Pipeline-verdi" value={`kr ${(data.pipelineValue / 1000).toFixed(0)}k`} icon={<TrendingUp className="h-4 w-4" />} accent onClick={() => navigate("/sales/pipeline")} />
@@ -496,53 +505,70 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
       </div>
 
       {/* Charts row */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-3 sm:gap-5">
         {/* Lead funnel */}
         <SectionCard title="Lead → Jobb" subtitle="Konverteringstrakt" icon={<TrendingUp className="h-4 w-4" />}>
-          <div className="h-48">
-            <ResponsiveContainer width="100%" height="100%">
-              <BarChart data={data.leadConversion} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
-                <XAxis dataKey="stage" tick={{ fontSize: 10, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} />
-                <YAxis hide />
-                <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                <Bar dataKey="count" radius={[6, 6, 0, 0]} fill={BLUE} />
-              </BarChart>
-            </ResponsiveContainer>
-          </div>
+          {data.leadConversion.some(d => d.count > 0) ? (
+            <div className="w-full" style={{ height: isMobile ? 160 : 192 }}>
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart data={data.leadConversion} margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
+                  <XAxis dataKey="stage" tick={{ fontSize: isMobile ? 9 : 10, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} interval={0} angle={isMobile ? -30 : 0} textAnchor={isMobile ? "end" : "middle"} height={isMobile ? 40 : 30} />
+                  <YAxis hide />
+                  <Tooltip contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
+                  <Bar dataKey="count" radius={[6, 6, 0, 0]} fill={BLUE} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          ) : (
+            <EmptyState icon={<TrendingUp />} message="Ingen data ennå" ctaLabel="Opprett lead" onCta={() => navigate("/sales/leads")} />
+          )}
         </SectionCard>
 
         {/* Pipeline per selger */}
         <SectionCard title="Pipeline per selger" subtitle="Vektet verdi" icon={<BarChart3 className="h-4 w-4" />}>
           {data.pipelinePerOwner.length > 0 ? (
-            <div className="h-48">
-              <ResponsiveContainer width="100%" height="100%">
-                <BarChart data={data.pipelinePerOwner} layout="vertical" margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
-                  <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={90} tick={{ fontSize: 11, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} />
-                  <Tooltip formatter={(v: number) => [`kr ${(v / 1000).toFixed(0)}k`, "Verdi"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
-                  <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={BLUE_LIGHT} />
-                </BarChart>
-              </ResponsiveContainer>
-            </div>
+            <>
+              <div className="w-full" style={{ height: isMobile ? 140 : 192 }}>
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={data.pipelinePerOwner} layout="vertical" margin={{ left: 0, right: 8, top: 4, bottom: 4 }}>
+                    <XAxis type="number" hide />
+                    <YAxis type="category" dataKey="name" width={isMobile ? 75 : 90} tick={{ fontSize: isMobile ? 10 : 11, fill: "hsl(215, 12%, 50%)" }} axisLine={false} tickLine={false} />
+                    <Tooltip formatter={(v: number) => [`kr ${(v / 1000).toFixed(0)}k`, "Verdi"]} contentStyle={{ borderRadius: 12, border: "1px solid hsl(214, 20%, 90%)", fontSize: 12 }} />
+                    <Bar dataKey="value" radius={[0, 6, 6, 0]} fill={BLUE_LIGHT} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+              {/* Mobile: value list below chart */}
+              {isMobile && (
+                <div className="mt-2 space-y-1 border-t pt-2">
+                  {data.pipelinePerOwner.map((d, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs">
+                      <span className="text-muted-foreground truncate max-w-[140px]">{d.name}</span>
+                      <span className="font-medium text-foreground font-mono">kr {(d.value / 1000).toFixed(0)}k</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </>
           ) : (
-            <EmptyState icon={<BarChart3 />} message="Ingen pipeline-data ennå" hint="Leads med estimert verdi vises her" />
+            <EmptyState icon={<BarChart3 />} message="Ingen pipeline-data ennå" ctaLabel="Opprett lead" onCta={() => navigate("/sales/leads")} />
           )}
         </SectionCard>
 
         {/* Leads per kilde */}
         <SectionCard title="Leads per kilde" subtitle="Aktive leads" icon={<PieChart className="h-4 w-4" />}>
           {data.leadsPerSource.length > 0 ? (
-            <DonutChart data={data.leadsPerSource} />
+            <DonutChart data={data.leadsPerSource} isMobile={isMobile} />
           ) : (
-            <EmptyState icon={<PieChart />} message="Ingen aktive leads" hint="Registrer leads med kilde for å se fordelingen" />
+            <EmptyState icon={<PieChart />} message="Ingen aktive leads" ctaLabel="Opprett lead" onCta={() => navigate("/sales/leads")} />
           )}
         </SectionCard>
       </div>
 
       {/* Action items + recent offers */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 sm:gap-5">
         <SectionCard title="Krever oppfølging" subtitle="Salgsoppgaver" icon={<AlertTriangle className="h-4 w-4" />}>
-          <div className="space-y-2">
+          <div className="space-y-1">
             <ActionItem label="Leads uten oppfølging" count={data.actionItems.leadsNoFollowup} variant="warning" onClick={() => navigate("/sales/leads")} />
             <ActionItem label="Leads uten aktivitet >7d" count={data.actionItems.leadsInactive7d} variant="warning" onClick={() => navigate("/sales/leads")} />
             <ActionItem label="Tilbud uten oppfølging" count={data.actionItems.offersNotFollowed} variant="error" onClick={() => navigate("/sales/offers")} />
@@ -550,16 +576,16 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
         </SectionCard>
 
         <SectionCard title="Siste tilbud" subtitle="" icon={<ReceiptText className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/sales/offers")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
-          <div className="space-y-1.5">
+          <div className="space-y-1">
             {data.recentOffers.length > 0 ? data.recentOffers.map((offer) => (
               <button
                 key={offer.id}
                 onClick={() => navigate("/sales/offers")}
-                className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
+                className="flex items-center gap-2 sm:gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
               >
                 <div className="flex-1 min-w-0">
-                  <p className="text-sm font-medium truncate">{offer.offer_number}</p>
-                  <p className="text-xs text-muted-foreground truncate">{offer.customer}</p>
+                  <p className="text-sm font-medium truncate leading-tight">{offer.offer_number}</p>
+                  <p className="text-xs text-muted-foreground truncate leading-tight">{offer.customer}</p>
                 </div>
                 <span className="text-xs font-mono text-muted-foreground shrink-0">
                   kr {offer.total_inc_vat.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
@@ -567,9 +593,10 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
                 <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className + " text-[10px] rounded-full px-2 shrink-0"}>
                   {OFFER_STATUS_CONFIG[offer.status]?.label}
                 </Badge>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 hidden sm:block" />
               </button>
             )) : (
-              <EmptyState icon={<ReceiptText />} message="Ingen tilbud sendt ennå" hint="Opprett et tilbud fra en kalkyle for å komme i gang" />
+              <EmptyState icon={<ReceiptText />} message="Ingen tilbud sendt ennå" ctaLabel="Opprett tilbud" onCta={() => navigate("/sales/offers")} />
             )}
           </div>
         </SectionCard>
@@ -592,17 +619,17 @@ function KpiCard({ title, value, icon, variant, accent, onClick }: {
 
   return (
     <div
-      className={`rounded-2xl shadow-sm p-6 sm:p-8 transition-all duration-200 hover:shadow-md hover:scale-[1.01] ${bgClass} ${clickable ? "cursor-pointer" : ""}`}
+      className={`rounded-2xl shadow-sm p-4 sm:p-6 md:p-8 transition-all duration-200 hover:shadow-md hover:scale-[1.01] ${bgClass} ${clickable ? "cursor-pointer" : ""}`}
       onClick={onClick}
       role={clickable ? "button" : undefined}
       tabIndex={clickable ? 0 : undefined}
       onKeyDown={clickable ? (e) => { if (e.key === "Enter") onClick?.(); } : undefined}
     >
-      <div className={`flex items-center gap-2 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-4`}>
+      <div className={`flex items-center gap-1.5 sm:gap-2 text-[10px] sm:text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-2 sm:mb-4`}>
         {icon}
-        {title}
+        <span className="truncate">{title}</span>
       </div>
-      <p className="text-4xl sm:text-5xl font-bold text-foreground tracking-tight">{value}</p>
+      <p className="text-2xl sm:text-4xl md:text-5xl font-bold text-foreground tracking-tight leading-none">{value}</p>
     </div>
   );
 }
@@ -611,13 +638,13 @@ function SectionCard({ title, subtitle, icon, children, action }: {
   title: string; subtitle?: string; icon: React.ReactNode; children: React.ReactNode; action?: React.ReactNode;
 }) {
   return (
-    <div className="rounded-2xl shadow-sm bg-card p-5 sm:p-6">
-      <div className="flex items-center justify-between mb-4">
-        <div>
+    <div className="rounded-2xl shadow-sm bg-card p-4 sm:p-5 md:p-6">
+      <div className="flex items-center justify-between mb-3 sm:mb-4">
+        <div className="min-w-0">
           <h3 className="text-sm font-semibold flex items-center gap-1.5 text-foreground">
-            {icon} {title}
+            {icon} <span className="truncate">{title}</span>
           </h3>
-          {subtitle && <p className="text-[11px] text-muted-foreground mt-0.5">{subtitle}</p>}
+          {subtitle && <p className="text-[11px] text-muted-foreground mt-0.5 truncate">{subtitle}</p>}
         </div>
         {action}
       </div>
@@ -630,8 +657,8 @@ function ActionItem({ label, count, variant, onClick }: {
   label: string; count: number; variant: "warning" | "error" | "default"; onClick: () => void;
 }) {
   if (count === 0) return (
-    <div className="flex items-center justify-between py-2.5 px-3 rounded-xl">
-      <span className="text-sm text-muted-foreground">{label}</span>
+    <div className="flex items-center justify-between py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl">
+      <span className="text-xs sm:text-sm text-muted-foreground truncate">{label}</span>
       <Badge variant="outline" className="text-[10px] rounded-full bg-status-approved/10 text-status-approved border-status-approved/20">OK</Badge>
     </div>
   );
@@ -639,10 +666,10 @@ function ActionItem({ label, count, variant, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="flex items-center justify-between w-full py-2.5 px-3 rounded-xl hover:bg-secondary/60 active:bg-secondary/80 transition-colors focus-visible:ring-2 focus-visible:ring-ring cursor-pointer group min-h-[44px]"
+      className="flex items-center justify-between w-full py-2 sm:py-2.5 px-2 sm:px-3 rounded-xl hover:bg-secondary/60 active:bg-secondary/80 transition-colors focus-visible:ring-2 focus-visible:ring-ring cursor-pointer group min-h-[44px]"
     >
-      <span className="text-sm font-medium text-foreground group-hover:text-primary transition-colors">{label}</span>
-      <div className="flex items-center gap-2">
+      <span className="text-xs sm:text-sm font-medium text-foreground group-hover:text-primary transition-colors truncate">{label}</span>
+      <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
         <Badge
           className={`text-[10px] rounded-full px-2 ${
             variant === "error"
@@ -653,35 +680,42 @@ function ActionItem({ label, count, variant, onClick }: {
         >
           {count}
         </Badge>
-        <ArrowRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
+        <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-60 sm:opacity-0 sm:group-hover:opacity-100 transition-opacity" />
       </div>
     </button>
   );
 }
 
-function EmptyState({ icon, message, hint }: { icon: React.ReactNode; message: string; hint?: string }) {
+function EmptyState({ icon, message, ctaLabel, onCta }: {
+  icon: React.ReactNode; message: string; ctaLabel?: string; onCta?: () => void;
+}) {
   return (
-    <div className="flex flex-col items-center justify-center py-10 gap-2 text-center">
-      <div className="text-muted-foreground/30 [&>svg]:h-8 [&>svg]:w-8">{icon}</div>
-      <p className="text-sm text-muted-foreground font-medium">{message}</p>
-      {hint && <p className="text-xs text-muted-foreground/70">{hint}</p>}
+    <div className="flex flex-col items-center justify-center py-6 sm:py-8 gap-2 text-center">
+      <div className="text-muted-foreground/30 [&>svg]:h-6 [&>svg]:w-6 sm:[&>svg]:h-8 sm:[&>svg]:w-8">{icon}</div>
+      <p className="text-xs sm:text-sm text-muted-foreground font-medium">{message}</p>
+      {ctaLabel && onCta && (
+        <Button variant="outline" size="sm" onClick={onCta} className="mt-1 h-8 text-xs gap-1.5">
+          <Plus className="h-3.5 w-3.5" />
+          {ctaLabel}
+        </Button>
+      )}
     </div>
   );
 }
 
-function DonutChart({ data }: { data: { name: string; value: number; color: string }[] }) {
+function DonutChart({ data, isMobile }: { data: { name: string; value: number; color: string }[]; isMobile?: boolean }) {
   const total = data.reduce((s, d) => s + d.value, 0);
   return (
-    <div className="flex items-center gap-4">
-      <div className="h-36 w-36 shrink-0">
+    <div className={`flex ${isMobile ? "flex-col" : "flex-row"} items-center gap-3 sm:gap-4`}>
+      <div className={`${isMobile ? "h-28 w-28" : "h-36 w-36"} shrink-0`}>
         <ResponsiveContainer width="100%" height="100%">
           <RPieChart>
             <Pie
               data={data}
               cx="50%"
               cy="50%"
-              innerRadius={36}
-              outerRadius={56}
+              innerRadius={isMobile ? 28 : 36}
+              outerRadius={isMobile ? 44 : 56}
               paddingAngle={2}
               dataKey="value"
               strokeWidth={0}
@@ -695,10 +729,10 @@ function DonutChart({ data }: { data: { name: string; value: number; color: stri
           </RPieChart>
         </ResponsiveContainer>
       </div>
-      <div className="space-y-1.5 min-w-0 flex-1">
+      <div className="space-y-1 min-w-0 flex-1">
         {data.map((d, i) => (
-          <div key={i} className="flex items-center gap-2 text-xs">
-            <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
+          <div key={i} className="flex items-center gap-1.5 sm:gap-2 text-[11px] sm:text-xs">
+            <div className="h-2 w-2 sm:h-2.5 sm:w-2.5 rounded-full shrink-0" style={{ backgroundColor: d.color }} />
             <span className="text-muted-foreground truncate flex-1">{d.name}</span>
             <span className="font-medium text-foreground">{d.value}</span>
           </div>
