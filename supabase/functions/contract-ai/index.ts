@@ -31,120 +31,108 @@ serve(async (req) => {
       return new Response(JSON.stringify({ error: "Unauthorized" }), { status: 401, headers: corsHeaders });
 
     const userId = claimsData.claims.sub as string;
-    const { action, contract_id } = await req.json();
+    const { action, contract_id, text_override } = await req.json();
 
     if (action === "analyze_contract") {
       if (!contract_id) throw new Error("contract_id required");
       if (!lovableKey) throw new Error("LOVABLE_API_KEY not configured");
 
-      // 1. Get primary document
-      const { data: doc, error: docErr } = await supabaseAdmin
-        .from("contract_documents")
-        .select("*")
-        .eq("contract_id", contract_id)
-        .eq("is_primary", true)
-        .order("version", { ascending: false })
-        .limit(1)
+      // Get contract info
+      const { data: contract } = await supabaseAdmin
+        .from("contracts")
+        .select("company_id, job_id, risk_level")
+        .eq("id", contract_id)
         .single();
 
-      if (docErr || !doc)
-        return new Response(JSON.stringify({ error: "No primary document found" }), {
-          status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+      const previousRiskLevel = contract?.risk_level || "green";
+
+      let extractedText = "";
+
+      // Check for text_override first (paste fallback)
+      if (text_override && typeof text_override === "string" && text_override.trim().length > 0) {
+        extractedText = text_override.trim();
+      } else {
+        // Get primary document
+        const { data: doc, error: docErr } = await supabaseAdmin
+          .from("contract_documents")
+          .select("*")
+          .eq("contract_id", contract_id)
+          .eq("is_primary", true)
+          .order("version", { ascending: false })
+          .limit(1)
+          .single();
+
+        if (docErr || !doc)
+          return new Response(JSON.stringify({ error: "No primary document found" }), {
+            status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+
+        // Download file from storage
+        const { data: fileData, error: fileErr } = await supabaseAdmin.storage
+          .from("contract-documents")
+          .download(doc.file_path);
+
+        if (fileErr || !fileData)
+          return new Response(JSON.stringify({ error: "Could not download document" }), {
+            status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
+          });
+
+        // Extract text - for PDF, use base64 for vision model
+        const arrayBuf = await fileData.arrayBuffer();
+
+        if (doc.mime_type === "application/pdf") {
+          const bytes = new Uint8Array(arrayBuf).slice(0, 100000);
+          const base64 = btoa(String.fromCharCode(...bytes));
+
+          // Check if PDF has extractable text (heuristic: look for text stream markers)
+          const textCheck = new TextDecoder("utf-8", { fatal: false }).decode(new Uint8Array(arrayBuf).slice(0, 50000));
+          const hasText = (textCheck.match(/\([\w\s]{10,}\)/g) || []).length > 5 ||
+                          textCheck.includes("/Type /Page");
+
+          if (arrayBuf.byteLength < 1000 && !hasText) {
+            return new Response(JSON.stringify({
+              error: "PDF-filen ser ut til å mangle lesbar tekst. Bruk «Lim inn tekst» for å analysere manuelt.",
+              error_code: "pdf_text_missing",
+            }), {
+              status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
+            });
+          }
+
+          extractedText = `[PDF_BASE64:${base64}]`;
+        } else {
+          // Text-based document
+          extractedText = new TextDecoder().decode(new Uint8Array(arrayBuf));
+        }
+      }
+
+      // Check text length
+      if (extractedText.length < 800 && !extractedText.startsWith("[PDF_BASE64:")) {
+        return new Response(JSON.stringify({
+          error: "For lite tekst hentet fra dokumentet. Bruk «Lim inn tekst» for å analysere manuelt.",
+          error_code: "pdf_text_missing",
+        }), {
+          status: 422, headers: { ...corsHeaders, "Content-Type": "application/json" },
         });
+      }
 
-      // 2. Download file from storage
-      const { data: fileData, error: fileErr } = await supabaseAdmin.storage
-        .from("contract-documents")
-        .download(doc.file_path);
+      // Build AI message content
+      const isPdfBase64 = extractedText.startsWith("[PDF_BASE64:");
+      let userContent: any[];
+      if (isPdfBase64) {
+        const base64 = extractedText.slice(12, -1);
+        userContent = [
+          { type: "text", text: `Analyser denne kontrakten og trekk ut all relevant informasjon.` },
+          { type: "image_url", image_url: { url: `data:application/pdf;base64,${base64}` } },
+        ];
+      } else {
+        userContent = [
+          { type: "text", text: `Analyser denne kontrakten og trekk ut all relevant informasjon:\n\n${extractedText.substring(0, 50000)}` },
+        ];
+      }
 
-      if (fileErr || !fileData)
-        return new Response(JSON.stringify({ error: "Could not download document" }), {
-          status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" },
-        });
-
-      // 3. Extract text (simplified - send base64 for PDF)
-      const arrayBuf = await fileData.arrayBuffer();
-      const base64 = btoa(String.fromCharCode(...new Uint8Array(arrayBuf).slice(0, 100000)));
-      const textFallback = `[Document: ${doc.file_name}, type: ${doc.mime_type}, size: ${arrayBuf.byteLength} bytes. Base64 preview of first ~75KB provided.]`;
-
-      // 4. Call AI with structured output via tool calling
+      // Call AI
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 30000);
-
-      const aiPayload: any = {
-        model: "google/gemini-3-flash-preview",
-        messages: [
-          {
-            role: "system",
-            content: `Du er en ekspert kontraktanalytiker for elektrobransjen i Norge. Analyser kontraktdokumentet og trekk ut strukturert informasjon. Vær presis og konservativ i risikovurderingen. Alle datoer i ISO 8601-format (YYYY-MM-DD). Hvis du ikke finner informasjon, returner null. Risk score 0-100 der 0 er lav risiko.`,
-          },
-          {
-            role: "user",
-            content: [
-              { type: "text", text: `Analyser denne kontrakten og trekk ut all relevant informasjon:\n\nFilnavn: ${doc.file_name}\nType: ${doc.mime_type}` },
-              ...(doc.mime_type === "application/pdf"
-                ? [{ type: "image_url" as const, image_url: { url: `data:application/pdf;base64,${base64}` } }]
-                : [{ type: "text" as const, text: textFallback }]),
-            ],
-          },
-        ],
-        tools: [
-          {
-            type: "function",
-            function: {
-              name: "analyze_contract",
-              description: "Return structured contract analysis",
-              parameters: {
-                type: "object",
-                properties: {
-                  summaries: {
-                    type: "object",
-                    properties: {
-                      pl: { type: "string", description: "Sammendrag for prosjektleder (2-4 setninger)" },
-                      econ: { type: "string", description: "Sammendrag for økonomiansvarlig (2-4 setninger)" },
-                      field: { type: "string", description: "Sammendrag for montør/feltpersonell (2-4 setninger)" },
-                    },
-                    required: ["pl", "econ", "field"],
-                  },
-                  extracted: {
-                    type: "object",
-                    properties: {
-                      end_date: { type: ["string", "null"], description: "Sluttdato ISO 8601" },
-                      signed_date: { type: ["string", "null"], description: "Signeringsdato ISO 8601" },
-                      start_date: { type: ["string", "null"], description: "Startdato ISO 8601" },
-                      warranty_months: { type: ["integer", "null"], description: "Garantiperiode i måneder" },
-                      penalty_type: { type: ["string", "null"], description: "Dagbot-type: dagmulkt, prosentvis, fast, ingen" },
-                      penalty_rate: { type: ["number", "null"], description: "Dagbot-sats" },
-                      penalty_unit: { type: ["string", "null"], description: "Dagbot-enhet: kr/dag, % av kontraktsum, etc." },
-                      contract_type: { type: ["string", "null"], description: "Kontraktstype: NS8405, NS8406, NS8407, totalentreprise, underentreprise, annet" },
-                    },
-                    required: ["end_date", "signed_date", "warranty_months", "penalty_type", "penalty_rate", "penalty_unit"],
-                  },
-                  deadlines: {
-                    type: "array",
-                    items: {
-                      type: "object",
-                      properties: {
-                        type: { type: "string", enum: ["completion", "milestone", "notice", "documentation", "warranty_end", "other"] },
-                        title: { type: "string" },
-                        due_date: { type: "string", description: "ISO 8601 date" },
-                        severity: { type: "string", enum: ["info", "warn", "critical"] },
-                      },
-                      required: ["type", "title", "due_date", "severity"],
-                    },
-                  },
-                  risk_score: { type: "integer", description: "0-100 risk score" },
-                  risk_level: { type: "string", enum: ["green", "yellow", "red"] },
-                  confidence: { type: "integer", description: "0-100 confidence in the analysis" },
-                },
-                required: ["summaries", "extracted", "deadlines", "risk_score", "risk_level", "confidence"],
-                additionalProperties: false,
-              },
-            },
-          },
-        ],
-        tool_choice: { type: "function", function: { name: "analyze_contract" } },
-      };
 
       const aiResponse = await fetch("https://ai.gateway.lovable.dev/v1/chat/completions", {
         method: "POST",
@@ -152,7 +140,72 @@ serve(async (req) => {
           Authorization: `Bearer ${lovableKey}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(aiPayload),
+        body: JSON.stringify({
+          model: "google/gemini-3-flash-preview",
+          messages: [
+            {
+              role: "system",
+              content: `Du er en ekspert kontraktanalytiker for elektrobransjen i Norge. Analyser kontraktdokumentet og trekk ut strukturert informasjon. Vær presis og konservativ i risikovurderingen. Alle datoer i ISO 8601-format (YYYY-MM-DD). Hvis du ikke finner informasjon, returner null. Risk score 0-100 der 0 er lav risiko.`,
+            },
+            { role: "user", content: userContent },
+          ],
+          tools: [
+            {
+              type: "function",
+              function: {
+                name: "analyze_contract",
+                description: "Return structured contract analysis",
+                parameters: {
+                  type: "object",
+                  properties: {
+                    summaries: {
+                      type: "object",
+                      properties: {
+                        pl: { type: "string", description: "Sammendrag for prosjektleder (2-4 setninger)" },
+                        econ: { type: "string", description: "Sammendrag for økonomiansvarlig (2-4 setninger)" },
+                        field: { type: "string", description: "Sammendrag for montør/feltpersonell (2-4 setninger)" },
+                      },
+                      required: ["pl", "econ", "field"],
+                    },
+                    extracted: {
+                      type: "object",
+                      properties: {
+                        end_date: { type: ["string", "null"], description: "Sluttdato ISO 8601" },
+                        signed_date: { type: ["string", "null"], description: "Signeringsdato ISO 8601" },
+                        start_date: { type: ["string", "null"], description: "Startdato ISO 8601" },
+                        warranty_months: { type: ["integer", "null"], description: "Garantiperiode i måneder" },
+                        penalty_type: { type: ["string", "null"], description: "Dagbot-type" },
+                        penalty_rate: { type: ["number", "null"], description: "Dagbot-sats" },
+                        penalty_unit: { type: ["string", "null"], description: "Dagbot-enhet" },
+                        contract_type: { type: ["string", "null"], description: "Kontraktstype" },
+                      },
+                      required: ["end_date", "signed_date", "warranty_months", "penalty_type", "penalty_rate", "penalty_unit"],
+                    },
+                    deadlines: {
+                      type: "array",
+                      items: {
+                        type: "object",
+                        properties: {
+                          type: { type: "string", enum: ["completion", "milestone", "notice", "documentation", "warranty_end", "other"] },
+                          title: { type: "string" },
+                          due_date: { type: "string" },
+                          severity: { type: "string", enum: ["info", "warn", "critical"] },
+                        },
+                        required: ["type", "title", "due_date", "severity"],
+                      },
+                    },
+                    risk_score: { type: "integer" },
+                    risk_level: { type: "string", enum: ["green", "yellow", "red"] },
+                    confidence: { type: "integer" },
+                  },
+                  required: ["summaries", "extracted", "deadlines", "risk_score", "risk_level", "confidence"],
+                  additionalProperties: false,
+                },
+              },
+            },
+          ],
+          tool_choice: { type: "function", function: { name: "analyze_contract" } },
+        }),
         signal: controller.signal,
       });
 
@@ -179,14 +232,7 @@ serve(async (req) => {
 
       const analysis = JSON.parse(toolCall.function.arguments);
 
-      // 5. Get contract to find company_id and job_id
-      const { data: contract } = await supabaseAdmin
-        .from("contracts")
-        .select("company_id, job_id")
-        .eq("id", contract_id)
-        .single();
-
-      // 6. Upsert contract with analysis results
+      // Upsert contract with analysis results
       const updateData: any = {
         ai_summary_pl: analysis.summaries.pl,
         ai_summary_econ: analysis.summaries.econ,
@@ -209,7 +255,7 @@ serve(async (req) => {
 
       await supabaseAdmin.from("contracts").update(updateData).eq("id", contract_id);
 
-      // 7. Insert deadlines
+      // Insert deadlines
       if (analysis.deadlines?.length > 0) {
         const deadlineRows = analysis.deadlines.map((d: any) => ({
           company_id: contract?.company_id,
@@ -224,7 +270,7 @@ serve(async (req) => {
         await supabaseAdmin.from("contract_deadlines").insert(deadlineRows);
       }
 
-      // 8. Create alerts for nearest deadlines
+      // Create alerts for nearest deadlines
       const nearDeadlines = (analysis.deadlines || [])
         .filter((d: any) => {
           const dueDate = new Date(d.due_date);
@@ -246,38 +292,65 @@ serve(async (req) => {
         await supabaseAdmin.from("contract_alerts").insert(alertRows);
       }
 
-      // 9. Update job snapshot if linked
+      // Update job snapshot if linked
       if (contract?.job_id) {
         const { data: openDeadlines } = await supabaseAdmin
           .from("contract_deadlines")
-          .select("due_date")
+          .select("due_date, severity")
           .eq("contract_id", contract_id)
           .eq("status", "open")
           .order("due_date", { ascending: true })
-          .limit(1);
+          .limit(10);
 
+        let nextDeadline: string | null = null;
+        if (openDeadlines && openDeadlines.length > 0) {
+          const earliest = openDeadlines[0].due_date;
+          const sameDateItems = openDeadlines.filter(d => d.due_date === earliest);
+          const critical = sameDateItems.find(d => d.severity === "critical");
+          nextDeadline = critical ? critical.due_date : earliest;
+        }
+
+        const thirtyDaysAgo = new Date();
+        thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
         const { count: alertCount } = await supabaseAdmin
           .from("contract_alerts")
           .select("id", { count: "exact", head: true })
           .eq("contract_id", contract_id)
-          .eq("is_read", false);
+          .eq("is_read", false)
+          .in("severity", ["warn", "critical"])
+          .gte("created_at", thirtyDaysAgo.toISOString());
 
         await supabaseAdmin.from("events").update({
           contract_risk_level: analysis.risk_level,
-          next_contract_deadline: openDeadlines?.[0]?.due_date || null,
+          next_contract_deadline: nextDeadline,
           contract_alert_count: alertCount || 0,
         }).eq("id", contract.job_id);
       }
 
-      // 10. Audit log
+      // --- Audit logs ---
+      // contract_analyzed
       await supabaseAdmin.from("activity_log").insert({
         entity_id: contract_id,
         entity_type: "contract",
-        action: "ai_analysis",
+        action: "contract_analyzed",
         type: "system",
         performed_by: userId,
         description: `AI-analyse fullført. Risikoscore: ${analysis.risk_score}/100 (${analysis.risk_level}). Konfidensgrad: ${analysis.confidence}%.`,
+        metadata: { risk_score: analysis.risk_score, risk_level: analysis.risk_level, confidence: analysis.confidence },
       });
+
+      // contract_risk_level_changed
+      if (previousRiskLevel !== analysis.risk_level) {
+        await supabaseAdmin.from("activity_log").insert({
+          entity_id: contract_id,
+          entity_type: "contract",
+          action: "contract_risk_level_changed",
+          type: "system",
+          performed_by: userId,
+          description: `Risikonivå endret fra ${previousRiskLevel} til ${analysis.risk_level}.`,
+          metadata: { from: previousRiskLevel, to: analysis.risk_level },
+        });
+      }
 
       return new Response(JSON.stringify({ ok: true, analysis }), {
         headers: { ...corsHeaders, "Content-Type": "application/json" },
@@ -287,7 +360,7 @@ serve(async (req) => {
     return new Response(JSON.stringify({ error: "Unknown action" }), {
       status: 400, headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
-  } catch (err) {
+  } catch (err: any) {
     if (err.name === "AbortError") {
       return new Response(JSON.stringify({ error: "AI analysis timed out", error_code: "ai_timeout" }), {
         status: 504, headers: { ...corsHeaders, "Content-Type": "application/json" },

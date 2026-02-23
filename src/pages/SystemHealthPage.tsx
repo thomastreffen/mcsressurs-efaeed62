@@ -24,6 +24,7 @@ const SERVICE_META: Record<string, { label: string; icon: React.ElementType; act
   microsoft_graph: { label: "Microsoft Graph", icon: Cloud, action: "graph_check" },
   ai_gateway: { label: "AI Gateway", icon: Brain, action: "ai_check" },
   edge_functions: { label: "Edge Functions", icon: Zap, action: "edge_check" },
+  contract_cron: { label: "Kontraktvarsler Cron", icon: RefreshCw, action: "cron_check" },
 };
 
 const STATUS_CONFIG = {

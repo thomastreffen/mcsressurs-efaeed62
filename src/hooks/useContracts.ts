@@ -212,7 +212,11 @@ export function useAnalyzeContract() {
         body: { action: "analyze_contract", contract_id: contractId },
       });
       if (error) throw error;
-      if (data?.error) throw new Error(data.error);
+      if (data?.error) {
+        const err = new Error(data.error);
+        (err as any).error_code = data.error_code;
+        throw err;
+      }
       return data;
     },
     onSuccess: (_, contractId) => {

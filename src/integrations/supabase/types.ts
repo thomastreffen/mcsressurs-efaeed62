@@ -426,6 +426,42 @@ export type Database = {
           },
         ]
       }
+      contract_cron_runs: {
+        Row: {
+          created_alerts_count: number
+          dry_run: boolean
+          error_code: string | null
+          error_message: string | null
+          id: string
+          notified_users_count: number
+          ran_at: string
+          scanned_deadlines_count: number
+          status: string
+        }
+        Insert: {
+          created_alerts_count?: number
+          dry_run?: boolean
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          notified_users_count?: number
+          ran_at?: string
+          scanned_deadlines_count?: number
+          status?: string
+        }
+        Update: {
+          created_alerts_count?: number
+          dry_run?: boolean
+          error_code?: string | null
+          error_message?: string | null
+          id?: string
+          notified_users_count?: number
+          ran_at?: string
+          scanned_deadlines_count?: number
+          status?: string
+        }
+        Relationships: []
+      }
       contract_deadlines: {
         Row: {
           company_id: string
