@@ -7,12 +7,13 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Switch } from "@/components/ui/switch";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   Mail, Send, FileEdit, Loader2, ExternalLink,
   Plus, Trash2, ChevronDown, ChevronUp, CheckCircle,
 } from "lucide-react";
 import { toast } from "sonner";
+import { SuccessCheckmark } from "@/components/SuccessCheckmark";
 import type { StructuredError } from "@/components/EmailComposer";
 
 interface EmailComposeFormProps {
@@ -40,9 +41,10 @@ export function EmailComposeForm({
   const [showCc, setShowCc] = useState(false);
   const [subject, setSubject] = useState(defaultSubject || "");
   const [bodyText, setBodyText] = useState("");
-  const [sendNow, setSendNow] = useState(entityType === "lead");
   const [sending, setSending] = useState(false);
+  const [sendingMode, setSendingMode] = useState<"send" | "draft" | null>(null);
   const [lastResult, setLastResult] = useState<{ mode: string; web_link?: string; message?: string } | null>(null);
+  const [showSuccess, setShowSuccess] = useState(false);
 
   useEffect(() => {
     if (defaultTo) setToList([defaultTo]);
@@ -54,16 +56,22 @@ export function EmailComposeForm({
     return defaultBodyHtml ? userContent + "<br/>" + defaultBodyHtml : userContent;
   };
 
-  const handleSend = async () => {
-    const validTo = toList.filter(e => e.trim());
-    if (validTo.length === 0) { toast.error("Legg til minst én mottaker"); return; }
+  const validTo = toList.filter(e => e.trim());
+  const canSend = validTo.length > 0 && bodyText.trim().length > 0;
+  const disabledReason = !validTo.length ? "Legg til mottaker for å sende" : !bodyText.trim() ? "Skriv en melding for å sende" : "";
+
+  const handleAction = async (mode: "send" | "draft") => {
+    if (mode === "send" && !canSend) return;
+    if (mode === "draft" && validTo.length === 0) { toast.error("Legg til minst én mottaker"); return; }
     if (!subject.trim()) { toast.error("Emne er påkrevd"); return; }
 
     setSending(true);
+    setSendingMode(mode);
     setLastResult(null);
+    setShowSuccess(false);
     try {
       const payload = {
-        action: sendNow ? "send_mail" : "create_draft",
+        action: mode === "send" ? "send_mail" : "create_draft",
         entity_type: entityType,
         entity_id: entityId,
         to: validTo,
@@ -93,15 +101,25 @@ export function EmailComposeForm({
         return;
       }
 
-      const modeLabel = data?.mode === "sent" ? "E-post sendt" : "Kladd opprettet i Outlook";
-      toast.success(modeLabel);
-      setLastResult({ mode: data.mode, web_link: data.web_link });
+      if (mode === "send") {
+        setShowSuccess(true);
+        toast.success("E-post sendt");
+        setLastResult({ mode: "sent", web_link: data.web_link });
+        // Reset fields on send
+        setBodyText("");
+        setTimeout(() => setShowSuccess(false), 3000);
+      } else {
+        toast.success("Kladd lagret i Outlook");
+        setLastResult({ mode: "draft", web_link: data.web_link });
+        // Don't reset fields on draft
+      }
       onSent?.();
     } catch (err: any) {
       console.error("[EmailComposeForm] Error:", err);
       toast.error("Feil ved e-postsending");
     } finally {
       setSending(false);
+      setSendingMode(null);
     }
   };
 
@@ -207,34 +225,47 @@ export function EmailComposeForm({
           )}
         </div>
 
-        {/* Send mode toggle */}
-        <div className="flex items-center gap-3 pt-1">
-          <div className="flex items-center gap-2">
-            <Switch checked={sendNow} onCheckedChange={setSendNow} id="send-mode" disabled={sending} />
-            <Label htmlFor="send-mode" className="text-sm cursor-pointer">
-              {sendNow ? "Send nå" : "Lagre kladd"}
-            </Label>
-          </div>
-          <Badge variant="outline" className="text-xs">
-            {sendNow ? "Sendes fra din Outlook og lagres i Sendt elementer" : "Lagres i Outlook. Kladd"}
-          </Badge>
-        </div>
-
-        {/* Actions */}
+        {/* Actions – two buttons */}
         <div className="flex items-center gap-2 pt-2">
-          <Button onClick={handleSend} disabled={sending} className="gap-1.5">
-            {sending ? (
+          <Button
+            variant="outline"
+            onClick={() => handleAction("draft")}
+            disabled={sending}
+            className="gap-1.5"
+          >
+            {sendingMode === "draft" ? (
               <Loader2 className="h-4 w-4 animate-spin" />
-            ) : sendNow ? (
-              <Send className="h-4 w-4" />
             ) : (
               <FileEdit className="h-4 w-4" />
             )}
-            {sending
-              ? (sendNow ? "Sender..." : "Oppretter...")
-              : (sendNow ? "Send" : "Opprett kladd")
-            }
+            Lagre kladd
           </Button>
+
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="inline-flex">
+                <Button
+                  onClick={() => handleAction("send")}
+                  disabled={sending || !canSend}
+                  className="gap-1.5"
+                >
+                  {sendingMode === "send" ? (
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                  ) : showSuccess ? (
+                    <SuccessCheckmark size={16} />
+                  ) : (
+                    <Send className="h-4 w-4" />
+                  )}
+                  Send e-post
+                </Button>
+              </span>
+            </TooltipTrigger>
+            {!canSend && disabledReason && (
+              <TooltipContent>
+                <p>{disabledReason}</p>
+              </TooltipContent>
+            )}
+          </Tooltip>
         </div>
 
         {/* Result */}
@@ -242,7 +273,7 @@ export function EmailComposeForm({
           <div className="flex items-center gap-2 p-3 rounded-lg border bg-secondary/50">
             <CheckCircle className="h-4 w-4 text-primary shrink-0" />
             <span className="text-sm flex-1">
-              {lastResult.message || (lastResult.mode === "sent" ? "E-post sendt!" : "Kladd opprettet i Outlook")}
+              {lastResult.message || (lastResult.mode === "sent" ? "E-post sendt!" : "Kladd lagret i Outlook")}
             </span>
             {lastResult.web_link && (
               <Button variant="outline" size="sm" className="gap-1 text-xs" onClick={() => window.open(lastResult.web_link, "_blank")}>
