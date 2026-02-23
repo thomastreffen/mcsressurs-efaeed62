@@ -1,0 +1,477 @@
+import { useState, useEffect, useCallback, useRef } from "react";
+import { supabase } from "@/integrations/supabase/client";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { toast } from "sonner";
+import { useAuth } from "@/hooks/useAuth";
+import {
+  FileText,
+  Upload,
+  Download,
+  Trash2,
+  ExternalLink,
+  Loader2,
+  Sparkles,
+  Tag,
+  ChevronRight,
+} from "lucide-react";
+import { format } from "date-fns";
+import { nb } from "date-fns/locale";
+
+interface DocumentRow {
+  id: string;
+  file_name: string;
+  file_path: string;
+  mime_type: string;
+  file_size: number | null;
+  category: string;
+  public_url: string | null;
+  storage_bucket: string;
+  uploaded_by: string | null;
+  created_at: string;
+  deleted_at: string | null;
+}
+
+interface AnalysisRow {
+  id: string;
+  document_id: string;
+  analysis_type: string;
+  parsed_fields: any;
+  confidence: number | null;
+  created_at: string;
+}
+
+const CATEGORIES = [
+  { value: "offer", label: "Tilbud" },
+  { value: "contract", label: "Kontrakt" },
+  { value: "drawing", label: "Tegning" },
+  { value: "fdv", label: "FDV" },
+  { value: "image", label: "Bilde" },
+  { value: "other", label: "Annet" },
+];
+
+const CATEGORY_MAP: Record<string, string> = Object.fromEntries(CATEGORIES.map(c => [c.value, c.label]));
+
+const TAB_FILTERS = [
+  { value: "all", label: "Alle" },
+  ...CATEGORIES,
+];
+
+function formatSize(bytes: number | null): string {
+  if (!bytes) return "";
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+interface DocumentCenterProps {
+  jobId: string;
+  companyId?: string | null;
+}
+
+export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
+  const { user, isAdmin } = useAuth();
+  const [docs, setDocs] = useState<DocumentRow[]>([]);
+  const [analyses, setAnalyses] = useState<AnalysisRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [uploading, setUploading] = useState(false);
+  const [analyzingId, setAnalyzingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState("all");
+  const fileRef = useRef<HTMLInputElement>(null);
+
+  const fetchDocs = useCallback(async () => {
+    const { data } = await supabase
+      .from("documents")
+      .select("*")
+      .eq("entity_type", "job")
+      .eq("entity_id", jobId)
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+    if (data) setDocs(data as any);
+
+    const { data: analysesData } = await supabase
+      .from("document_analyses")
+      .select("*")
+      .eq("job_id", jobId)
+      .order("created_at", { ascending: false });
+    if (analysesData) setAnalyses(analysesData as any);
+
+    setLoading(false);
+  }, [jobId]);
+
+  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = Array.from(e.target.files || []);
+    if (files.length === 0) return;
+    setUploading(true);
+
+    for (const file of files) {
+      if (file.size > 50 * 1024 * 1024) {
+        toast.error(`Filen er for stor. Maks 50MB.`, { description: file.name });
+        continue;
+      }
+
+      const filePath = `${jobId}/${Date.now()}-${file.name.replace(/[^\w.\-()]/g, "_")}`;
+      const { error: uploadError } = await supabase.storage
+        .from("job-attachments")
+        .upload(filePath, file);
+
+      if (uploadError) {
+        toast.error(`Opplasting feilet: ${file.name}`, { description: uploadError.message });
+        continue;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("job-attachments")
+        .getPublicUrl(filePath);
+
+      // Determine category from extension
+      const ext = file.name.split(".").pop()?.toLowerCase() || "";
+      const isImage = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
+      const category = isImage ? "image" : "other";
+
+      const { error: dbError } = await supabase.from("documents").insert({
+        entity_type: "job",
+        entity_id: jobId,
+        file_name: file.name,
+        file_path: filePath,
+        mime_type: file.type || "application/octet-stream",
+        file_size: file.size,
+        storage_bucket: "job-attachments",
+        public_url: urlData.publicUrl,
+        uploaded_by: user?.id || null,
+        company_id: companyId || null,
+        category,
+      });
+
+      if (dbError) {
+        toast.error(`Kunne ikke registrere ${file.name}`);
+        continue;
+      }
+
+      toast.success(`${file.name} lastet opp`);
+    }
+
+    if (fileRef.current) fileRef.current.value = "";
+    setUploading(false);
+    fetchDocs();
+  };
+
+  const handleCategoryChange = async (docId: string, newCategory: string) => {
+    const { error } = await supabase
+      .from("documents")
+      .update({ category: newCategory })
+      .eq("id", docId);
+    if (error) {
+      toast.error("Kunne ikke oppdatere kategori");
+    } else {
+      setDocs(prev => prev.map(d => d.id === docId ? { ...d, category: newCategory } : d));
+    }
+  };
+
+  const handleDelete = async (doc: DocumentRow) => {
+    const { error } = await supabase
+      .from("documents")
+      .update({ deleted_at: new Date().toISOString(), deleted_by: user?.id } as any)
+      .eq("id", doc.id);
+    if (error) {
+      toast.error("Kunne ikke slette dokument");
+    } else {
+      toast.success("Dokument slettet");
+      setDocs(prev => prev.filter(d => d.id !== doc.id));
+    }
+  };
+
+  const handleAnalyze = async (doc: DocumentRow) => {
+    const analysisType = doc.category === "offer" ? "offer" : "contract";
+    setAnalyzingId(doc.id);
+
+    try {
+      const { data, error } = await supabase.functions.invoke("analyze-document", {
+        body: {
+          document_id: doc.id,
+          job_id: jobId,
+          analysis_type: analysisType,
+        },
+      });
+
+      if (error) {
+        toast.error("AI-analyse feilet", { description: String(error) });
+      } else if (data?.error) {
+        toast.error("AI-analyse feilet", { description: data.error });
+      } else {
+        toast.success(`${analysisType === "offer" ? "Tilbudsanalyse" : "Kontraktanalyse"} fullført`);
+        fetchDocs();
+      }
+    } catch (err: any) {
+      toast.error("Feil ved analyse", { description: err.message });
+    }
+
+    setAnalyzingId(null);
+  };
+
+  const filtered = activeTab === "all" ? docs : docs.filter(d => d.category === activeTab);
+
+  // Find latest analysis per type
+  const latestOfferAnalysis = analyses.find(a => a.analysis_type === "offer");
+  const latestContractAnalysis = analyses.find(a => a.analysis_type === "contract");
+
+  return (
+    <div className="space-y-4">
+      {/* Header + Upload */}
+      <div className="flex items-center justify-between gap-2 flex-wrap">
+        <h3 className="text-sm font-semibold text-foreground flex items-center gap-2">
+          <FileText className="h-4 w-4 text-primary" />
+          Dokumentsenter
+        </h3>
+        <div className="flex items-center gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => fileRef.current?.click()}
+            disabled={uploading}
+            className="gap-1.5 rounded-xl text-xs"
+          >
+            {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+            Last opp
+          </Button>
+          <input
+            ref={fileRef}
+            type="file"
+            multiple
+            onChange={handleUpload}
+            className="hidden"
+            accept=".pdf,.doc,.docx,.xls,.xlsx,.png,.jpg,.jpeg,.gif,.webp"
+          />
+        </div>
+      </div>
+
+      {/* Analysis summary cards */}
+      {latestOfferAnalysis && (
+        <AnalysisSummaryCard
+          title="Tilbudssammendrag"
+          analysis={latestOfferAnalysis}
+          type="offer"
+        />
+      )}
+      {latestContractAnalysis && (
+        <AnalysisSummaryCard
+          title="Kontraktsammendrag"
+          analysis={latestContractAnalysis}
+          type="contract"
+        />
+      )}
+
+      {/* Filter tabs */}
+      <Tabs value={activeTab} onValueChange={setActiveTab}>
+        <TabsList className="h-8 w-full justify-start overflow-x-auto">
+          {TAB_FILTERS.map(t => (
+            <TabsTrigger key={t.value} value={t.value} className="text-xs px-2.5 py-1">
+              {t.label}
+              {t.value !== "all" && (
+                <span className="ml-1 text-muted-foreground">
+                  ({docs.filter(d => d.category === t.value).length})
+                </span>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Documents list */}
+      {loading ? (
+        <div className="flex justify-center py-6">
+          <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        </div>
+      ) : filtered.length === 0 ? (
+        <div className="text-center py-6">
+          <p className="text-sm text-muted-foreground">
+            {activeTab === "all" ? "Ingen dokumenter lastet opp." : `Ingen ${CATEGORY_MAP[activeTab]?.toLowerCase() || "dokumenter"} funnet.`}
+          </p>
+          <Button
+            variant="outline"
+            size="sm"
+            className="mt-2 gap-1.5 text-xs"
+            onClick={() => fileRef.current?.click()}
+          >
+            <Upload className="h-3.5 w-3.5" />
+            Last opp fil
+          </Button>
+        </div>
+      ) : (
+        <div className="space-y-1.5">
+          {filtered.map(doc => (
+            <div
+              key={doc.id}
+              className="flex items-center gap-2 rounded-xl border border-border/40 p-3 hover:bg-accent/10 transition-colors"
+            >
+              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+
+              <div className="flex-1 min-w-0">
+                <p className="text-sm font-medium truncate">{doc.file_name}</p>
+                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                  {doc.file_size && <span>{formatSize(doc.file_size)}</span>}
+                  <span>{format(new Date(doc.created_at), "d. MMM yyyy", { locale: nb })}</span>
+                </div>
+              </div>
+
+              {/* Category selector */}
+              <Select
+                value={doc.category}
+                onValueChange={(v) => handleCategoryChange(doc.id, v)}
+              >
+                <SelectTrigger className="h-7 w-24 text-[11px] rounded-lg">
+                  <Tag className="h-3 w-3 mr-1" />
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {CATEGORIES.map(c => (
+                    <SelectItem key={c.value} value={c.value} className="text-xs">
+                      {c.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+
+              {/* AI analyze button for offer/contract */}
+              {(doc.category === "offer" || doc.category === "contract") && (
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-xs gap-1 rounded-lg"
+                  disabled={analyzingId === doc.id}
+                  onClick={() => handleAnalyze(doc)}
+                  title={doc.category === "offer" ? "Analyser tilbud" : "Analyser kontrakt"}
+                >
+                  {analyzingId === doc.id ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <Sparkles className="h-3 w-3" />
+                  )}
+                </Button>
+              )}
+
+              {/* Preview/open */}
+              {doc.public_url && (
+                <a
+                  href={doc.public_url}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="text-primary hover:text-primary/80 shrink-0"
+                >
+                  <ExternalLink className="h-3.5 w-3.5" />
+                </a>
+              )}
+
+              {/* Download */}
+              {doc.public_url && (
+                <a
+                  href={doc.public_url}
+                  download={doc.file_name}
+                  className="text-muted-foreground hover:text-foreground shrink-0"
+                >
+                  <Download className="h-3.5 w-3.5" />
+                </a>
+              )}
+
+              {/* Delete */}
+              {isAdmin && (
+                <button
+                  onClick={() => handleDelete(doc)}
+                  className="text-muted-foreground hover:text-destructive shrink-0"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ── Analysis Summary Card ── */
+function AnalysisSummaryCard({ title, analysis, type }: { title: string; analysis: AnalysisRow; type: string }) {
+  const fields = analysis.parsed_fields || {};
+
+  return (
+    <div className="rounded-xl border border-border/60 bg-accent/10 p-4 space-y-2">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-semibold flex items-center gap-1.5">
+          <Sparkles className="h-3.5 w-3.5 text-primary" />
+          {title}
+        </h4>
+        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          {analysis.confidence && (
+            <Badge variant="outline" className="text-[10px] h-5">
+              {analysis.confidence}% konfidens
+            </Badge>
+          )}
+          <span>{format(new Date(analysis.created_at), "d. MMM HH:mm", { locale: nb })}</span>
+        </div>
+      </div>
+
+      {type === "offer" && (
+        <div className="space-y-1.5 text-sm">
+          {fields.total_amount != null && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Totalbeløp</span>
+              <span className="font-mono font-medium">
+                {fields.currency || "NOK"} {Number(fields.total_amount).toLocaleString("nb-NO")}
+              </span>
+            </div>
+          )}
+          {fields.scope_summary && (
+            <div>
+              <p className="text-muted-foreground text-xs mb-1">Omfang</p>
+              <p className="text-xs">{fields.scope_summary}</p>
+            </div>
+          )}
+          {fields.reservations?.length > 0 && (
+            <div>
+              <p className="text-muted-foreground text-xs mb-1">Forbehold</p>
+              <ul className="text-xs list-disc list-inside space-y-0.5">
+                {fields.reservations.map((r: string, i: number) => <li key={i}>{r}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+
+      {type === "contract" && (
+        <div className="space-y-1.5 text-sm">
+          {fields.parties && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Parter</span>
+              <span className="text-xs truncate max-w-[60%] text-right">{fields.parties}</span>
+            </div>
+          )}
+          {fields.start_date && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Periode</span>
+              <span className="text-xs">{fields.start_date} – {fields.end_date || "?"}</span>
+            </div>
+          )}
+          {fields.payment_terms && (
+            <div className="flex justify-between">
+              <span className="text-muted-foreground">Betalingsvilkår</span>
+              <span className="text-xs truncate max-w-[60%] text-right">{fields.payment_terms}</span>
+            </div>
+          )}
+          {fields.risk_flags?.length > 0 && (
+            <div>
+              <p className="text-destructive text-xs font-medium mb-1">🚩 Røde flagg</p>
+              <ul className="text-xs list-disc list-inside space-y-0.5 text-destructive/80">
+                {fields.risk_flags.map((f: string, i: number) => <li key={i}>{f}</li>)}
+              </ul>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}

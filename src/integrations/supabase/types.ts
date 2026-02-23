@@ -749,6 +749,135 @@ export type Database = {
           },
         ]
       }
+      document_analyses: {
+        Row: {
+          analysis_type: string
+          analyzed_by: string | null
+          confidence: number | null
+          created_at: string
+          document_id: string
+          id: string
+          job_id: string | null
+          parsed_fields: Json
+          raw_output: Json | null
+          version: number
+        }
+        Insert: {
+          analysis_type: string
+          analyzed_by?: string | null
+          confidence?: number | null
+          created_at?: string
+          document_id: string
+          id?: string
+          job_id?: string | null
+          parsed_fields?: Json
+          raw_output?: Json | null
+          version?: number
+        }
+        Update: {
+          analysis_type?: string
+          analyzed_by?: string | null
+          confidence?: number | null
+          created_at?: string
+          document_id?: string
+          id?: string
+          job_id?: string | null
+          parsed_fields?: Json
+          raw_output?: Json | null
+          version?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_analyses_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "document_analyses_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      documents: {
+        Row: {
+          category: string
+          company_id: string | null
+          created_at: string
+          deleted_at: string | null
+          deleted_by: string | null
+          department_id: string | null
+          entity_id: string
+          entity_type: string
+          file_name: string
+          file_path: string
+          file_size: number | null
+          id: string
+          mime_type: string
+          public_url: string | null
+          storage_bucket: string
+          updated_at: string
+          uploaded_by: string | null
+        }
+        Insert: {
+          category?: string
+          company_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          department_id?: string | null
+          entity_id: string
+          entity_type: string
+          file_name: string
+          file_path: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string
+          public_url?: string | null
+          storage_bucket?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Update: {
+          category?: string
+          company_id?: string | null
+          created_at?: string
+          deleted_at?: string | null
+          deleted_by?: string | null
+          department_id?: string | null
+          entity_id?: string
+          entity_type?: string
+          file_name?: string
+          file_path?: string
+          file_size?: number | null
+          id?: string
+          mime_type?: string
+          public_url?: string | null
+          storage_bucket?: string
+          updated_at?: string
+          uploaded_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "documents_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       event_logs: {
         Row: {
           action_type: string
