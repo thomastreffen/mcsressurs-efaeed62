@@ -36,6 +36,7 @@ interface RiskItem {
   category: string;
   severity: string;
   status: string;
+  raw_key?: string;
 }
 
 interface JobRiskPanelProps {
@@ -86,6 +87,11 @@ function RiskRow({ item, isAdmin, onResolve, onIgnore }: {
       <div className="min-w-0 flex-1">
         <p className="text-sm">{item.label}</p>
         <div className="flex items-center gap-2 mt-1 flex-wrap">
+          {import.meta.env.DEV && item.raw_key && (
+            <Badge variant="outline" className="text-[8px] h-4 font-mono bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:border-violet-800">
+              Flag: {item.raw_key}
+            </Badge>
+          )}
           <Badge variant="outline" className="text-[9px] h-4">
             {item.source_type === "offer" ? "Tilbud" : item.source_type === "contract" ? "Kontrakt" : item.source_type === "change_order" ? "Tillegg" : "Manuell"}
           </Badge>
@@ -140,20 +146,30 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
         .select("parsed_fields, analysis_type")
         .eq("job_id", jobId);
 
-      const flagSet = new Map<string, { source: string; category: RiskCategory; severity: string }>();
+      const flagSet = new Map<string, { source: string; category: RiskCategory; severity: string; rawKey: string }>();
+      const allRawKeys: string[] = [];
 
       for (const a of analyses || []) {
         const pf = (a.parsed_fields as any) || {};
         const flags: string[] = pf.risk_flags || [];
         for (const f of flags) {
+          allRawKeys.push(f);
           if (!flagSet.has(f)) {
             flagSet.set(f, {
               source: a.analysis_type === "offer" ? "offer" : "contract",
               category: getCategoryForFlag(f),
               severity: getSeverityForFlag(f),
+              rawKey: f,
             });
           }
         }
+      }
+
+      if (import.meta.env.DEV) {
+        const unique = [...new Set(allRawKeys)].sort();
+        console.group("[RiskSync] Unike risk_flag keys for job", jobId);
+        console.table(unique.map(k => ({ key: k, severity: getSeverityForFlag(k), category: getCategoryForFlag(k) })));
+        console.groupEnd();
       }
 
       const { data: cos } = await supabase
@@ -165,7 +181,7 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
       for (const co of cos || []) {
         const key = `co_${co.id}`;
         if (!flagSet.has(key)) {
-          flagSet.set(key, { source: "change_order", category: "schedule", severity: "medium" });
+          flagSet.set(key, { source: "change_order", category: "schedule", severity: "medium", rawKey: key });
         }
       }
 
@@ -188,6 +204,11 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
             severity: val.severity,
             status: "open",
           });
+        }
+        // Store raw key for dev display
+        if (import.meta.env.DEV && !key.startsWith("co_")) {
+          const existingItem = items.find(i => i.label === label);
+          if (existingItem) existingItem.raw_key = key;
         }
       }
 
