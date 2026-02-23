@@ -36,6 +36,8 @@ import RegulationPage from "./pages/RegulationPage";
 import FagInsightsPage from "./pages/FagInsightsPage";
 import SystemHealthPage from "./pages/SystemHealthPage";
 import DataIntegrityPage from "./pages/DataIntegrityPage";
+import ContractsPage from "./pages/ContractsPage";
+import ContractDetail from "./pages/ContractDetail";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -66,6 +68,8 @@ const App = () => (
               <Route path="/jobs" element={<JobsPage />} />
               <Route path="/jobs/:id" element={<JobDetail />} />
               <Route path="/resource-plan" element={<ResourcePlan />} />
+              <Route path="/contracts" element={<ContractsPage />} />
+              <Route path="/contracts/:id" element={<ContractDetail />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/fag" element={<RegulationPage />} />
 

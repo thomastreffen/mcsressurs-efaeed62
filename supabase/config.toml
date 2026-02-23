@@ -56,3 +56,9 @@ verify_jwt = false
 
 [functions.data-integrity]
 verify_jwt = false
+
+[functions.contract-ai]
+verify_jwt = false
+
+[functions.contract-alerts-cron]
+verify_jwt = false

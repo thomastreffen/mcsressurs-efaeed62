@@ -19,6 +19,7 @@ import {
   BookOpen,
   Activity,
   DatabaseZap,
+  FileSignature,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -51,6 +52,7 @@ const salesNav = [
 const projectNav = [
   { title: "Alle jobber", url: "/jobs", icon: FolderKanban },
   { title: "Ressursplan", url: "/resource-plan", icon: CalendarDays },
+  { title: "Kontrakter", url: "/contracts", icon: FileSignature },
 ];
 
 const fagNav = [

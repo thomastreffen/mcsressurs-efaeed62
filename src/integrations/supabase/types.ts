@@ -359,6 +359,316 @@ export type Database = {
         }
         Relationships: []
       }
+      contract_alerts: {
+        Row: {
+          alert_type: string
+          company_id: string
+          contract_id: string
+          created_at: string
+          due_date: string | null
+          id: string
+          is_read: boolean | null
+          job_id: string | null
+          message: string
+          severity: string
+          target_user_id: string | null
+          title: string
+        }
+        Insert: {
+          alert_type: string
+          company_id: string
+          contract_id: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_read?: boolean | null
+          job_id?: string | null
+          message: string
+          severity: string
+          target_user_id?: string | null
+          title: string
+        }
+        Update: {
+          alert_type?: string
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          due_date?: string | null
+          id?: string
+          is_read?: boolean | null
+          job_id?: string | null
+          message?: string
+          severity?: string
+          target_user_id?: string | null
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_alerts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_alerts_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_alerts_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_deadlines: {
+        Row: {
+          company_id: string
+          contract_id: string
+          created_at: string
+          due_date: string
+          id: string
+          job_id: string | null
+          notify_days_before: number[] | null
+          owner_user_id: string | null
+          severity: string | null
+          status: string | null
+          title: string
+          type: string
+        }
+        Insert: {
+          company_id: string
+          contract_id: string
+          created_at?: string
+          due_date: string
+          id?: string
+          job_id?: string | null
+          notify_days_before?: number[] | null
+          owner_user_id?: string | null
+          severity?: string | null
+          status?: string | null
+          title: string
+          type: string
+        }
+        Update: {
+          company_id?: string
+          contract_id?: string
+          created_at?: string
+          due_date?: string
+          id?: string
+          job_id?: string | null
+          notify_days_before?: number[] | null
+          owner_user_id?: string | null
+          severity?: string | null
+          status?: string | null
+          title?: string
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_deadlines_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_deadlines_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_deadlines_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contract_documents: {
+        Row: {
+          company_id: string
+          contract_id: string
+          file_name: string
+          file_path: string
+          id: string
+          is_primary: boolean | null
+          mime_type: string
+          uploaded_at: string
+          uploaded_by: string | null
+          version: number | null
+        }
+        Insert: {
+          company_id: string
+          contract_id: string
+          file_name: string
+          file_path: string
+          id?: string
+          is_primary?: boolean | null
+          mime_type: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          version?: number | null
+        }
+        Update: {
+          company_id?: string
+          contract_id?: string
+          file_name?: string
+          file_path?: string
+          id?: string
+          is_primary?: boolean | null
+          mime_type?: string
+          uploaded_at?: string
+          uploaded_by?: string | null
+          version?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contract_documents_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contract_documents_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "contracts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      contracts: {
+        Row: {
+          ai_confidence: number | null
+          ai_summary_econ: string | null
+          ai_summary_field: string | null
+          ai_summary_pl: string | null
+          company_id: string
+          contract_type: string | null
+          counterparty_name: string | null
+          created_at: string
+          created_by: string
+          department_id: string | null
+          end_date: string | null
+          executing_company_ids: string[] | null
+          id: string
+          job_id: string | null
+          last_analyzed_at: string | null
+          last_analyzed_by: string | null
+          lead_id: string | null
+          penalty_rate: number | null
+          penalty_type: string | null
+          penalty_unit: string | null
+          risk_level: string | null
+          risk_score: number | null
+          signed_date: string | null
+          start_date: string | null
+          status: string
+          title: string
+          updated_at: string
+          warranty_months: number | null
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_summary_econ?: string | null
+          ai_summary_field?: string | null
+          ai_summary_pl?: string | null
+          company_id: string
+          contract_type?: string | null
+          counterparty_name?: string | null
+          created_at?: string
+          created_by: string
+          department_id?: string | null
+          end_date?: string | null
+          executing_company_ids?: string[] | null
+          id?: string
+          job_id?: string | null
+          last_analyzed_at?: string | null
+          last_analyzed_by?: string | null
+          lead_id?: string | null
+          penalty_rate?: number | null
+          penalty_type?: string | null
+          penalty_unit?: string | null
+          risk_level?: string | null
+          risk_score?: number | null
+          signed_date?: string | null
+          start_date?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          warranty_months?: number | null
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_summary_econ?: string | null
+          ai_summary_field?: string | null
+          ai_summary_pl?: string | null
+          company_id?: string
+          contract_type?: string | null
+          counterparty_name?: string | null
+          created_at?: string
+          created_by?: string
+          department_id?: string | null
+          end_date?: string | null
+          executing_company_ids?: string[] | null
+          id?: string
+          job_id?: string | null
+          last_analyzed_at?: string | null
+          last_analyzed_by?: string | null
+          lead_id?: string | null
+          penalty_rate?: number | null
+          penalty_type?: string | null
+          penalty_unit?: string | null
+          risk_level?: string | null
+          risk_score?: number | null
+          signed_date?: string | null
+          start_date?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          warranty_months?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "contracts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "contracts_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           company_id: string
@@ -473,6 +783,8 @@ export type Database = {
           cancelled_at: string | null
           cancelled_by: string | null
           company_id: string | null
+          contract_alert_count: number | null
+          contract_risk_level: string | null
           created_at: string
           created_by: string | null
           customer: string | null
@@ -491,6 +803,7 @@ export type Database = {
           meeting_id: string | null
           meeting_join_url: string | null
           microsoft_event_id: string | null
+          next_contract_deadline: string | null
           offer_id: string | null
           outlook_deleted_at: string | null
           outlook_last_synced_at: string | null
@@ -514,6 +827,8 @@ export type Database = {
           cancelled_at?: string | null
           cancelled_by?: string | null
           company_id?: string | null
+          contract_alert_count?: number | null
+          contract_risk_level?: string | null
           created_at?: string
           created_by?: string | null
           customer?: string | null
@@ -532,6 +847,7 @@ export type Database = {
           meeting_id?: string | null
           meeting_join_url?: string | null
           microsoft_event_id?: string | null
+          next_contract_deadline?: string | null
           offer_id?: string | null
           outlook_deleted_at?: string | null
           outlook_last_synced_at?: string | null
@@ -555,6 +871,8 @@ export type Database = {
           cancelled_at?: string | null
           cancelled_by?: string | null
           company_id?: string | null
+          contract_alert_count?: number | null
+          contract_risk_level?: string | null
           created_at?: string
           created_by?: string | null
           customer?: string | null
@@ -573,6 +891,7 @@ export type Database = {
           meeting_id?: string | null
           meeting_join_url?: string | null
           microsoft_event_id?: string | null
+          next_contract_deadline?: string | null
           offer_id?: string | null
           outlook_deleted_at?: string | null
           outlook_last_synced_at?: string | null
