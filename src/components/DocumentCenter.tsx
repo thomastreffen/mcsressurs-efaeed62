@@ -72,7 +72,10 @@ function formatSize(bytes: number | null): string {
 function getErrorAdvice(errorType: string): string {
   switch (errorType) {
     case "FILE_TOO_LARGE": return "Last opp en mindre fil (maks 10 MB).";
+    case "FILE_TOO_LARGE_FOR_AI": return "Filen er for stor for AI-analyse. Del opp dokumentet eller last opp mindre fil.";
     case "SCANNED_PDF": return "PDF-en mangler tekst. Lim inn teksten manuelt.";
+    case "PDF_TEXT_MISSING": return "PDF-en inneholder ikke lesbar tekst (ofte skannet). Bruk OCR eller lim inn tekst manuelt.";
+    case "OUTPUT_PARSE_ERROR": return "AI-svaret kunne ikke tolkes. Prøv igjen. Kontakt support med referanse hvis det gjentar seg.";
     case "INVALID_FILE": return "Prøv med PDF, Word eller bilde.";
     case "AI_TIMEOUT": return "Prøv igjen om litt.";
     case "RATE_LIMIT": return "Vent litt og prøv igjen.";
@@ -97,6 +100,7 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
   // Track which docs have been analyzed (doc_id -> true)
   const [analyzedDocs, setAnalyzedDocs] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
+  const analysisInFlightRef = useRef(false);
 
   const fetchDocs = useCallback(async () => {
     const { data } = await supabase
@@ -207,7 +211,12 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
   };
 
   const handleAnalyze = async (doc: DocumentRow) => {
+    if (analysisInFlightRef.current || analyzingId) {
+      toast.info("Analyse kjører allerede. Vent til den er ferdig.");
+      return;
+    }
     const analysisType = doc.category === "offer" ? "offer" : "contract";
+    analysisInFlightRef.current = true;
     setAnalyzingId(doc.id);
 
     try {
@@ -225,7 +234,9 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
           description: "Nettverksfeil. Prøv igjen.",
           action: {
             label: "Prøv igjen",
-            onClick: () => handleAnalyze(doc),
+            onClick: () => {
+              if (!analysisInFlightRef.current) handleAnalyze(doc);
+            },
           },
         });
       } else if (data?.ok === false) {
@@ -249,7 +260,9 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
           description: String(data.error),
           action: {
             label: "Prøv igjen",
-            onClick: () => handleAnalyze(doc),
+            onClick: () => {
+              if (!analysisInFlightRef.current) handleAnalyze(doc);
+            },
           },
         });
       } else {
@@ -261,11 +274,14 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
         description: err.message,
         action: {
           label: "Prøv igjen",
-          onClick: () => handleAnalyze(doc),
+          onClick: () => {
+            if (!analysisInFlightRef.current) handleAnalyze(doc);
+          },
         },
       });
     }
 
+    analysisInFlightRef.current = false;
     setAnalyzingId(null);
   };
 
@@ -407,7 +423,7 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
                     variant="ghost"
                     size="sm"
                     className="h-7 px-2 text-xs gap-1 rounded-lg"
-                    disabled={analyzingId === doc.id}
+                    disabled={analyzingId !== null}
                     onClick={() => handleAnalyze(doc)}
                     title={
                       hasAnalysis
@@ -418,7 +434,10 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
                     }
                   >
                     {analyzingId === doc.id ? (
-                      <Loader2 className="h-3 w-3 animate-spin" />
+                      <>
+                        <Loader2 className="h-3 w-3 animate-spin" />
+                        <span className="sr-only">Analyserer dokument...</span>
+                      </>
                     ) : hasAnalysis ? (
                       <RotateCcw className="h-3 w-3" />
                     ) : (
