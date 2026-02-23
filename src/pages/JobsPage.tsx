@@ -56,6 +56,7 @@ export default function JobsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   const toggleSelect = (id: string) => {
@@ -243,7 +244,7 @@ export default function JobsPage() {
                   paged.map((job) => (
                     <TableRow
                       key={job.id}
-                      className="cursor-pointer hover:bg-secondary/50"
+                      className={`cursor-pointer hover:bg-secondary/50 transition-colors ${highlightedId === job.id ? "bg-primary/5 ring-1 ring-primary/20" : ""}`}
                       onClick={() => navigate(`/jobs/${job.id}`)}
                     >
                       {isAdmin && (
@@ -338,6 +339,10 @@ export default function JobsPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         preselectedTechId={null}
+        onJobCreated={() => {
+          fetchJobs();
+          // toast is already shown by CreateJobDialog
+        }}
       />
     </div>
   );

@@ -9,6 +9,7 @@ import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
 import { RegulationJobSection } from "@/components/regulation/RegulationJobSection";
 import { ContractJobSection } from "@/components/contracts/ContractJobSection";
+import { DocumentCenter } from "@/components/DocumentCenter";
 import { AuditInfo } from "@/components/AuditInfo";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -721,87 +722,9 @@ export default function JobDetail() {
                 )}
               </SectionCard>
 
-              {/* Dokumentasjon (desktop: left col, mobile: after email) */}
+              {/* Dokumentsenter */}
               <SectionCard accent="neutral" className="order-4 lg:order-none">
-                <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Dokumentasjon</SectionTitle>
-
-                {offerData && (
-                  <div className="mb-4 p-3 rounded-xl bg-accent/30 border border-border/40 space-y-2">
-                    <div className="flex items-center justify-between">
-                      <p className="text-sm font-medium">Tilbud {offerData.offer_number} (v{offerData.version})</p>
-                      <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none ${OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.className}`}>
-                        {OFFER_STATUS_CONFIG[offerData.status as OfferStatus]?.label}
-                      </span>
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Sum inkl. MVA: <span className="font-mono">kr {Number(offerData.total_inc_vat).toLocaleString("nb-NO")}</span>
-                    </p>
-                    <div className="flex gap-2">
-                      {offerData.generated_pdf_url && (
-                        <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs" onClick={() => window.open(offerData.generated_pdf_url, "_blank")}>
-                          <FileText className="h-3 w-3" /> Åpne tilbud
-                        </Button>
-                      )}
-                      <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs" onClick={() => navigate(`/calculations/${offerData.calculation_id}`)}>
-                        Gå til kalkulasjon
-                      </Button>
-                    </div>
-                  </div>
-                )}
-
-                {docAttachments.length > 0 && (
-                  <div className="space-y-2 mb-4">
-                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Filer</p>
-                    {docAttachments.map((att, i) => (
-                      <div key={i} className="flex items-center gap-3 rounded-xl border border-border/40 p-3 hover:bg-accent/20 transition-colors">
-                        <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-                        <a href={att.url} target="_blank" rel="noopener noreferrer" className="text-sm font-medium flex-1 truncate hover:underline">
-                          {att.name}
-                        </a>
-                        {att.size && <span className="text-xs text-muted-foreground shrink-0">{(att.size / 1024).toFixed(0)} KB</span>}
-                        <a href={att.url} download className="shrink-0"><Download className="h-3.5 w-3.5 text-muted-foreground hover:text-foreground" /></a>
-                        {isAdmin && (
-                          <button onClick={() => handleDeleteAttachment(att.name)} className="shrink-0">
-                            <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-                          </button>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {imageAttachments.length > 0 ? (
-                  <div>
-                    <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-2">Bilder</p>
-                    <div className="grid grid-cols-3 sm:grid-cols-4 gap-3">
-                      {imageAttachments.map((att, i) => (
-                        <div key={i} className="group relative">
-                          <button
-                            onClick={() => { setLightboxIndex(i); setLightboxOpen(true); }}
-                            className="block w-full aspect-square rounded-xl overflow-hidden border border-border/40 bg-muted cursor-pointer focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2"
-                          >
-                            <img
-                              src={att.url}
-                              alt={att.name}
-                              className="h-full w-full object-cover transition-transform group-hover:scale-105"
-                              loading="lazy"
-                            />
-                          </button>
-                          {isAdmin && (
-                            <button
-                              onClick={() => handleDeleteAttachment(att.name)}
-                              className="absolute top-1 right-1 bg-card/80 backdrop-blur rounded-lg p-1 opacity-0 group-hover:opacity-100 transition-opacity"
-                            >
-                              <Trash2 className="h-3 w-3 text-destructive" />
-                            </button>
-                          )}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                ) : docAttachments.length === 0 && !offerData ? (
-                  <p className="text-sm text-muted-foreground">Ingen dokumenter eller bilder.</p>
-                ) : null}
+                <DocumentCenter jobId={id!} companyId={null} />
               </SectionCard>
             </div>
 

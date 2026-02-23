@@ -62,3 +62,6 @@ verify_jwt = false
 
 [functions.contract-alerts-cron]
 verify_jwt = false
+
+[functions.analyze-document]
+verify_jwt = false
