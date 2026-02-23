@@ -146,6 +146,43 @@ async function checkEdgeFunctions(): Promise<CheckResult> {
   return { service: "edge_functions", status: "fail", latency_ms: latency, message: "Ingen edge functions svarer", error_code: "total_failure" };
 }
 
+async function checkContractCron(): Promise<CheckResult> {
+  const start = Date.now();
+  try {
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+    );
+    const { data: lastRun } = await supabaseAdmin
+      .from("contract_cron_runs")
+      .select("ran_at, status, error_code")
+      .eq("dry_run", false)
+      .order("ran_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+
+    const latency = Date.now() - start;
+
+    if (!lastRun) {
+      return { service: "contract_cron", status: "warn", latency_ms: latency, message: "Cron har aldri kjørt", error_code: "never_run" };
+    }
+
+    const hoursSince = (Date.now() - new Date(lastRun.ran_at).getTime()) / (1000 * 60 * 60);
+
+    if (lastRun.status !== "ok") {
+      return { service: "contract_cron", status: "fail", latency_ms: latency, message: `Siste kjøring feilet: ${lastRun.error_code || "ukjent"}`, error_code: lastRun.error_code || "last_run_failed" };
+    }
+
+    if (hoursSince > 24) {
+      return { service: "contract_cron", status: "warn", latency_ms: latency, message: `Siste kjøring var for ${Math.round(hoursSince)} timer siden`, error_code: "stale" };
+    }
+
+    return { service: "contract_cron", status: "ok", latency_ms: latency, message: `Siste kjøring OK for ${Math.round(hoursSince)} timer siden` };
+  } catch (e: any) {
+    return { service: "contract_cron", status: "fail", latency_ms: Date.now() - start, message: e.message, error_code: "cron_check_exception" };
+  }
+}
+
 serve(async (req) => {
   if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
 
@@ -186,6 +223,7 @@ serve(async (req) => {
         checkGraph(supabase, user.id),
         checkAi(),
         checkEdgeFunctions(),
+        checkContractCron(),
       ]);
     } else {
       switch (action) {
@@ -193,7 +231,7 @@ serve(async (req) => {
         case "graph_check": results = [await checkGraph(supabase, user.id)]; break;
         case "ai_check": results = [await checkAi()]; break;
         case "edge_check": results = [await checkEdgeFunctions()]; break;
-        default: throw new Error(`Unknown action: ${action}`);
+        case "cron_check": results = [await checkContractCron()]; break;
       }
     }
 

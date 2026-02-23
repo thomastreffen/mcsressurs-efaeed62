@@ -20,6 +20,7 @@ import {
   Activity,
   DatabaseZap,
   FileSignature,
+  Timer,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -67,6 +68,7 @@ const adminNav = [
   { title: "Integrasjonshelse", url: "/admin/integration-health", icon: HeartPulse, requireAdmin: true },
   { title: "Systemhelse", url: "/admin/system-health", icon: Activity, requireAdmin: true },
   { title: "Dataintegritet", url: "/admin/data-integrity", icon: DatabaseZap, requireAdmin: true },
+  { title: "Kontraktvarsler", url: "/admin/contract-cron", icon: Timer, requireAdmin: true },
   { title: "Innstillinger", url: "/admin/settings", icon: Settings, requireAdmin: true },
   { title: "Papirkurv", url: "/admin/trash", icon: Trash2, requireAdmin: true },
 ];

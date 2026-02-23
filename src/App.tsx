@@ -38,6 +38,7 @@ import SystemHealthPage from "./pages/SystemHealthPage";
 import DataIntegrityPage from "./pages/DataIntegrityPage";
 import ContractsPage from "./pages/ContractsPage";
 import ContractDetail from "./pages/ContractDetail";
+import ContractCronPage from "./pages/ContractCronPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -215,6 +216,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <DataIntegrityPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/contract-cron"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <ContractCronPage />
                   </ProtectedRoute>
                 }
               />
