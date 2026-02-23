@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from "react";
+import { getRiskFlagLabel } from "@/lib/risk-flag-labels";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -489,7 +490,17 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
 
 /* ── Analysis Summary Card ── */
 function AnalysisSummaryCard({ title, analysis, type }: { title: string; analysis: AnalysisRow; type: string }) {
+  const [showAllReservations, setShowAllReservations] = useState(false);
+  const [showAllFlags, setShowAllFlags] = useState(false);
   const fields = analysis.parsed_fields || {};
+
+  const MAX_RESERVATIONS = 3;
+  const MAX_FLAGS = 5;
+
+  const reservations: string[] = fields.reservations || [];
+  const riskFlags: string[] = fields.risk_flags || [];
+  const visibleReservations = showAllReservations ? reservations : reservations.slice(0, MAX_RESERVATIONS);
+  const visibleFlags = showAllFlags ? riskFlags : riskFlags.slice(0, MAX_FLAGS);
 
   return (
     <div className="rounded-xl border border-border/60 bg-accent/10 p-4 space-y-2">
@@ -524,12 +535,20 @@ function AnalysisSummaryCard({ title, analysis, type }: { title: string; analysi
               <p className="text-xs">{fields.scope_summary}</p>
             </div>
           )}
-          {fields.reservations?.length > 0 && (
+          {reservations.length > 0 && (
             <div>
               <p className="text-muted-foreground text-xs mb-1">Forbehold</p>
               <ul className="text-xs list-disc list-inside space-y-0.5">
-                {fields.reservations.map((r: string, i: number) => <li key={i}>{r}</li>)}
+                {visibleReservations.map((r: string, i: number) => <li key={i}>{r}</li>)}
               </ul>
+              {reservations.length > MAX_RESERVATIONS && (
+                <button
+                  onClick={() => setShowAllReservations(!showAllReservations)}
+                  className="text-xs text-primary hover:underline mt-1"
+                >
+                  {showAllReservations ? "Vis færre" : `+ ${reservations.length - MAX_RESERVATIONS} flere`}
+                </button>
+              )}
             </div>
           )}
         </div>
@@ -555,12 +574,22 @@ function AnalysisSummaryCard({ title, analysis, type }: { title: string; analysi
               <span className="text-xs truncate max-w-[60%] text-right">{fields.payment_terms}</span>
             </div>
           )}
-          {fields.risk_flags?.length > 0 && (
+          {riskFlags.length > 0 && (
             <div>
               <p className="text-destructive text-xs font-medium mb-1">🚩 Røde flagg</p>
               <ul className="text-xs list-disc list-inside space-y-0.5 text-destructive/80">
-                {fields.risk_flags.map((f: string, i: number) => <li key={i}>{f}</li>)}
+                {visibleFlags.map((f: string, i: number) => (
+                  <li key={i}>{getRiskFlagLabel(f)}</li>
+                ))}
               </ul>
+              {riskFlags.length > MAX_FLAGS && (
+                <button
+                  onClick={() => setShowAllFlags(!showAllFlags)}
+                  className="text-xs text-primary hover:underline mt-1"
+                >
+                  {showAllFlags ? "Vis færre" : `+ ${riskFlags.length - MAX_FLAGS} flere`}
+                </button>
+              )}
             </div>
           )}
         </div>

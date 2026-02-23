@@ -5,6 +5,7 @@ import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 
+import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
 import { RegulationJobSection } from "@/components/regulation/RegulationJobSection";
@@ -13,6 +14,7 @@ import { DocumentCenter } from "@/components/DocumentCenter";
 import { AuditInfo } from "@/components/AuditInfo";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
+import { JobSummaryCard } from "@/components/JobSummaryCard";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Job, Attachment } from "@/lib/mock-data";
@@ -605,63 +607,57 @@ export default function JobDetail() {
 
         {/* ═══ Main Content: 2-col grid ═══ */}
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 pb-28 md:pb-8">
-          <div className="grid grid-cols-1 lg:grid-cols-5 gap-7">
-            {/* ── LEFT COLUMN (3/5) ── */}
-            <div className="lg:col-span-3 space-y-7">
+          {/* Job Summary Card */}
+          <JobSummaryCard
+            jobId={id!}
+            customer={job.customer}
+            status={job.status}
+            address={job.address}
+            technicianNames={technicianNames}
+          />
 
-              {/* Planlegging */}
-              <SectionCard accent="blue">
-                <SectionTitle icon={<Clock className="h-4 w-4 text-primary" />}>Planlegging</SectionTitle>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tidspunkt</p>
-                      <p className="text-sm font-medium">
-                        {format(job.start, "EEEE d. MMM", { locale: nb })}
-                      </p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(job.start, "HH:mm")} – {format(job.end, "HH:mm")}
-                      </p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Adresse</p>
-                      <p className="text-sm font-medium">{job.address || "—"}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Montører</p>
-                      <p className="text-sm font-medium">
-                        {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
-                      </p>
-                    </div>
-                  </div>
+          {/* Tabbed Navigation */}
+          <Tabs defaultValue="oversikt" className="mt-6">
+            <TabsList className="h-9 w-full justify-start overflow-x-auto bg-muted/50 rounded-xl">
+              <TabsTrigger value="oversikt" className="text-xs px-3 py-1.5 rounded-lg">Oversikt</TabsTrigger>
+              <TabsTrigger value="okonomi" className="text-xs px-3 py-1.5 rounded-lg">Økonomi</TabsTrigger>
+              <TabsTrigger value="dokumenter" className="text-xs px-3 py-1.5 rounded-lg">Dokumenter</TabsTrigger>
+              <TabsTrigger value="plan" className="text-xs px-3 py-1.5 rounded-lg">Plan</TabsTrigger>
+              <TabsTrigger value="epost" className="text-xs px-3 py-1.5 rounded-lg">E-post</TabsTrigger>
+              <TabsTrigger value="risiko" className="text-xs px-3 py-1.5 rounded-lg">Risiko</TabsTrigger>
+            </TabsList>
 
-                  {job.description && (
-                    <div className="pt-3 border-t border-border/40">
-                      <p className="text-sm text-muted-foreground whitespace-pre-wrap">{job.description}</p>
-                    </div>
-                  )}
-
-                  {job.attendeeStatuses.length > 0 && (
-                    <div className="pt-3 border-t border-border/40">
-                      <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
-                    </div>
-                  )}
-
-                  {/* Calendar sync */}
-                  <div ref={syncRef} className="pt-3 border-t border-border/40">
-                    <JobCalendarSync
-                      jobId={job.id}
-                      jobStart={job.start}
-                      jobEnd={job.end}
-                      technicianIds={job.technicianIds}
-                      isAdmin={isAdmin}
-                      calendarDirty={job.calendarDirty}
-                      calendarLastSyncedAt={job.calendarLastSyncedAt}
-                      onSynced={() => fetchJob()}
-                    />
-                  </div>
+            {/* ── OVERSIKT ── */}
+            <TabsContent value="oversikt" className="mt-5 space-y-6">
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Status</p>
+                  <JobStatusBadge status={job.status} />
                 </div>
-              </SectionCard>
+                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Kunde</p>
+                  <p className="text-sm font-medium truncate">{job.customer || "—"}</p>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Dato & sted</p>
+                  <p className="text-xs font-medium">{format(job.start, "d. MMM yyyy", { locale: nb })}</p>
+                  <p className="text-[11px] text-muted-foreground truncate">{job.address || "—"}</p>
+                </div>
+                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
+                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Montører</p>
+                  <p className="text-xs font-medium truncate">
+                    {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
+                  </p>
+                </div>
+              </div>
+
+              {job.description && (
+                <SectionCard>
+                  <SectionTitle icon={<FileText className="h-4 w-4 text-muted-foreground" />}>Beskrivelse</SectionTitle>
+                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{job.description}</p>
+                </SectionCard>
+              )}
 
               {/* Teams-møte */}
               <SectionCard accent="blue">
@@ -673,33 +669,13 @@ export default function JobDetail() {
                         <span className="text-muted-foreground text-xs">Tidspunkt: </span>
                         <span className="text-sm">{format(job.start, "d. MMM HH:mm", { locale: nb })} – {format(job.end, "HH:mm")}</span>
                       </div>
-                      {job.meetingCreatedAt && (
-                        <div>
-                          <span className="text-muted-foreground text-xs">Opprettet: </span>
-                          <span className="text-sm">{format(job.meetingCreatedAt, "d. MMM HH:mm", { locale: nb })}</span>
-                        </div>
-                      )}
                     </div>
                     <div className="flex gap-2">
-                      <Button
-                        size="sm"
-                        className="rounded-xl gap-1.5"
-                        onClick={() => window.open(job.meetingJoinUrl!, "_blank")}
-                      >
-                        <ExternalLink className="h-3.5 w-3.5" />
-                        Bli med
+                      <Button size="sm" className="rounded-xl gap-1.5" onClick={() => window.open(job.meetingJoinUrl!, "_blank")}>
+                        <ExternalLink className="h-3.5 w-3.5" /> Bli med
                       </Button>
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-xl gap-1.5"
-                        onClick={() => {
-                          navigator.clipboard.writeText(job.meetingJoinUrl!);
-                          toast.success("Møtelenke kopiert");
-                        }}
-                      >
-                        <Copy className="h-3.5 w-3.5" />
-                        Kopier lenke
+                      <Button size="sm" variant="outline" className="rounded-xl gap-1.5" onClick={() => { navigator.clipboard.writeText(job.meetingJoinUrl!); toast.success("Møtelenke kopiert"); }}>
+                        <Copy className="h-3.5 w-3.5" /> Kopier lenke
                       </Button>
                     </div>
                   </div>
@@ -707,13 +683,7 @@ export default function JobDetail() {
                   <div className="space-y-2">
                     <p className="text-sm text-muted-foreground">Ingen Teams-møte opprettet.</p>
                     {isAdmin && (
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-xl gap-1.5"
-                        disabled={meetingLoading}
-                        onClick={handleCreateMeeting}
-                      >
+                      <Button size="sm" variant="outline" className="rounded-xl gap-1.5" disabled={meetingLoading} onClick={handleCreateMeeting}>
                         {meetingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
                         Opprett Teams-møte
                       </Button>
@@ -722,29 +692,7 @@ export default function JobDetail() {
                 )}
               </SectionCard>
 
-              {/* Dokumentsenter */}
-              <SectionCard accent="neutral" className="order-4 lg:order-none">
-                <DocumentCenter jobId={id!} companyId={null} />
-              </SectionCard>
-            </div>
-
-            {/* ── RIGHT COLUMN (2/5) ── */}
-            <div className="lg:col-span-2 space-y-7">
-
-              {/* E-post */}
-              <div ref={emailRef}>
-                <SectionCard accent="orange">
-                  <EmailComposer
-                    entityType="job"
-                    entityId={job.id}
-                    defaultSubject={`${job.customer || ""} | ${job.title}`}
-                    refCode={job.internalNumber || displayNumber}
-                    onSent={() => fetchLogs()}
-                  />
-                </SectionCard>
-              </div>
-
-              {/* Historikk – collapsible on mobile */}
+              {/* Historikk */}
               <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
                 <SectionCard>
                   <CollapsibleTrigger asChild>
@@ -757,7 +705,7 @@ export default function JobDetail() {
                           </span>
                         )}
                       </SectionTitle>
-                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform lg:hidden ${historyOpen ? "rotate-180" : ""}`} />
+                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${historyOpen ? "rotate-180" : ""}`} />
                     </button>
                   </CollapsibleTrigger>
                   <CollapsibleContent>
@@ -782,18 +730,7 @@ export default function JobDetail() {
                 </SectionCard>
               </Collapsible>
 
-              {/* Kontraktstatus */}
-              <SectionCard>
-                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Kontraktstatus</SectionTitle>
-                <ContractJobSection jobId={id!} />
-              </SectionCard>
-
-              {/* Faglogg */}
-              <SectionCard>
-                <RegulationJobSection jobId={id!} />
-              </SectionCard>
-
-              {/* Audit info – collapsible on mobile */}
+              {/* Detaljer */}
               <Collapsible defaultOpen={!isMobile}>
                 <SectionCard>
                   <CollapsibleTrigger asChild>
@@ -807,48 +744,161 @@ export default function JobDetail() {
                   </CollapsibleContent>
                 </SectionCard>
               </Collapsible>
+            </TabsContent>
 
-              {/* Admin Debug (collapsed) */}
-              {isAdmin && job.microsoftEventId && (
-                <Collapsible open={debugOpen} onOpenChange={setDebugOpen}>
-                  <CollapsibleTrigger asChild>
-                    <button className="flex items-center gap-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors w-full py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
-                      <ChevronDown className={`h-3 w-3 transition-transform ${debugOpen ? "rotate-180" : ""}`} />
-                      Admin: Legacy Outlook Sync
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <SectionCard className="mt-2">
-                      <div className="flex items-center justify-between mb-3">
-                        <SectionTitle icon={<CalendarCheck className="h-4 w-4 text-muted-foreground" />}>Legacy Outlook</SectionTitle>
-                        <SyncBadge status={job.outlookSyncStatus} />
+            {/* ── ØKONOMI ── */}
+            <TabsContent value="okonomi" className="mt-5 space-y-6">
+              <SectionCard>
+                <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Økonomi</SectionTitle>
+                <div className="space-y-3">
+                  {offerData ? (
+                    <div className="space-y-2">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Tilbudssum eks. mva</span>
+                        <span className="font-mono font-medium">NOK {Number(offerData.total_ex_vat).toLocaleString("nb-NO")}</span>
                       </div>
-                      <div className="space-y-1.5 text-sm">
-                        <div>
-                          <span className="text-muted-foreground text-xs">Event ID: </span>
-                          <span className="font-mono text-[11px]">{job.microsoftEventId.slice(0, 20)}…</span>
-                        </div>
-                        <div>
-                          <span className="text-muted-foreground text-xs">Sist synkronisert: </span>
-                          <span className="text-sm">{job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}</span>
-                        </div>
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Tilbudssum inkl. mva</span>
+                        <span className="font-mono font-medium">NOK {Number(offerData.total_inc_vat).toLocaleString("nb-NO")}</span>
                       </div>
-                      <div className="flex gap-2 mt-3">
-                        <Button size="sm" variant="outline" className="rounded-xl gap-1.5 text-xs" disabled={!!syncLoading} onClick={() => handleOutlookAction("resync")}>
-                          {syncLoading === "resync" ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                          Resync
-                        </Button>
-                        <Button size="sm" variant="outline" className="rounded-xl gap-1.5 text-xs" disabled={!!syncLoading} onClick={() => handleOutlookAction("disconnect")}>
-                          {syncLoading === "disconnect" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
-                          Koble fra
-                        </Button>
-                      </div>
-                    </SectionCard>
-                  </CollapsibleContent>
-                </Collapsible>
-              )}
-            </div>
-          </div>
+                    </div>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">Ingen tilbudsdata knyttet til denne jobben.</p>
+                  )}
+                  <div className="pt-3 border-t border-border/40">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Kostnader</span>
+                      <span className="text-xs text-muted-foreground italic">Kost ikke registrert</span>
+                    </div>
+                  </div>
+                  <div className="pt-3 border-t border-border/40">
+                    <div className="flex justify-between text-sm">
+                      <span className="text-muted-foreground">Margin</span>
+                      <span className="text-xs text-muted-foreground italic">Krever kostnadsregistrering</span>
+                    </div>
+                  </div>
+                </div>
+              </SectionCard>
+            </TabsContent>
+
+            {/* ── DOKUMENTER ── */}
+            <TabsContent value="dokumenter" className="mt-5">
+              <SectionCard>
+                <DocumentCenter jobId={id!} companyId={null} />
+              </SectionCard>
+            </TabsContent>
+
+            {/* ── PLAN ── */}
+            <TabsContent value="plan" className="mt-5 space-y-6">
+              <SectionCard accent="blue">
+                <SectionTitle icon={<Clock className="h-4 w-4 text-primary" />}>Planlegging</SectionTitle>
+                <div className="space-y-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tidspunkt</p>
+                      <p className="text-sm font-medium">{format(job.start, "EEEE d. MMM", { locale: nb })}</p>
+                      <p className="text-xs text-muted-foreground">{format(job.start, "HH:mm")} – {format(job.end, "HH:mm")}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Adresse</p>
+                      <p className="text-sm font-medium">{job.address || "—"}</p>
+                    </div>
+                    <div className="space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Montører</p>
+                      <p className="text-sm font-medium">
+                        {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
+                      </p>
+                    </div>
+                  </div>
+
+                  {job.attendeeStatuses.length > 0 && (
+                    <div className="pt-3 border-t border-border/40">
+                      <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
+                    </div>
+                  )}
+
+                  <div ref={syncRef} className="pt-3 border-t border-border/40">
+                    <JobCalendarSync
+                      jobId={job.id}
+                      jobStart={job.start}
+                      jobEnd={job.end}
+                      technicianIds={job.technicianIds}
+                      isAdmin={isAdmin}
+                      calendarDirty={job.calendarDirty}
+                      calendarLastSyncedAt={job.calendarLastSyncedAt}
+                      onSynced={() => fetchJob()}
+                    />
+                  </div>
+                </div>
+              </SectionCard>
+            </TabsContent>
+
+            {/* ── E-POST ── */}
+            <TabsContent value="epost" className="mt-5">
+              <div ref={emailRef}>
+                <SectionCard accent="orange">
+                  <EmailComposer
+                    entityType="job"
+                    entityId={job.id}
+                    defaultSubject={`${job.customer || ""} | ${job.title}`}
+                    refCode={job.internalNumber || displayNumber}
+                    onSent={() => fetchLogs()}
+                  />
+                </SectionCard>
+              </div>
+            </TabsContent>
+
+            {/* ── RISIKO ── */}
+            <TabsContent value="risiko" className="mt-5 space-y-6">
+              <SectionCard>
+                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Kontraktstatus</SectionTitle>
+                <ContractJobSection jobId={id!} />
+              </SectionCard>
+              <SectionCard>
+                <RegulationJobSection jobId={id!} />
+              </SectionCard>
+            </TabsContent>
+          </Tabs>
+
+          {/* Admin Debug (collapsed) */}
+          {isAdmin && job.microsoftEventId && (
+            <Collapsible open={debugOpen} onOpenChange={setDebugOpen} className="mt-6">
+              <CollapsibleTrigger asChild>
+                <button className="flex items-center gap-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors w-full py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
+                  <ChevronDown className={`h-3 w-3 transition-transform ${debugOpen ? "rotate-180" : ""}`} />
+                  Admin: Legacy Outlook Sync
+                </button>
+              </CollapsibleTrigger>
+              <CollapsibleContent>
+                <SectionCard className="mt-2">
+                  <div className="flex items-center justify-between mb-3">
+                    <SectionTitle icon={<CalendarCheck className="h-4 w-4 text-muted-foreground" />}>Legacy Outlook</SectionTitle>
+                    <SyncBadge status={job.outlookSyncStatus} />
+                  </div>
+                  <div className="space-y-1.5 text-sm">
+                    <div>
+                      <span className="text-muted-foreground text-xs">Event ID: </span>
+                      <span className="font-mono text-[11px]">{job.microsoftEventId.slice(0, 20)}…</span>
+                    </div>
+                    <div>
+                      <span className="text-muted-foreground text-xs">Sist synkronisert: </span>
+                      <span className="text-sm">{job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}</span>
+                    </div>
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <Button size="sm" variant="outline" className="rounded-xl gap-1.5 text-xs" disabled={!!syncLoading} onClick={() => handleOutlookAction("resync")}>
+                      {syncLoading === "resync" ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                      Resync
+                    </Button>
+                    <Button size="sm" variant="outline" className="rounded-xl gap-1.5 text-xs" disabled={!!syncLoading} onClick={() => handleOutlookAction("disconnect")}>
+                      {syncLoading === "disconnect" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
+                      Koble fra
+                    </Button>
+                  </div>
+                </SectionCard>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
         </div>
 
         {/* ── Mobile Action Bar ── */}
