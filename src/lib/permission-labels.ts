@@ -91,6 +91,11 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
 
   // Regulation
   "regulation.review": { label: "Godkjenne fagforespørsler", description: "Kan godkjenne eller avvise fagforespørsler som faglig ansvarlig.", category: "Fag" },
+
+  // Contracts
+  "contracts.read": { label: "Se kontrakter", category: "Kontrakter" },
+  "contracts.edit": { label: "Opprette og redigere kontrakter", category: "Kontrakter" },
+  "contracts.admin": { label: "Administrere kontrakter", description: "Full tilgang til sletting og arkivering av kontrakter.", category: "Kontrakter" },
 };
 
 /** All permission keys excluding scope (scope is handled as a dropdown) */
@@ -139,6 +144,11 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
     category: "Fag",
     description: "Tilgang til fagmodul og forskriftsoppslag.",
     keys: ["regulation.review"],
+  },
+  {
+    category: "Kontrakter",
+    description: "Tilgang til kontraktsmodulen med risiko og fristanalyse.",
+    keys: ["contracts.read", "contracts.edit", "contracts.admin"],
   },
 ];
 

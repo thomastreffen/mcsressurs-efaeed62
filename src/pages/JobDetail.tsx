@@ -8,6 +8,7 @@ import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
 import { AttendeeStatusList } from "@/components/AttendeeStatusList";
 import { RegulationJobSection } from "@/components/regulation/RegulationJobSection";
+import { ContractJobSection } from "@/components/contracts/ContractJobSection";
 import { AuditInfo } from "@/components/AuditInfo";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
@@ -44,6 +45,7 @@ import {
   ChevronDown,
   Mail,
   Send,
+  FileSignature,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -843,6 +845,12 @@ export default function JobDetail() {
                   </CollapsibleContent>
                 </SectionCard>
               </Collapsible>
+
+              {/* Kontraktstatus */}
+              <SectionCard>
+                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Kontraktstatus</SectionTitle>
+                <ContractJobSection jobId={id!} />
+              </SectionCard>
 
               {/* Faglogg */}
               <SectionCard>
