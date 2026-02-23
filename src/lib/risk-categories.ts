@@ -41,3 +41,51 @@ const FLAG_CATEGORY: Record<string, RiskCategory> = {
 export function getCategoryForFlag(flag: string): RiskCategory {
   return FLAG_CATEGORY[flag] || "documentation";
 }
+
+/* ── Severity mapping ── */
+
+export type RiskSeverity = "low" | "medium" | "high";
+
+const HIGH_FLAGS = new Set([
+  "unclarified_short_circuit_level_risk",
+  "short_circuit_level_missing",
+  "price_consequences_for_deviations",
+  "price_change_on_deviation",
+  "missing_scope_items",
+  "rigging_cost_not_included",
+  "rigging_not_included",
+  "crane_rental_not_included",
+  "crane_not_included",
+  "power_supply_not_included",
+  "construction_power_not_included",
+  "unclear_responsibility",
+  "missing_technical_data",
+]);
+
+const MEDIUM_FLAGS = new Set([
+  "late_payment_risk",
+  "late_payment",
+  "storage_risk",
+  "storage_responsibility",
+  "limitation_of_liability",
+  "liability_limitations",
+]);
+
+const LOW_FLAGS = new Set([
+  "ethics_compliance",
+  "whistleblowing",
+  "corruption_policy",
+  "audit_cooperation",
+]);
+
+export function getSeverityForFlag(flag: string): RiskSeverity {
+  if (HIGH_FLAGS.has(flag)) return "high";
+  if (MEDIUM_FLAGS.has(flag)) return "medium";
+  if (LOW_FLAGS.has(flag)) return "low";
+  return "medium"; // default
+}
+
+/** Returns true if flag is a compliance/general requirement rather than project-critical */
+export function isComplianceFlag(flag: string): boolean {
+  return LOW_FLAGS.has(flag);
+}
