@@ -79,6 +79,7 @@ export function useContracts() {
       const { data, error } = await supabase
         .from("contracts")
         .select("*")
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as unknown as Contract[];
@@ -160,6 +161,7 @@ export function useContractsByJob(jobId: string | undefined) {
         .from("contracts")
         .select("*")
         .eq("job_id", jobId!)
+        .is("deleted_at", null)
         .order("created_at", { ascending: false });
       if (error) throw error;
       return data as unknown as Contract[];

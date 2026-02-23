@@ -96,6 +96,9 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
   "contracts.read": { label: "Se kontrakter", category: "Kontrakter" },
   "contracts.edit": { label: "Opprette og redigere kontrakter", category: "Kontrakter" },
   "contracts.admin": { label: "Administrere kontrakter", description: "Full tilgang til sletting og arkivering av kontrakter.", category: "Kontrakter" },
+
+  // Data
+  "data.delete": { label: "Slette data", description: "Kan flytte elementer til papirkurven.", category: "Data" },
 };
 
 /** All permission keys excluding scope (scope is handled as a dropdown) */
@@ -149,6 +152,11 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
     category: "Kontrakter",
     description: "Tilgang til kontraktsmodulen med risiko og fristanalyse.",
     keys: ["contracts.read", "contracts.edit", "contracts.admin"],
+  },
+  {
+    category: "Data",
+    description: "Generelle rettigheter for datahåndtering.",
+    keys: ["data.delete"],
   },
 ];
 

@@ -526,6 +526,18 @@ export default function JobDetail() {
                         <Copy className="h-3.5 w-3.5" /> Kopier Teams-lenke
                       </DropdownMenuItem>
                     )}
+                    {isAdmin && (
+                      <DropdownMenuItem
+                        className="gap-2 text-destructive focus:text-destructive"
+                        onClick={async () => {
+                          await supabase.from("events").update({ deleted_at: new Date().toISOString(), deleted_by: user?.id } as any).eq("id", job.id);
+                          toast.success("Flyttet til papirkurv", { description: job.title });
+                          navigate("/jobs");
+                        }}
+                      >
+                        <Trash2 className="h-3.5 w-3.5" /> Flytt til papirkurv
+                      </DropdownMenuItem>
+                    )}
                   </DropdownMenuContent>
                 </DropdownMenu>
               </div>

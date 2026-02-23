@@ -14,7 +14,8 @@ import {
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
-import { Trash2, RotateCcw, Loader2, FolderKanban, Calculator, ReceiptText, Archive } from "lucide-react";
+import { Input } from "@/components/ui/input";
+import { Trash2, RotateCcw, Loader2, FolderKanban, Calculator, ReceiptText, Archive, UserPlus, FileSignature } from "lucide-react";
 import { toast } from "sonner";
 
 interface DeletedItem {
@@ -22,22 +23,25 @@ interface DeletedItem {
   title: string;
   subtitle?: string;
   deleted_at: string;
-  type: "job" | "calculation" | "offer";
+  type: "job" | "calculation" | "offer" | "lead" | "contract";
 }
 
 export default function TrashPage() {
-  const { user } = useAuth();
+  const { isAdmin } = useAuth();
   const [items, setItems] = useState<DeletedItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("all");
   const [operating, setOperating] = useState<string | null>(null);
+  const [confirmText, setConfirmText] = useState("");
 
   const fetchDeleted = async () => {
     setLoading(true);
-    const [jobsRes, calcsRes, offersRes] = await Promise.all([
+    const [jobsRes, calcsRes, offersRes, leadsRes, contractsRes] = await Promise.all([
       supabase.from("events").select("id, title, customer, deleted_at").not("deleted_at", "is", null).order("deleted_at", { ascending: false }),
       supabase.from("calculations").select("id, project_title, customer_name, deleted_at").not("deleted_at", "is", null).order("deleted_at", { ascending: false }),
       supabase.from("offers").select("id, offer_number, deleted_at, calculations(customer_name)").not("deleted_at", "is", null).order("deleted_at", { ascending: false }),
+      supabase.from("leads").select("id, company_name, contact_name, deleted_at").not("deleted_at", "is", null).order("deleted_at", { ascending: false }),
+      supabase.from("contracts").select("id, title, counterparty_name, deleted_at").not("deleted_at", "is", null).order("deleted_at", { ascending: false }),
     ]);
 
     const all: DeletedItem[] = [];
@@ -50,6 +54,12 @@ export default function TrashPage() {
     (offersRes.data || []).forEach((o: any) => all.push({
       id: o.id, title: o.offer_number, subtitle: (o.calculations as any)?.customer_name, deleted_at: o.deleted_at, type: "offer",
     }));
+    (leadsRes.data || []).forEach((l: any) => all.push({
+      id: l.id, title: l.company_name, subtitle: l.contact_name, deleted_at: l.deleted_at, type: "lead",
+    }));
+    (contractsRes.data || []).forEach((c: any) => all.push({
+      id: c.id, title: c.title, subtitle: c.counterparty_name, deleted_at: c.deleted_at, type: "contract",
+    }));
     all.sort((a, b) => new Date(b.deleted_at).getTime() - new Date(a.deleted_at).getTime());
     setItems(all);
     setLoading(false);
@@ -59,8 +69,8 @@ export default function TrashPage() {
 
   const restore = async (item: DeletedItem) => {
     setOperating(item.id);
-    const table = item.type === "job" ? "events" : item.type === "calculation" ? "calculations" : "offers";
-    await supabase.from(table).update({ deleted_at: null, deleted_by: null }).eq("id", item.id);
+    const table = item.type === "job" ? "events" : item.type === "calculation" ? "calculations" : item.type === "lead" ? "leads" : item.type === "contract" ? "contracts" : "offers";
+    await supabase.from(table).update({ deleted_at: null, deleted_by: null } as any).eq("id", item.id);
     toast.success("Gjenopprettet", { description: item.title });
     setItems(prev => prev.filter(i => i.id !== item.id));
     setOperating(null);
@@ -68,11 +78,12 @@ export default function TrashPage() {
 
   const permanentDelete = async (item: DeletedItem) => {
     setOperating(item.id);
-    const table = item.type === "job" ? "events" : item.type === "calculation" ? "calculations" : "offers";
+    const table = item.type === "job" ? "events" : item.type === "calculation" ? "calculations" : item.type === "lead" ? "leads" : item.type === "contract" ? "contracts" : "offers";
     await supabase.from(table).delete().eq("id", item.id);
     toast.success("Permanent slettet", { description: item.title });
     setItems(prev => prev.filter(i => i.id !== item.id));
     setOperating(null);
+    setConfirmText("");
   };
 
   const filtered = activeTab === "all" ? items : items.filter(i => i.type === activeTab);
@@ -80,14 +91,20 @@ export default function TrashPage() {
   const typeIcon = (type: string) => {
     if (type === "job") return <FolderKanban className="h-3.5 w-3.5" />;
     if (type === "calculation") return <Calculator className="h-3.5 w-3.5" />;
+    if (type === "lead") return <UserPlus className="h-3.5 w-3.5" />;
+    if (type === "contract") return <FileSignature className="h-3.5 w-3.5" />;
     return <ReceiptText className="h-3.5 w-3.5" />;
   };
 
   const typeLabel = (type: string) => {
     if (type === "job") return "Jobb";
     if (type === "calculation") return "Kalkulasjon";
+    if (type === "lead") return "Lead";
+    if (type === "contract") return "Kontrakt";
     return "Tilbud";
   };
+
+  const countByType = (type: string) => items.filter(i => i.type === type).length;
 
   if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
@@ -101,11 +118,13 @@ export default function TrashPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="all">Alle ({items.length})</TabsTrigger>
-          <TabsTrigger value="job" className="gap-1"><FolderKanban className="h-3 w-3" />Jobber ({items.filter(i => i.type === "job").length})</TabsTrigger>
-          <TabsTrigger value="calculation" className="gap-1"><Calculator className="h-3 w-3" />Kalkulasjoner ({items.filter(i => i.type === "calculation").length})</TabsTrigger>
-          <TabsTrigger value="offer" className="gap-1"><ReceiptText className="h-3 w-3" />Tilbud ({items.filter(i => i.type === "offer").length})</TabsTrigger>
+          <TabsTrigger value="job" className="gap-1"><FolderKanban className="h-3 w-3" />Jobber ({countByType("job")})</TabsTrigger>
+          <TabsTrigger value="lead" className="gap-1"><UserPlus className="h-3 w-3" />Leads ({countByType("lead")})</TabsTrigger>
+          <TabsTrigger value="contract" className="gap-1"><FileSignature className="h-3 w-3" />Kontrakter ({countByType("contract")})</TabsTrigger>
+          <TabsTrigger value="calculation" className="gap-1"><Calculator className="h-3 w-3" />Kalkulasjoner ({countByType("calculation")})</TabsTrigger>
+          <TabsTrigger value="offer" className="gap-1"><ReceiptText className="h-3 w-3" />Tilbud ({countByType("offer")})</TabsTrigger>
         </TabsList>
       </Tabs>
 
@@ -145,27 +164,39 @@ export default function TrashPage() {
                         {operating === item.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RotateCcw className="h-3 w-3" />}
                         Gjenopprett
                       </Button>
-                      <AlertDialog>
-                        <AlertDialogTrigger asChild>
-                          <Button variant="destructive" size="sm" className="gap-1 h-7 text-xs" disabled={operating === item.id}>
-                            <Trash2 className="h-3 w-3" /> Slett permanent
-                          </Button>
-                        </AlertDialogTrigger>
-                        <AlertDialogContent>
-                          <AlertDialogHeader>
-                            <AlertDialogTitle>Slett permanent?</AlertDialogTitle>
-                            <AlertDialogDescription>
-                              Dette kan ikke angres. "{item.title}" vil bli permanent slettet fra systemet.
-                            </AlertDialogDescription>
-                          </AlertDialogHeader>
-                          <AlertDialogFooter>
-                            <AlertDialogCancel>Avbryt</AlertDialogCancel>
-                            <AlertDialogAction onClick={() => permanentDelete(item)} className="bg-destructive text-destructive-foreground hover:bg-destructive/90">
-                              Slett permanent
-                            </AlertDialogAction>
-                          </AlertDialogFooter>
-                        </AlertDialogContent>
-                      </AlertDialog>
+                      {isAdmin && (
+                        <AlertDialog>
+                          <AlertDialogTrigger asChild>
+                            <Button variant="destructive" size="sm" className="gap-1 h-7 text-xs" disabled={operating === item.id}>
+                              <Trash2 className="h-3 w-3" /> Slett permanent
+                            </Button>
+                          </AlertDialogTrigger>
+                          <AlertDialogContent>
+                            <AlertDialogHeader>
+                              <AlertDialogTitle>Slett permanent?</AlertDialogTitle>
+                              <AlertDialogDescription>
+                                Dette kan ikke angres. Skriv <strong>SLETT</strong> for å bekrefte permanent sletting av &quot;{item.title}&quot;.
+                              </AlertDialogDescription>
+                            </AlertDialogHeader>
+                            <Input
+                              placeholder='Skriv "SLETT"'
+                              value={confirmText}
+                              onChange={(e) => setConfirmText(e.target.value)}
+                              className="mt-2"
+                            />
+                            <AlertDialogFooter>
+                              <AlertDialogCancel onClick={() => setConfirmText("")}>Avbryt</AlertDialogCancel>
+                              <AlertDialogAction
+                                onClick={() => permanentDelete(item)}
+                                disabled={confirmText !== "SLETT"}
+                                className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                              >
+                                Slett permanent
+                              </AlertDialogAction>
+                            </AlertDialogFooter>
+                          </AlertDialogContent>
+                        </AlertDialog>
+                      )}
                     </div>
                   </TableCell>
                 </TableRow>

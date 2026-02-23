@@ -23,6 +23,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmailComposer } from "@/components/EmailComposer";
+import { ContractListSection } from "@/components/contracts/ContractListSection";
 
 // ─── Error Boundary ───
 class LeadDetailErrorBoundary extends Component<{ children: ReactNode }, { hasError: boolean }> {
@@ -823,6 +824,13 @@ function LeadDetailInner() {
           )}
         </div>
       ),
+    },
+    {
+      value: "contracts",
+      label: "Kontrakter",
+      content: id ? (
+        <ContractListSection entityType="lead" entityId={id} />
+      ) : null,
     },
     {
       value: "history",
