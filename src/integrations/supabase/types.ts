@@ -1327,6 +1327,161 @@ export type Database = {
           },
         ]
       }
+      job_change_order_events: {
+        Row: {
+          actor_email: string | null
+          actor_name: string | null
+          actor_type: string
+          change_order_id: string
+          created_at: string
+          event_message: string | null
+          event_type: string
+          id: string
+          job_id: string
+        }
+        Insert: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_type?: string
+          change_order_id: string
+          created_at?: string
+          event_message?: string | null
+          event_type: string
+          id?: string
+          job_id: string
+        }
+        Update: {
+          actor_email?: string | null
+          actor_name?: string | null
+          actor_type?: string
+          change_order_id?: string
+          created_at?: string
+          event_message?: string | null
+          event_type?: string
+          id?: string
+          job_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_change_order_events_change_order_id_fkey"
+            columns: ["change_order_id"]
+            isOneToOne: false
+            referencedRelation: "job_change_orders"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_change_order_events_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_change_orders: {
+        Row: {
+          amount_ex_vat: number
+          amount_inc_vat: number | null
+          approval_expires_at: string | null
+          approval_method: string | null
+          approval_token_hash: string | null
+          approved_by_email: string | null
+          approved_by_name: string | null
+          cost_labor_hours: number | null
+          cost_labor_rate: number
+          cost_material: number | null
+          cost_total: number | null
+          created_at: string
+          created_by: string
+          currency: string
+          customer_email: string | null
+          customer_name: string | null
+          description: string
+          id: string
+          job_id: string
+          margin_amount: number | null
+          reason_type: string
+          responded_at: string | null
+          response_message: string | null
+          schedule_impact: string | null
+          sent_at: string | null
+          status: string
+          title: string
+          updated_at: string
+          vat_rate: number
+        }
+        Insert: {
+          amount_ex_vat?: number
+          amount_inc_vat?: number | null
+          approval_expires_at?: string | null
+          approval_method?: string | null
+          approval_token_hash?: string | null
+          approved_by_email?: string | null
+          approved_by_name?: string | null
+          cost_labor_hours?: number | null
+          cost_labor_rate?: number
+          cost_material?: number | null
+          cost_total?: number | null
+          created_at?: string
+          created_by: string
+          currency?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          description: string
+          id?: string
+          job_id: string
+          margin_amount?: number | null
+          reason_type?: string
+          responded_at?: string | null
+          response_message?: string | null
+          schedule_impact?: string | null
+          sent_at?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+          vat_rate?: number
+        }
+        Update: {
+          amount_ex_vat?: number
+          amount_inc_vat?: number | null
+          approval_expires_at?: string | null
+          approval_method?: string | null
+          approval_token_hash?: string | null
+          approved_by_email?: string | null
+          approved_by_name?: string | null
+          cost_labor_hours?: number | null
+          cost_labor_rate?: number
+          cost_material?: number | null
+          cost_total?: number | null
+          created_at?: string
+          created_by?: string
+          currency?: string
+          customer_email?: string | null
+          customer_name?: string | null
+          description?: string
+          id?: string
+          job_id?: string
+          margin_amount?: number | null
+          reason_type?: string
+          responded_at?: string | null
+          response_message?: string | null
+          schedule_impact?: string | null
+          sent_at?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+          vat_rate?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_change_orders_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_participants: {
         Row: {
           created_at: string

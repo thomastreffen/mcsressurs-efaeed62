@@ -15,6 +15,7 @@ import { AuditInfo } from "@/components/AuditInfo";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { JobSummaryCard } from "@/components/JobSummaryCard";
+import { ChangeOrderTab } from "@/components/change-orders/ChangeOrderTab";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Job, Attachment } from "@/lib/mock-data";
@@ -155,6 +156,8 @@ export default function JobDetail() {
     source: "job_summaries" | "offer_analysis" | "ingen";
   }>({ totalAmount: null, currency: "NOK", paymentTerms: null, source: "ingen" });
   const [historyOpen, setHistoryOpen] = useState(!isMobile);
+  const [coApproved, setCoApproved] = useState(0);
+  const [coPending, setCoPending] = useState(0);
 
   // Refs for scroll-to actions
   const emailRef = useRef<HTMLDivElement>(null);
@@ -690,6 +693,7 @@ export default function JobDetail() {
               <TabsTrigger value="plan" className="text-xs px-3 py-1.5 rounded-lg">Plan</TabsTrigger>
               <TabsTrigger value="epost" className="text-xs px-3 py-1.5 rounded-lg">E-post</TabsTrigger>
               <TabsTrigger value="risiko" className="text-xs px-3 py-1.5 rounded-lg">Risiko</TabsTrigger>
+              <TabsTrigger value="tillegg" className="text-xs px-3 py-1.5 rounded-lg">Tillegg</TabsTrigger>
             </TabsList>
 
             {/* ── OVERSIKT ── */}
@@ -816,23 +820,30 @@ export default function JobDetail() {
               {/* KPI Cards */}
               {econData.totalAmount != null ? (
                 <>
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                    {/* Tilbudssum */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                     <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tilbudssum</p>
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Baseverdi</p>
                       <p className="text-lg font-bold text-foreground font-mono">
                         {econData.currency} {econData.totalAmount.toLocaleString("nb-NO")}
                       </p>
                     </div>
-                    {/* Kostnader */}
+                    {coApproved > 0 && (
+                      <div className="rounded-xl border border-success/20 bg-success/5 p-4 space-y-1">
+                        <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Godkjente tillegg</p>
+                        <p className="text-sm font-bold font-mono text-success">+{econData.currency} {coApproved.toLocaleString("nb-NO")}</p>
+                      </div>
+                    )}
+                    {coPending > 0 && (
+                      <div className="rounded-xl border border-info/20 bg-info/5 p-4 space-y-1">
+                        <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Avventende</p>
+                        <p className="text-sm font-bold font-mono text-info">{econData.currency} {coPending.toLocaleString("nb-NO")}</p>
+                      </div>
+                    )}
                     <div className="rounded-xl border border-border/40 bg-card p-4 space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Kostnader</p>
-                      <p className="text-sm text-muted-foreground italic">Ikke registrert</p>
-                    </div>
-                    {/* Margin */}
-                    <div className="rounded-xl border border-border/40 bg-card p-4 space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Margin</p>
-                      <p className="text-sm text-muted-foreground italic">Krever kostnadsregistrering</p>
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Total nå</p>
+                      <p className="text-lg font-bold text-foreground font-mono">
+                        {econData.currency} {(econData.totalAmount + coApproved).toLocaleString("nb-NO")}
+                      </p>
                     </div>
                   </div>
 
@@ -969,6 +980,20 @@ export default function JobDetail() {
               </SectionCard>
               <SectionCard>
                 <RegulationJobSection jobId={id!} />
+              </SectionCard>
+            </TabsContent>
+
+            {/* ── TILLEGG ── */}
+            <TabsContent value="tillegg" className="mt-5">
+              <SectionCard>
+                <ChangeOrderTab
+                  jobId={id!}
+                  customer={job.customer}
+                  customerEmail={undefined}
+                  baseAmount={econData.totalAmount}
+                  currency={econData.currency}
+                  onTotalsChange={(approved, pending) => { setCoApproved(approved); setCoPending(pending); }}
+                />
               </SectionCard>
             </TabsContent>
           </Tabs>

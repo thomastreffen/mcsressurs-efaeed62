@@ -27,6 +27,7 @@ import LeadDetail from "./pages/LeadDetail";
 import PipelinePage from "./pages/PipelinePage";
 import SalesDashboard from "./pages/SalesDashboard";
 import OfferAcceptPage from "./pages/OfferAcceptPage";
+import ApproveChangeOrderPage from "./pages/ApproveChangeOrderPage";
 import CompanySettings from "./pages/CompanySettings";
 import TrashPage from "./pages/TrashPage";
 import AccessControlPage from "./pages/AccessControlPage";
@@ -56,6 +57,7 @@ const App = () => (
             <Route path="/auth/callback" element={<AuthCallback />} />
             <Route path="/approval/:token" element={<ApprovalPage />} />
             <Route path="/offer/accept/:token" element={<OfferAcceptPage />} />
+            <Route path="/approve-change-order" element={<ApproveChangeOrderPage />} />
 
             {/* App layout with sidebar */}
             <Route
