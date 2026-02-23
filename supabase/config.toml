@@ -65,3 +65,9 @@ verify_jwt = false
 
 [functions.analyze-document]
 verify_jwt = false
+
+[functions.send-change-order]
+verify_jwt = false
+
+[functions.approve-change-order]
+verify_jwt = false
