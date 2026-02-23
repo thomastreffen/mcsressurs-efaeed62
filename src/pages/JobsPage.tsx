@@ -4,8 +4,10 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { CreateJobDialog } from "@/components/CreateJobDialog";
+import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -54,17 +56,26 @@ export default function JobsPage() {
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
   const [createOpen, setCreateOpen] = useState(false);
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    async function fetchJobs() {
-      setLoading(true);
-      const { data, error } = await supabase
-        .from("events")
-        .select(`
-          id, title, customer, address, start_time, status, job_number, internal_number, outlook_sync_status,
-          event_technicians(technician_id, technicians(name, color))
-        `)
-        .order("start_time", { ascending: false });
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
+  };
+  const toggleSelectAll = () => {
+    if (selectedIds.length === paged.length) setSelectedIds([]);
+    else setSelectedIds(paged.map(j => j.id));
+  };
+
+  const fetchJobs = async () => {
+    setLoading(true);
+    const { data, error } = await supabase
+      .from("events")
+      .select(`
+        id, title, customer, address, start_time, status, job_number, internal_number, outlook_sync_status,
+        event_technicians(technician_id, technicians(name, color))
+      `)
+      .is("deleted_at", null)
+      .order("start_time", { ascending: false });
 
       if (data) {
         setJobs(
@@ -88,10 +99,10 @@ export default function JobsPage() {
           })
         );
       }
-      setLoading(false);
-    }
-    fetchJobs();
-  }, []);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchJobs(); }, []);
 
   const filtered = useMemo(() => {
     let result = [...jobs];
@@ -181,10 +192,27 @@ export default function JobsPage() {
         </div>
       ) : (
         <>
+          {selectedIds.length > 0 && (
+            <BulkDeleteBar
+              selectedIds={selectedIds}
+              entityType="events"
+              entityLabel="jobber"
+              onComplete={() => { setSelectedIds([]); fetchJobs(); }}
+              onCancel={() => setSelectedIds([])}
+            />
+          )}
           <div className="rounded-lg border overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>
+                  {isAdmin && (
+                    <TableHead className="w-10">
+                      <Checkbox
+                        checked={paged.length > 0 && selectedIds.length === paged.length}
+                        onCheckedChange={toggleSelectAll}
+                      />
+                    </TableHead>
+                  )}
                   <TableHead className="w-[120px]">Jobbnr</TableHead>
                   <TableHead>Kunde</TableHead>
                   <TableHead className="hidden md:table-cell">Adresse</TableHead>
@@ -207,7 +235,7 @@ export default function JobsPage() {
               <TableBody>
                 {paged.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={isAdmin ? 8 : 7} className="text-center text-muted-foreground py-8">
                       Ingen jobber funnet.
                     </TableCell>
                   </TableRow>
@@ -218,6 +246,14 @@ export default function JobsPage() {
                       className="cursor-pointer hover:bg-secondary/50"
                       onClick={() => navigate(`/jobs/${job.id}`)}
                     >
+                      {isAdmin && (
+                        <TableCell onClick={(e) => e.stopPropagation()}>
+                          <Checkbox
+                            checked={selectedIds.includes(job.id)}
+                            onCheckedChange={() => toggleSelect(job.id)}
+                          />
+                        </TableCell>
+                      )}
                       <TableCell className="font-mono text-xs">
                         {getDisplayNumber(job.jobNumber, job.internalNumber)}
                       </TableCell>

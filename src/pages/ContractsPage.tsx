@@ -6,6 +6,7 @@ import { ContractRiskBadge } from "@/components/contracts/ContractRiskBadge";
 import { CreateContractDialog } from "@/components/contracts/CreateContractDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";

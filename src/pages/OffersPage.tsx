@@ -3,13 +3,16 @@ import { useNavigate } from "react-router-dom";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { OFFER_STATUS_CONFIG, ALL_OFFER_STATUSES, type OfferStatus } from "@/lib/offer-status";
 import { Search, FileText, Loader2, ExternalLink, Plus } from "lucide-react";
 
@@ -30,22 +33,25 @@ interface Offer {
 
 export default function OffersPage() {
   const navigate = useNavigate();
+  const { isAdmin } = useAuth();
   const [offers, setOffers] = useState<Offer[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      const { data } = await supabase
-        .from("offers")
-        .select("*, calculations(customer_name, project_title)")
-        .order("created_at", { ascending: false });
-      setOffers((data || []) as unknown as Offer[]);
-      setLoading(false);
-    })();
-  }, []);
+  const fetchOffers = async () => {
+    setLoading(true);
+    const { data } = await supabase
+      .from("offers")
+      .select("*, calculations(customer_name, project_title)")
+      .is("deleted_at", null)
+      .order("created_at", { ascending: false });
+    setOffers((data || []) as unknown as Offer[]);
+    setLoading(false);
+  };
+
+  useEffect(() => { fetchOffers(); }, []);
 
   const filtered = offers.filter((o) => {
     if (statusFilter !== "all" && o.status !== statusFilter) return false;
@@ -90,10 +96,27 @@ export default function OffersPage() {
         </Select>
       </div>
 
+      {selectedIds.length > 0 && (
+        <BulkDeleteBar
+          selectedIds={selectedIds}
+          entityType="offers"
+          entityLabel="tilbud"
+          onComplete={() => { setSelectedIds([]); fetchOffers(); }}
+          onCancel={() => setSelectedIds([])}
+        />
+      )}
       <div className="rounded-lg border overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
+              {isAdmin && (
+                <TableHead className="w-10">
+                  <Checkbox
+                    checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                    onCheckedChange={() => selectedIds.length === filtered.length ? setSelectedIds([]) : setSelectedIds(filtered.map(o => o.id))}
+                  />
+                </TableHead>
+              )}
               <TableHead>Tilbudsnr</TableHead>
               <TableHead>Kunde</TableHead>
               <TableHead>Prosjekt</TableHead>
@@ -108,13 +131,21 @@ export default function OffersPage() {
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={9} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground py-8">
                   <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
                   Ingen tilbud funnet
                 </TableCell>
               </TableRow>
             ) : filtered.map((offer) => (
               <TableRow key={offer.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/calculations/${offer.calculation_id}`)}>
+                {isAdmin && (
+                  <TableCell onClick={(e) => e.stopPropagation()}>
+                    <Checkbox
+                      checked={selectedIds.includes(offer.id)}
+                      onCheckedChange={() => setSelectedIds(prev => prev.includes(offer.id) ? prev.filter(x => x !== offer.id) : [...prev, offer.id])}
+                    />
+                  </TableCell>
+                )}
                 <TableCell className="font-mono text-sm font-medium">{offer.offer_number}</TableCell>
                 <TableCell className="text-sm">{offer.calculations?.customer_name || "—"}</TableCell>
                 <TableCell className="text-sm">{offer.calculations?.project_title || "—"}</TableCell>

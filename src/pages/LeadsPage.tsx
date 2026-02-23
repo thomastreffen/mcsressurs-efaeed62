@@ -8,9 +8,11 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
+import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
 import { Search, Plus, Loader2, Building2, AlertTriangle, Clock, User } from "lucide-react";
 import { toast } from "sonner";
@@ -36,7 +38,7 @@ interface Lead {
 
 export default function LeadsPage() {
   const navigate = useNavigate();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
@@ -44,6 +46,7 @@ export default function LeadsPage() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
+  const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Create form state
   const [companyName, setCompanyName] = useState("");
@@ -55,7 +58,7 @@ export default function LeadsPage() {
 
   const fetchLeads = async () => {
     setLoading(true);
-    const { data } = await supabase.from("leads").select("*").order("created_at", { ascending: false });
+    const { data } = await supabase.from("leads").select("*").is("deleted_at", null).order("created_at", { ascending: false });
     const leadData = (data || []) as any as Lead[];
     setLeads(leadData);
 
@@ -149,10 +152,28 @@ export default function LeadsPage() {
       {loading ? (
         <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
-        <div className="rounded-lg border overflow-x-auto">
+        <>
+          {selectedIds.length > 0 && (
+            <BulkDeleteBar
+              selectedIds={selectedIds}
+              entityType="leads"
+              entityLabel="leads"
+              onComplete={() => { setSelectedIds([]); fetchLeads(); }}
+              onCancel={() => setSelectedIds([])}
+            />
+          )}
+          <div className="rounded-lg border overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
+                {isAdmin && (
+                  <TableHead className="w-10">
+                    <Checkbox
+                      checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                      onCheckedChange={() => selectedIds.length === filtered.length ? setSelectedIds([]) : setSelectedIds(filtered.map(l => l.id))}
+                    />
+                  </TableHead>
+                )}
                 <TableHead>Firma</TableHead>
                 <TableHead className="hidden md:table-cell">Eier</TableHead>
                 <TableHead>Status</TableHead>
@@ -164,7 +185,7 @@ export default function LeadsPage() {
             <TableBody>
               {filtered.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="text-center text-muted-foreground py-8">
+                  <TableCell colSpan={isAdmin ? 7 : 6} className="text-center text-muted-foreground py-8">
                     <Building2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
                     Ingen leads funnet
                   </TableCell>
@@ -173,6 +194,14 @@ export default function LeadsPage() {
                 const isOverdue = lead.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
                 return (
                   <TableRow key={lead.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/leads/${lead.id}`)}>
+                    {isAdmin && (
+                      <TableCell onClick={(e) => e.stopPropagation()}>
+                        <Checkbox
+                          checked={selectedIds.includes(lead.id)}
+                          onCheckedChange={() => setSelectedIds(prev => prev.includes(lead.id) ? prev.filter(x => x !== lead.id) : [...prev, lead.id])}
+                        />
+                      </TableCell>
+                    )}
                     <TableCell>
                       <p className="text-sm font-medium">{lead.company_name}</p>
                       {lead.contact_name && <p className="text-xs text-muted-foreground">{lead.contact_name}</p>}
@@ -217,6 +246,7 @@ export default function LeadsPage() {
             </TableBody>
           </Table>
         </div>
+        </>
       )}
 
       {/* Create Dialog */}
