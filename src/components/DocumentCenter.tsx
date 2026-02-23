@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import {
@@ -15,7 +15,9 @@ import {
   Loader2,
   Sparkles,
   Tag,
-  ChevronRight,
+  RotateCcw,
+  Copy,
+  CheckCircle2,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -66,6 +68,19 @@ function formatSize(bytes: number | null): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+// Map errorType to user-friendly advice
+function getErrorAdvice(errorType: string): string {
+  switch (errorType) {
+    case "FILE_TOO_LARGE": return "Last opp en mindre fil (maks 10 MB).";
+    case "SCANNED_PDF": return "PDF-en mangler tekst. Lim inn teksten manuelt.";
+    case "INVALID_FILE": return "Prøv med PDF, Word eller bilde.";
+    case "AI_TIMEOUT": return "Prøv igjen om litt.";
+    case "RATE_LIMIT": return "Vent litt og prøv igjen.";
+    case "AI_ERROR": return "Prøv igjen. Feilen kan være midlertidig.";
+    default: return "Prøv igjen eller kontakt support.";
+  }
+}
+
 interface DocumentCenterProps {
   jobId: string;
   companyId?: string | null;
@@ -79,6 +94,8 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
   const [uploading, setUploading] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("all");
+  // Track which docs have been analyzed (doc_id -> true)
+  const [analyzedDocs, setAnalyzedDocs] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = useCallback(async () => {
@@ -96,7 +113,12 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
       .select("*")
       .eq("job_id", jobId)
       .order("created_at", { ascending: false });
-    if (analysesData) setAnalyses(analysesData as any);
+    if (analysesData) {
+      setAnalyses(analysesData as any);
+      const analyzed = new Set<string>();
+      (analysesData as any[]).forEach(a => analyzed.add(a.document_id));
+      setAnalyzedDocs(analyzed);
+    }
 
     setLoading(false);
   }, [jobId]);
@@ -128,7 +150,6 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
         .from("job-attachments")
         .getPublicUrl(filePath);
 
-      // Determine category from extension
       const ext = file.name.split(".").pop()?.toLowerCase() || "";
       const isImage = ["jpg", "jpeg", "png", "gif", "webp"].includes(ext);
       const category = isImage ? "image" : "other";
@@ -199,15 +220,50 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
       });
 
       if (error) {
-        toast.error("AI-analyse feilet", { description: String(error) });
+        // Network/invoke error
+        toast.error("AI-analyse feilet", {
+          description: "Nettverksfeil. Prøv igjen.",
+          action: {
+            label: "Prøv igjen",
+            onClick: () => handleAnalyze(doc),
+          },
+        });
+      } else if (data?.ok === false) {
+        // Structured error from edge function
+        const requestId = data.requestId || "ukjent";
+        const advice = getErrorAdvice(data.errorType || "");
+        toast.error(data.message || "AI-analyse feilet", {
+          description: `${advice} (Ref: ${requestId.substring(0, 8)})`,
+          duration: 8000,
+          action: {
+            label: "Kopier ref",
+            onClick: () => {
+              navigator.clipboard.writeText(requestId);
+              toast.info("Referanse kopiert");
+            },
+          },
+        });
       } else if (data?.error) {
-        toast.error("AI-analyse feilet", { description: data.error });
+        // Legacy error format
+        toast.error("AI-analyse feilet", {
+          description: String(data.error),
+          action: {
+            label: "Prøv igjen",
+            onClick: () => handleAnalyze(doc),
+          },
+        });
       } else {
         toast.success(`${analysisType === "offer" ? "Tilbudsanalyse" : "Kontraktanalyse"} fullført`);
         fetchDocs();
       }
     } catch (err: any) {
-      toast.error("Feil ved analyse", { description: err.message });
+      toast.error("Feil ved analyse", {
+        description: err.message,
+        action: {
+          label: "Prøv igjen",
+          onClick: () => handleAnalyze(doc),
+        },
+      });
     }
 
     setAnalyzingId(null);
@@ -215,7 +271,6 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
 
   const filtered = activeTab === "all" ? docs : docs.filter(d => d.category === activeTab);
 
-  // Find latest analysis per type
   const latestOfferAnalysis = analyses.find(a => a.analysis_type === "offer");
   const latestContractAnalysis = analyses.find(a => a.analysis_type === "contract");
 
@@ -303,91 +358,110 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
         </div>
       ) : (
         <div className="space-y-1.5">
-          {filtered.map(doc => (
-            <div
-              key={doc.id}
-              className="flex items-center gap-2 rounded-xl border border-border/40 p-3 hover:bg-accent/10 transition-colors"
-            >
-              <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
-
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium truncate">{doc.file_name}</p>
-                <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-                  {doc.file_size && <span>{formatSize(doc.file_size)}</span>}
-                  <span>{format(new Date(doc.created_at), "d. MMM yyyy", { locale: nb })}</span>
-                </div>
-              </div>
-
-              {/* Category selector */}
-              <Select
-                value={doc.category}
-                onValueChange={(v) => handleCategoryChange(doc.id, v)}
+          {filtered.map(doc => {
+            const hasAnalysis = analyzedDocs.has(doc.id);
+            return (
+              <div
+                key={doc.id}
+                className="flex items-center gap-2 rounded-xl border border-border/40 p-3 hover:bg-accent/10 transition-colors"
               >
-                <SelectTrigger className="h-7 w-24 text-[11px] rounded-lg">
-                  <Tag className="h-3 w-3 mr-1" />
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {CATEGORIES.map(c => (
-                    <SelectItem key={c.value} value={c.value} className="text-xs">
-                      {c.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+                <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
 
-              {/* AI analyze button for offer/contract */}
-              {(doc.category === "offer" || doc.category === "contract") && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-7 px-2 text-xs gap-1 rounded-lg"
-                  disabled={analyzingId === doc.id}
-                  onClick={() => handleAnalyze(doc)}
-                  title={doc.category === "offer" ? "Analyser tilbud" : "Analyser kontrakt"}
-                >
-                  {analyzingId === doc.id ? (
-                    <Loader2 className="h-3 w-3 animate-spin" />
-                  ) : (
-                    <Sparkles className="h-3 w-3" />
-                  )}
-                </Button>
-              )}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5">
+                    <p className="text-sm font-medium truncate">{doc.file_name}</p>
+                    {hasAnalysis && (
+                      <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+                    {doc.file_size && <span>{formatSize(doc.file_size)}</span>}
+                    <span>{format(new Date(doc.created_at), "d. MMM yyyy", { locale: nb })}</span>
+                    {hasAnalysis && (
+                      <span className="text-green-600 font-medium">Analysert</span>
+                    )}
+                  </div>
+                </div>
 
-              {/* Preview/open */}
-              {doc.public_url && (
-                <a
-                  href={doc.public_url}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary hover:text-primary/80 shrink-0"
+                {/* Category selector */}
+                <Select
+                  value={doc.category}
+                  onValueChange={(v) => handleCategoryChange(doc.id, v)}
                 >
-                  <ExternalLink className="h-3.5 w-3.5" />
-                </a>
-              )}
+                  <SelectTrigger className="h-7 w-24 text-[11px] rounded-lg">
+                    <Tag className="h-3 w-3 mr-1" />
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {CATEGORIES.map(c => (
+                      <SelectItem key={c.value} value={c.value} className="text-xs">
+                        {c.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
 
-              {/* Download */}
-              {doc.public_url && (
-                <a
-                  href={doc.public_url}
-                  download={doc.file_name}
-                  className="text-muted-foreground hover:text-foreground shrink-0"
-                >
-                  <Download className="h-3.5 w-3.5" />
-                </a>
-              )}
+                {/* AI analyze button for offer/contract */}
+                {(doc.category === "offer" || doc.category === "contract") && (
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-7 px-2 text-xs gap-1 rounded-lg"
+                    disabled={analyzingId === doc.id}
+                    onClick={() => handleAnalyze(doc)}
+                    title={
+                      hasAnalysis
+                        ? "Analyser på nytt"
+                        : doc.category === "offer"
+                        ? "Analyser tilbud"
+                        : "Analyser kontrakt"
+                    }
+                  >
+                    {analyzingId === doc.id ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : hasAnalysis ? (
+                      <RotateCcw className="h-3 w-3" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                  </Button>
+                )}
 
-              {/* Delete */}
-              {isAdmin && (
-                <button
-                  onClick={() => handleDelete(doc)}
-                  className="text-muted-foreground hover:text-destructive shrink-0"
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-          ))}
+                {/* Preview/open */}
+                {doc.public_url && (
+                  <a
+                    href={doc.public_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-primary hover:text-primary/80 shrink-0"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </a>
+                )}
+
+                {/* Download */}
+                {doc.public_url && (
+                  <a
+                    href={doc.public_url}
+                    download={doc.file_name}
+                    className="text-muted-foreground hover:text-foreground shrink-0"
+                  >
+                    <Download className="h-3.5 w-3.5" />
+                  </a>
+                )}
+
+                {/* Delete */}
+                {isAdmin && (
+                  <button
+                    onClick={() => handleDelete(doc)}
+                    className="text-muted-foreground hover:text-destructive shrink-0"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+              </div>
+            );
+          })}
         </div>
       )}
     </div>
