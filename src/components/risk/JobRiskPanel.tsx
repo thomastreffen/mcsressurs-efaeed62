@@ -223,9 +223,19 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
   const level = riskLevel(score);
   const LevelIcon = level.icon;
 
-  // Top 5 critical risks sorted by severity
+  // Top 5 critical risks: HIGH, or MEDIUM non-documentation
+  const CATEGORY_PRIORITY: Record<string, number> = {
+    economic: 0, technical: 1, schedule: 2, legal: 3, documentation: 4,
+  };
   const topCritical = [...projectItems]
-    .sort((a, b) => (SEVERITY_ORDER[a.severity] ?? 1) - (SEVERITY_ORDER[b.severity] ?? 1))
+    .filter(i =>
+      i.severity === "high" ||
+      (i.severity === "medium" && i.category !== "documentation")
+    )
+    .sort((a, b) =>
+      (SEVERITY_ORDER[a.severity] ?? 1) - (SEVERITY_ORDER[b.severity] ?? 1) ||
+      (CATEGORY_PRIORITY[a.category] ?? 4) - (CATEGORY_PRIORITY[b.category] ?? 4)
+    )
     .slice(0, 5);
 
   // Group project items by category (excluding compliance)
@@ -301,7 +311,7 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
         <div className="rounded-xl border border-destructive/30 overflow-hidden">
           <div className="px-4 py-2.5 bg-destructive/5 flex items-center gap-2">
             <AlertTriangle className="h-4 w-4 text-destructive" />
-            <span className="text-sm font-semibold text-destructive">Topp prosjektkritiske risikoer</span>
+            <span className="text-sm font-semibold text-destructive">Topp prosjektkritiske risikoer (økonomi / teknikk / fremdrift)</span>
             <Badge variant="outline" className="text-[10px] h-5 ml-1 border-destructive/30 text-destructive">{topCritical.length}</Badge>
           </div>
           <div className="divide-y divide-border/40">
