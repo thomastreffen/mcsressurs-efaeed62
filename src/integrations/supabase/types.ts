@@ -1359,6 +1359,50 @@ export type Database = {
           },
         ]
       }
+      job_summaries: {
+        Row: {
+          created_at: string
+          id: string
+          is_locked: boolean
+          job_id: string
+          key_numbers: Json | null
+          source: string
+          summary_text: string | null
+          updated_at: string
+          updated_by: string | null
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          is_locked?: boolean
+          job_id: string
+          key_numbers?: Json | null
+          source?: string
+          summary_text?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          is_locked?: boolean
+          job_id?: string
+          key_numbers?: Json | null
+          source?: string
+          summary_text?: string | null
+          updated_at?: string
+          updated_by?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_summaries_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: true
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_calendar_links: {
         Row: {
           attendee_emails: string[] | null
