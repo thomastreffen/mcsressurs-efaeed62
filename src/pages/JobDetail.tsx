@@ -146,6 +146,14 @@ export default function JobDetail() {
   const [meetingLoading, setMeetingLoading] = useState(false);
   const [offerData, setOfferData] = useState<any>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+
+  // Economy source hierarchy state
+  const [econData, setEconData] = useState<{
+    totalAmount: number | null;
+    currency: string;
+    paymentTerms: string | null;
+    source: "job_summaries" | "offer_analysis" | "ingen";
+  }>({ totalAmount: null, currency: "NOK", paymentTerms: null, source: "ingen" });
   const [historyOpen, setHistoryOpen] = useState(!isMobile);
 
   // Refs for scroll-to actions
@@ -247,9 +255,66 @@ export default function JobDetail() {
     if (data) setLogs(data);
   }, [id]);
 
+  const fetchEconData = useCallback(async () => {
+    if (!id) return;
+    // 1. Try job_summaries first
+    const { data: summary } = await supabase
+      .from("job_summaries")
+      .select("key_numbers")
+      .eq("job_id", id)
+      .maybeSingle();
+
+    const kn = (summary?.key_numbers as any) || {};
+    if (kn.total_amount != null) {
+      setEconData({
+        totalAmount: Number(kn.total_amount),
+        currency: kn.currency || "NOK",
+        paymentTerms: kn.payment_terms || null,
+        source: "job_summaries",
+      });
+      return;
+    }
+
+    // 2. Fallback: latest offer analysis
+    const { data: analyses } = await supabase
+      .from("document_analyses")
+      .select("parsed_fields")
+      .eq("job_id", id)
+      .eq("analysis_type", "offer")
+      .order("created_at", { ascending: false })
+      .limit(1);
+
+    if (analyses && analyses.length > 0) {
+      const pf = (analyses[0].parsed_fields as any) || {};
+      if (pf.total_amount != null) {
+        // Also check contract analysis for payment_terms
+        const { data: contractAnalyses } = await supabase
+          .from("document_analyses")
+          .select("parsed_fields")
+          .eq("job_id", id)
+          .eq("analysis_type", "contract")
+          .order("created_at", { ascending: false })
+          .limit(1);
+        const cpf = contractAnalyses?.[0]?.parsed_fields as any;
+
+        setEconData({
+          totalAmount: Number(pf.total_amount),
+          currency: pf.currency || "NOK",
+          paymentTerms: cpf?.payment_terms || null,
+          source: "offer_analysis",
+        });
+        return;
+      }
+    }
+
+    // 3. No data
+    setEconData({ totalAmount: null, currency: "NOK", paymentTerms: null, source: "ingen" });
+  }, [id]);
+
   useEffect(() => {
     fetchJob();
     fetchLogs();
+    fetchEconData();
     if (id) {
       supabase.from("events").select("offer_id").eq("id", id).single().then(({ data }) => {
         if (data?.offer_id) {
@@ -259,7 +324,7 @@ export default function JobDetail() {
         }
       });
     }
-  }, [fetchJob, fetchLogs, id]);
+  }, [fetchJob, fetchLogs, fetchEconData, id]);
 
   /* ── Status change ── */
   const handleStatusChange = async (newStatus: JobStatus) => {
@@ -748,37 +813,85 @@ export default function JobDetail() {
 
             {/* ── ØKONOMI ── */}
             <TabsContent value="okonomi" className="mt-5 space-y-6">
-              <SectionCard>
-                <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Økonomi</SectionTitle>
-                <div className="space-y-3">
-                  {offerData ? (
-                    <div className="space-y-2">
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Tilbudssum eks. mva</span>
-                        <span className="font-mono font-medium">NOK {Number(offerData.total_ex_vat).toLocaleString("nb-NO")}</span>
-                      </div>
-                      <div className="flex justify-between text-sm">
-                        <span className="text-muted-foreground">Tilbudssum inkl. mva</span>
-                        <span className="font-mono font-medium">NOK {Number(offerData.total_inc_vat).toLocaleString("nb-NO")}</span>
-                      </div>
+              {/* KPI Cards */}
+              {econData.totalAmount != null ? (
+                <>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                    {/* Tilbudssum */}
+                    <div className="rounded-xl border border-primary/20 bg-primary/5 p-4 space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tilbudssum</p>
+                      <p className="text-lg font-bold text-foreground font-mono">
+                        {econData.currency} {econData.totalAmount.toLocaleString("nb-NO")}
+                      </p>
                     </div>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">Ingen tilbudsdata knyttet til denne jobben.</p>
-                  )}
-                  <div className="pt-3 border-t border-border/40">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Kostnader</span>
-                      <span className="text-xs text-muted-foreground italic">Kost ikke registrert</span>
+                    {/* Kostnader */}
+                    <div className="rounded-xl border border-border/40 bg-card p-4 space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Kostnader</p>
+                      <p className="text-sm text-muted-foreground italic">Ikke registrert</p>
                     </div>
-                  </div>
-                  <div className="pt-3 border-t border-border/40">
-                    <div className="flex justify-between text-sm">
-                      <span className="text-muted-foreground">Margin</span>
-                      <span className="text-xs text-muted-foreground italic">Krever kostnadsregistrering</span>
+                    {/* Margin */}
+                    <div className="rounded-xl border border-border/40 bg-card p-4 space-y-1">
+                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Margin</p>
+                      <p className="text-sm text-muted-foreground italic">Krever kostnadsregistrering</p>
                     </div>
                   </div>
-                </div>
-              </SectionCard>
+
+                  {/* Payment terms & offer details */}
+                  <SectionCard>
+                    <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Økonomidetaljer</SectionTitle>
+                    <div className="space-y-3">
+                      <div className="flex justify-between text-sm">
+                        <span className="text-muted-foreground">Tilbudsverdi</span>
+                        <span className="font-mono font-medium">{econData.currency} {econData.totalAmount.toLocaleString("nb-NO")}</span>
+                      </div>
+                      {offerData && (
+                        <>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Tilbudssum eks. mva</span>
+                            <span className="font-mono font-medium">NOK {Number(offerData.total_ex_vat).toLocaleString("nb-NO")}</span>
+                          </div>
+                          <div className="flex justify-between text-sm">
+                            <span className="text-muted-foreground">Tilbudssum inkl. mva</span>
+                            <span className="font-mono font-medium">NOK {Number(offerData.total_inc_vat).toLocaleString("nb-NO")}</span>
+                          </div>
+                        </>
+                      )}
+                      {econData.paymentTerms && (
+                        <div className="flex justify-between text-sm pt-3 border-t border-border/40">
+                          <span className="text-muted-foreground">Betalingsvilkår</span>
+                          <span className="font-medium">{econData.paymentTerms}</span>
+                        </div>
+                      )}
+                      <div className="pt-3 border-t border-border/40">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Kostnader</span>
+                          <span className="text-xs text-muted-foreground italic">Kost ikke registrert</span>
+                        </div>
+                      </div>
+                      <div className="pt-3 border-t border-border/40">
+                        <div className="flex justify-between text-sm">
+                          <span className="text-muted-foreground">Margin</span>
+                          <span className="text-xs text-muted-foreground italic">Krever kostnadsregistrering</span>
+                        </div>
+                      </div>
+                    </div>
+                  </SectionCard>
+                </>
+              ) : (
+                <SectionCard>
+                  <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Økonomi</SectionTitle>
+                  <p className="text-sm text-muted-foreground">
+                    Ingen tilbudsanalyse funnet ennå. Kjør tilbudsanalyse eller last opp tilbud.
+                  </p>
+                </SectionCard>
+              )}
+
+              {/* Admin debug source */}
+              {isAdmin && (
+                <p className="text-[10px] text-muted-foreground/60 pl-1">
+                  Kilde: {econData.source}
+                </p>
+              )}
             </TabsContent>
 
             {/* ── DOKUMENTER ── */}
