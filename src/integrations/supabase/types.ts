@@ -121,6 +121,7 @@ export type Database = {
           created_by: string
           customer_email: string | null
           customer_name: string
+          delete_reason: string | null
           deleted_at: string | null
           deleted_by: string | null
           department_id: string | null
@@ -142,6 +143,7 @@ export type Database = {
           created_by: string
           customer_email?: string | null
           customer_name: string
+          delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           department_id?: string | null
@@ -163,6 +165,7 @@ export type Database = {
           created_by?: string
           customer_email?: string | null
           customer_name?: string
+          delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           department_id?: string | null
@@ -594,6 +597,9 @@ export type Database = {
           counterparty_name: string | null
           created_at: string
           created_by: string
+          delete_reason: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           department_id: string | null
           end_date: string | null
           executing_company_ids: string[] | null
@@ -624,6 +630,9 @@ export type Database = {
           counterparty_name?: string | null
           created_at?: string
           created_by: string
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           department_id?: string | null
           end_date?: string | null
           executing_company_ids?: string[] | null
@@ -654,6 +663,9 @@ export type Database = {
           counterparty_name?: string | null
           created_at?: string
           created_by?: string
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           department_id?: string | null
           end_date?: string | null
           executing_company_ids?: string[] | null
@@ -824,6 +836,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           customer: string | null
+          delete_reason: string | null
           deleted_at: string | null
           deleted_by: string | null
           department_id: string | null
@@ -868,6 +881,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           customer?: string | null
+          delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           department_id?: string | null
@@ -912,6 +926,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           customer?: string | null
+          delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           department_id?: string | null
@@ -1345,6 +1360,9 @@ export type Database = {
           company_name: string
           contact_name: string | null
           created_at: string
+          delete_reason: string | null
+          deleted_at: string | null
+          deleted_by: string | null
           department_id: string | null
           email: string | null
           estimated_value: number | null
@@ -1370,6 +1388,9 @@ export type Database = {
           company_name: string
           contact_name?: string | null
           created_at?: string
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           department_id?: string | null
           email?: string | null
           estimated_value?: number | null
@@ -1395,6 +1416,9 @@ export type Database = {
           company_name?: string
           contact_name?: string | null
           created_at?: string
+          delete_reason?: string | null
+          deleted_at?: string | null
+          deleted_by?: string | null
           department_id?: string | null
           email?: string | null
           estimated_value?: number | null
@@ -1510,6 +1534,7 @@ export type Database = {
           content_hash: string | null
           created_at: string
           created_by: string
+          delete_reason: string | null
           deleted_at: string | null
           deleted_by: string | null
           department_id: string | null
@@ -1537,6 +1562,7 @@ export type Database = {
           content_hash?: string | null
           created_at?: string
           created_by: string
+          delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           department_id?: string | null
@@ -1564,6 +1590,7 @@ export type Database = {
           content_hash?: string | null
           created_at?: string
           created_by?: string
+          delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
           department_id?: string | null

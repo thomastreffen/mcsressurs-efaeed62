@@ -313,10 +313,10 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
     <div className="space-y-10">
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-5">
-        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-5 w-5" />} />
-        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-5 w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} />
-        <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-5 w-5" />} variant={data.failedLinks > 0 ? "error" : "default"} />
-        <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-5 w-5" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} />
+        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-5 w-5" />} onClick={() => navigate("/jobs")} />
+        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-5 w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} onClick={() => navigate("/jobs")} />
+        <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-5 w-5" />} variant={data.failedLinks > 0 ? "error" : "default"} onClick={() => navigate("/admin/integration-health")} />
+        <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-5 w-5" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} onClick={() => navigate("/admin/integration-health")} />
       </div>
 
       {/* Resource load (8/12) + Job status (4/12) */}
@@ -489,10 +489,10 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
     <div className="space-y-8">
       {/* KPI row */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <KpiCard title="Leads denne mnd" value={data.leadsThisMonth} icon={<UserPlus className="h-4 w-4" />} />
-        <KpiCard title="Konverteringsrate" value={`${data.conversionRate.toFixed(0)}%`} icon={<Target className="h-4 w-4" />} />
-        <KpiCard title="Pipeline-verdi" value={`kr ${(data.pipelineValue / 1000).toFixed(0)}k`} icon={<TrendingUp className="h-4 w-4" />} accent />
-        <KpiCard title="Tilbud sendt" value={data.offersSent} icon={<ReceiptText className="h-4 w-4" />} />
+        <KpiCard title="Leads denne mnd" value={data.leadsThisMonth} icon={<UserPlus className="h-4 w-4" />} onClick={() => navigate("/sales/leads")} />
+        <KpiCard title="Konverteringsrate" value={`${data.conversionRate.toFixed(0)}%`} icon={<Target className="h-4 w-4" />} onClick={() => navigate("/sales/pipeline")} />
+        <KpiCard title="Pipeline-verdi" value={`kr ${(data.pipelineValue / 1000).toFixed(0)}k`} icon={<TrendingUp className="h-4 w-4" />} accent onClick={() => navigate("/sales/pipeline")} />
+        <KpiCard title="Tilbud sendt" value={data.offersSent} icon={<ReceiptText className="h-4 w-4" />} onClick={() => navigate("/sales/offers")} />
       </div>
 
       {/* Charts row */}
@@ -580,16 +580,24 @@ function SalesDashboardView({ data, navigate }: { data: SalesData; navigate: (pa
 
 // ── Shared Components ──
 
-function KpiCard({ title, value, icon, variant, accent }: {
+function KpiCard({ title, value, icon, variant, accent, onClick }: {
   title: string; value: number | string; icon: React.ReactNode;
   variant?: "default" | "warning" | "error"; accent?: boolean;
+  onClick?: () => void;
 }) {
   const hasIssue = (variant === "error" && value !== 0) || (variant === "warning" && value !== 0);
   const bgClass = hasIssue && variant === "error" ? "bg-destructive/[0.04]" : hasIssue && variant === "warning" ? "bg-accent/[0.04]" : "bg-card";
   const iconClass = accent ? "text-primary" : hasIssue && variant === "error" ? "text-destructive" : hasIssue && variant === "warning" ? "text-accent" : "text-muted-foreground";
+  const clickable = !!onClick;
 
   return (
-    <div className={`rounded-2xl shadow-sm p-6 sm:p-8 transition-all duration-200 hover:shadow-md hover:scale-[1.01] ${bgClass}`}>
+    <div
+      className={`rounded-2xl shadow-sm p-6 sm:p-8 transition-all duration-200 hover:shadow-md hover:scale-[1.01] ${bgClass} ${clickable ? "cursor-pointer" : ""}`}
+      onClick={onClick}
+      role={clickable ? "button" : undefined}
+      tabIndex={clickable ? 0 : undefined}
+      onKeyDown={clickable ? (e) => { if (e.key === "Enter") onClick?.(); } : undefined}
+    >
       <div className={`flex items-center gap-2 text-[11px] uppercase tracking-wider font-medium ${iconClass} mb-4`}>
         {icon}
         {title}
