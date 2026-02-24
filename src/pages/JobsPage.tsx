@@ -17,16 +17,12 @@ import {
   Loader2,
   ChevronLeft,
   ChevronRight,
+  FolderKanban,
 } from "lucide-react";
 import { JOB_STATUS_CONFIG, ALL_STATUSES, getDisplayNumber, type JobStatus } from "@/lib/job-status";
 import { useAuth } from "@/hooks/useAuth";
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
+  Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
 
 interface JobRow {
@@ -107,11 +103,9 @@ export default function JobsPage() {
 
   const filtered = useMemo(() => {
     let result = [...jobs];
-
     if (statusFilter !== "all") {
       result = result.filter((j) => j.status === statusFilter);
     }
-
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -124,14 +118,12 @@ export default function JobsPage() {
           j.techNames.some((n) => n.toLowerCase().includes(q))
       );
     }
-
     result.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       if (sortField === "start") return dir * (a.startTime.getTime() - b.startTime.getTime());
       if (sortField === "customer") return dir * a.customer.localeCompare(b.customer);
       return dir * a.status.localeCompare(b.status);
     });
-
     return result;
   }, [jobs, statusFilter, search, sortField, sortDir]);
 
@@ -148,16 +140,19 @@ export default function JobsPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Jobber</h1>
-          <p className="text-sm text-muted-foreground/70">{filtered.length} jobber totalt</p>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <FolderKanban className="h-6 w-6 text-primary" />
+            Prosjekter
+          </h1>
+          <p className="text-sm text-muted-foreground/70">{filtered.length} prosjekter totalt</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5 self-start">
+          <Button onClick={() => setCreateOpen(true)} className="gap-1.5 self-start rounded-xl">
             <Plus className="h-4 w-4" />
-            Ny jobb
+            Nytt prosjekt
           </Button>
         )}
       </div>
@@ -165,16 +160,16 @@ export default function JobsPage() {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
-            placeholder="Søk jobber..."
+            placeholder="Søk prosjekter..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            className="pl-9"
+            className="pl-9 rounded-xl"
           />
         </div>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[180px] rounded-xl">
             <SelectValue placeholder="Alle statuser" />
           </SelectTrigger>
           <SelectContent>
@@ -188,7 +183,7 @@ export default function JobsPage() {
 
       {/* Table */}
       {loading ? (
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
@@ -197,15 +192,15 @@ export default function JobsPage() {
             <BulkDeleteBar
               selectedIds={selectedIds}
               entityType="events"
-              entityLabel="jobber"
+              entityLabel="prosjekter"
               onComplete={() => { setSelectedIds([]); fetchJobs(); }}
               onCancel={() => setSelectedIds([])}
             />
           )}
-          <div className="rounded-2xl border border-border/40 overflow-x-auto">
+          <div className="rounded-2xl border border-border/40 bg-card shadow-sm overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
+                <TableRow className="border-b border-border/30">
                   {isAdmin && (
                     <TableHead className="w-10">
                       <Checkbox
@@ -214,37 +209,38 @@ export default function JobsPage() {
                       />
                     </TableHead>
                   )}
-                  <TableHead className="w-[120px]">Jobbnr</TableHead>
-                  <TableHead>Kunde</TableHead>
-                  <TableHead className="hidden md:table-cell">Adresse</TableHead>
+                  <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wider">Nr</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider">Kunde</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Adresse</TableHead>
                   <TableHead>
-                    <button onClick={() => toggleSort("start")} className="flex items-center gap-1 hover:text-foreground">
+                    <button onClick={() => toggleSort("start")} className="flex items-center gap-1 hover:text-foreground text-xs font-semibold uppercase tracking-wider">
                       Dato
                       <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </TableHead>
                   <TableHead>
-                    <button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-foreground">
+                    <button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-foreground text-xs font-semibold uppercase tracking-wider">
                       Status
                       <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </TableHead>
-                  <TableHead className="hidden lg:table-cell">Montører</TableHead>
-                  <TableHead className="hidden lg:table-cell w-[100px]">Sync</TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs font-semibold uppercase tracking-wider">Montører</TableHead>
+                  <TableHead className="hidden lg:table-cell w-[100px] text-xs font-semibold uppercase tracking-wider">Sync</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paged.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={isAdmin ? 8 : 7} className="text-center text-muted-foreground py-8">
-                      Ingen jobber funnet.
+                    <TableCell colSpan={isAdmin ? 8 : 7} className="text-center text-muted-foreground py-12">
+                      <FolderKanban className="h-8 w-8 mx-auto mb-2 opacity-30" />
+                      Ingen prosjekter funnet.
                     </TableCell>
                   </TableRow>
                 ) : (
                   paged.map((job) => (
                     <TableRow
                       key={job.id}
-                      className={`cursor-pointer hover:bg-secondary/50 transition-colors ${highlightedId === job.id ? "bg-primary/5 ring-1 ring-primary/20" : ""}`}
+                      className={`cursor-pointer hover:bg-secondary/40 transition-colors ${highlightedId === job.id ? "bg-primary/5 ring-1 ring-primary/20" : ""}`}
                       onClick={() => navigate(`/projects/${job.id}`)}
                     >
                       {isAdmin && (
@@ -255,24 +251,24 @@ export default function JobsPage() {
                           />
                         </TableCell>
                       )}
-                      <TableCell className="font-mono text-xs">
+                      <TableCell className="font-mono text-xs text-muted-foreground">
                         {getDisplayNumber(job.jobNumber, job.internalNumber)}
                       </TableCell>
                       <TableCell>
                         <div>
                           <p className="text-sm font-medium truncate max-w-[200px]">{job.title}</p>
-                          <p className="text-xs text-muted-foreground truncate max-w-[200px]">{job.customer}</p>
+                          <p className="text-xs text-muted-foreground/60 truncate max-w-[200px]">{job.customer}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground truncate max-w-[200px]">
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground/70 truncate max-w-[200px]">
                         {job.address}
                       </TableCell>
-                      <TableCell className="text-sm whitespace-nowrap">
+                      <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
                         {format(job.startTime, "d. MMM", { locale: nb })}
                       </TableCell>
                       <TableCell>
                         <Badge
-                          className="text-[10px] whitespace-nowrap"
+                          className="text-[10px] whitespace-nowrap rounded-lg"
                           style={{
                             backgroundColor: `hsl(var(--status-${job.status.replace(/_/g, "-")}))`,
                             color: `hsl(var(--status-${job.status.replace(/_/g, "-")}-foreground))`,
@@ -313,20 +309,10 @@ export default function JobsPage() {
                 Side {page + 1} av {totalPages}
               </p>
               <div className="flex gap-1">
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={page === 0}
-                  onClick={() => setPage((p) => p - 1)}
-                >
+                <Button variant="outline" size="icon" disabled={page === 0} onClick={() => setPage((p) => p - 1)} className="rounded-xl">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  disabled={page >= totalPages - 1}
-                  onClick={() => setPage((p) => p + 1)}
-                >
+                <Button variant="outline" size="icon" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)} className="rounded-xl">
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
@@ -341,7 +327,6 @@ export default function JobsPage() {
         preselectedTechId={null}
         onJobCreated={() => {
           fetchJobs();
-          // toast is already shown by CreateJobDialog
         }}
       />
     </div>

@@ -15,7 +15,7 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, PIPELINE_STAGES, type LeadStatus } from "@/lib/lead-status";
-import { Search, Plus, Loader2, ArrowRight, Lightbulb, RotateCcw, Archive, Trash2 } from "lucide-react";
+import { Search, Plus, Loader2, ArrowRight, Lightbulb, RotateCcw, Archive, Trash2, Users } from "lucide-react";
 import { toast } from "sonner";
 
 type ViewMode = "active" | "archived" | "trash";
@@ -87,7 +87,6 @@ export default function LeadsPage() {
     } else {
       result = await fetchActiveLeads();
     }
-    // Sort by updated_at desc client-side since helpers don't chain .order
     const sorted = (result.data || []).sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
     setLeads(sorted as any as Lead[]);
     setSelectedIds([]);
@@ -152,13 +151,11 @@ export default function LeadsPage() {
     return true;
   });
 
-  const viewModeLabel = viewMode === "active" ? "Aktive" : viewMode === "archived" ? "Arkiv" : "Papirkurv";
-
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6 lg:p-8 space-y-5">
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         {/* View mode toggle */}
-        <div className="flex items-center gap-1 rounded-lg border border-border/40 p-0.5">
+        <div className="flex items-center gap-1 rounded-xl border border-border/40 p-0.5 bg-secondary/20">
           {([
             { key: "active" as ViewMode, label: "Aktive", icon: null },
             { key: "archived" as ViewMode, label: "Arkiv", icon: Archive },
@@ -167,8 +164,8 @@ export default function LeadsPage() {
             <button
               key={v.key}
               onClick={() => setViewMode(v.key)}
-              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors flex items-center gap-1 ${
-                viewMode === v.key ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+              className={`text-xs px-3 py-1.5 rounded-lg transition-all flex items-center gap-1 ${
+                viewMode === v.key ? "bg-card text-foreground font-medium shadow-sm" : "text-muted-foreground hover:text-foreground"
               }`}
             >
               {v.icon && <v.icon className="h-3 w-3" />}
@@ -179,11 +176,11 @@ export default function LeadsPage() {
 
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Søk firma, kontakt, referanse..." className="pl-9 h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Søk firma, kontakt, referanse..." className="pl-9 h-9 rounded-xl" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         {viewMode === "active" && (
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-[150px] h-9 rounded-xl"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Alle statuser</SelectItem>
               {ALL_LEAD_STATUSES.map((s) => (
@@ -195,7 +192,7 @@ export default function LeadsPage() {
         <div className="flex items-center gap-2 ml-auto">
           <span className="text-xs text-muted-foreground">{filtered.length} leads</span>
           {viewMode === "active" && (
-            <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 h-9">
+            <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 h-9 rounded-xl">
               <Plus className="h-3.5 w-3.5" /> Ny lead
             </Button>
           )}
@@ -203,7 +200,7 @@ export default function LeadsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
+        <div className="flex items-center justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <>
           {viewMode === "active" && selectedIds.length > 0 && (
@@ -217,8 +214,8 @@ export default function LeadsPage() {
           )}
 
           {filtered.length === 0 ? (
-            <div className="rounded-xl border border-dashed bg-card/50 py-12 px-6 text-center space-y-4">
-              <Lightbulb className="h-8 w-8 mx-auto text-muted-foreground/40" />
+            <div className="rounded-2xl border border-dashed border-border/40 bg-card/50 py-16 px-6 text-center space-y-4">
+              <Users className="h-10 w-10 mx-auto text-muted-foreground/30" />
               <div>
                 <p className="text-sm font-medium text-foreground">
                   {viewMode === "active" ? "Ingen leads funnet" : viewMode === "archived" ? "Ingen arkiverte leads" : "Papirkurven er tom"}
@@ -229,20 +226,20 @@ export default function LeadsPage() {
               </div>
               {viewMode === "active" && (
                 <div className="flex items-center justify-center gap-3">
-                  <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5">
+                  <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 rounded-xl">
                     <Plus className="h-3.5 w-3.5" /> Opprett lead
                   </Button>
-                  <Button size="sm" variant="outline" onClick={() => navigate("/sales/pipeline")} className="gap-1.5">
+                  <Button size="sm" variant="outline" onClick={() => navigate("/sales/pipeline")} className="gap-1.5 rounded-xl">
                     Slik fungerer pipeline <ArrowRight className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               )}
             </div>
           ) : (
-            <div className="rounded-2xl border border-border/40 overflow-x-auto">
+            <div className="rounded-2xl border border-border/40 bg-card shadow-sm overflow-x-auto">
               <Table>
                 <TableHeader>
-                  <TableRow>
+                  <TableRow className="border-b border-border/30">
                     {isAdmin && viewMode === "active" && (
                       <TableHead className="w-10">
                         <Checkbox
@@ -251,11 +248,11 @@ export default function LeadsPage() {
                         />
                       </TableHead>
                     )}
-                    <TableHead>Lead</TableHead>
-                    <TableHead>Status</TableHead>
-                    <TableHead className="hidden md:table-cell">Sist aktivitet</TableHead>
-                    {viewMode === "active" && <TableHead className="hidden md:table-cell">Neste steg</TableHead>}
-                    <TableHead className="text-right">Est. verdi</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Lead</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Status</TableHead>
+                    <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Sist aktivitet</TableHead>
+                    {viewMode === "active" && <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Neste steg</TableHead>}
+                    <TableHead className="text-right text-xs font-semibold uppercase tracking-wider">Est. verdi</TableHead>
                     {viewMode !== "active" && <TableHead className="w-20" />}
                   </TableRow>
                 </TableHeader>
@@ -265,7 +262,7 @@ export default function LeadsPage() {
                     return (
                       <TableRow
                         key={lead.id}
-                        className="cursor-pointer hover:bg-muted/50"
+                        className="cursor-pointer hover:bg-secondary/40 transition-colors"
                         onClick={() => viewMode === "active" ? navigate(`/sales/leads/${lead.id}`) : undefined}
                       >
                         {isAdmin && viewMode === "active" && (
@@ -277,21 +274,21 @@ export default function LeadsPage() {
                           </TableCell>
                         )}
                         <TableCell>
-                          <div className="flex items-center gap-2">
-                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: stageColor }} />
+                          <div className="flex items-center gap-2.5">
+                            <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: stageColor }} />
                             <div className="min-w-0">
                               <p className="text-sm font-medium truncate">{lead.company_name}</p>
-                              <p className="text-[10px] text-muted-foreground/60 font-mono">{lead.lead_ref_code || "—"}</p>
+                              <p className="text-[10px] text-muted-foreground/50 font-mono">{lead.lead_ref_code || "—"}</p>
                             </div>
                           </div>
                         </TableCell>
                         <TableCell>
-                          <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
+                          <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px] rounded-lg"}>
                             {LEAD_STATUS_CONFIG[lead.status]?.label}
                           </Badge>
                         </TableCell>
                         <TableCell className="hidden md:table-cell">
-                          <span className="text-xs text-muted-foreground/70">
+                          <span className="text-xs text-muted-foreground/60">
                             {formatDistanceToNow(new Date(lead.updated_at), { addSuffix: true, locale: nb })}
                           </span>
                         </TableCell>
@@ -322,43 +319,43 @@ export default function LeadsPage() {
 
       {/* Create Dialog */}
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg rounded-2xl">
           <DialogHeader>
             <DialogTitle>Ny lead</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
               <Label>Firmanavn *</Label>
-              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Firma AS" />
+              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Firma AS" className="rounded-xl" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>Kontaktperson</Label>
-                <Input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Ola Nordmann" />
+                <Input value={contactName} onChange={(e) => setContactName(e.target.value)} placeholder="Ola Nordmann" className="rounded-xl" />
               </div>
               <div className="space-y-1.5">
                 <Label>Telefon</Label>
-                <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+47 999 99 999" />
+                <Input value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="+47 999 99 999" className="rounded-xl" />
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
                 <Label>E-post</Label>
-                <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="epost@firma.no" type="email" />
+                <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="epost@firma.no" type="email" className="rounded-xl" />
               </div>
               <div className="space-y-1.5">
                 <Label>Kilde</Label>
-                <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Nettside, anbud, etc." />
+                <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Nettside, anbud, etc." className="rounded-xl" />
               </div>
             </div>
             <div className="space-y-1.5">
               <Label>Estimert verdi (kr)</Label>
-              <Input value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)} placeholder="0" type="number" />
+              <Input value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)} placeholder="0" type="number" className="rounded-xl" />
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setDialogOpen(false)}>Avbryt</Button>
-            <Button onClick={handleCreate} disabled={saving} className="gap-1.5">
+            <Button variant="outline" onClick={() => setDialogOpen(false)} className="rounded-xl">Avbryt</Button>
+            <Button onClick={handleCreate} disabled={saving} className="gap-1.5 rounded-xl">
               {saving && <Loader2 className="h-4 w-4 animate-spin" />}
               Opprett
             </Button>

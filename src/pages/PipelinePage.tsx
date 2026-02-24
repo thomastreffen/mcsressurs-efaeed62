@@ -98,34 +98,34 @@ export default function PipelinePage() {
   const activeStages = PIPELINE_STAGES.filter(s => s.key !== "won" && s.key !== "lost");
   const stageCards = (stage: PipelineStage) => cards.filter((c) => c.stage === stage);
 
-  if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
+  if (loading) return <div className="flex items-center justify-center p-16"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
-    <div className="p-4 sm:p-5 space-y-4">
+    <div className="p-4 sm:p-6 space-y-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-lg font-semibold">Salgspipeline</h1>
-          <p className="text-xs text-muted-foreground">{cards.length} aktive leads</p>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Salgspipeline</h1>
+          <p className="text-sm text-muted-foreground/70">{cards.length} aktive leads</p>
         </div>
       </div>
 
-      <div className="flex gap-2.5 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
+      <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
         {activeStages.map((stage) => {
           const sc = stageCards(stage.key);
           return (
             <div
               key={stage.key}
-              className={`flex-shrink-0 w-[250px] bg-secondary/20 rounded-lg flex flex-col ${dragging ? "ring-1 ring-primary/10" : ""}`}
+              className={`flex-shrink-0 w-[260px] bg-secondary/15 rounded-2xl flex flex-col border border-border/20 ${dragging ? "ring-1 ring-primary/10" : ""}`}
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => handleDrop(stage.key)}
             >
-              <div className="px-3 py-2.5 border-b border-border/10 flex items-center gap-2">
-                <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
-                <span className="text-xs font-medium text-foreground">{stage.label}</span>
-                <span className="text-[10px] text-muted-foreground/60 font-mono ml-auto">{sc.length}</span>
+              <div className="px-4 py-3 border-b border-border/10 flex items-center gap-2">
+                <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
+                <span className="text-xs font-semibold text-foreground uppercase tracking-wider">{stage.label}</span>
+                <span className="text-[10px] text-muted-foreground/50 font-mono ml-auto">{sc.length}</span>
               </div>
 
-              <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
+              <div className="flex-1 p-2 space-y-2 overflow-y-auto">
                 {sc.map((card) => (
                   <div
                     key={card.id}
@@ -133,34 +133,34 @@ export default function PipelinePage() {
                     onDragStart={() => handleDragStart(card.id)}
                     onDragEnd={handleDragEnd}
                     onClick={() => navigate(`/sales/leads/${card.leadId}`)}
-                    className={`bg-card rounded-md border border-border/40 p-2.5 cursor-pointer hover:shadow-md hover:border-border/70 transition-all ${dragging === card.id ? "opacity-50" : ""}`}
+                    className={`bg-card rounded-xl border border-border/40 p-3 cursor-pointer hover:shadow-md hover:border-border/60 transition-all ${dragging === card.id ? "opacity-50" : ""}`}
                     style={{ borderLeft: `3px solid ${stage.color}` }}
                   >
                     <div className="flex items-start justify-between gap-1.5">
                       <div className="min-w-0 flex-1">
                         <p className="text-sm font-medium truncate leading-tight">{card.title}</p>
-                        {card.refCode && <p className="text-[9px] text-muted-foreground/50 font-mono mt-0.5">{card.refCode}</p>}
+                        {card.refCode && <p className="text-[9px] text-muted-foreground/40 font-mono mt-0.5">{card.refCode}</p>}
                       </div>
                       <div className="flex gap-1 shrink-0">
-                        {card.hasCalc && <Badge variant="outline" className="text-[8px] h-4 px-1">Kalkyle</Badge>}
-                        {card.hasOffer && <Badge variant="outline" className="text-[8px] h-4 px-1">Tilbud</Badge>}
+                        {card.hasCalc && <Badge variant="outline" className="text-[8px] h-4 px-1 rounded-md">Kalkyle</Badge>}
+                        {card.hasOffer && <Badge variant="outline" className="text-[8px] h-4 px-1 rounded-md">Tilbud</Badge>}
                       </div>
                     </div>
                     {card.value > 0 && (
-                      <p className="mt-1.5 text-xs text-muted-foreground font-mono">
+                      <p className="mt-2 text-xs text-muted-foreground font-mono">
                         kr {card.value.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
-                        <span className="text-muted-foreground/50 ml-1">({card.probability}%)</span>
+                        <span className="text-muted-foreground/40 ml-1">({card.probability}%)</span>
                       </p>
                     )}
                     {card.lastActivity && (
-                      <p className="mt-1 text-[10px] text-muted-foreground/50">
+                      <p className="mt-1 text-[10px] text-muted-foreground/40">
                         {formatDistanceToNow(new Date(card.lastActivity), { addSuffix: true, locale: nb })}
                       </p>
                     )}
                   </div>
                 ))}
                 {sc.length === 0 && (
-                  <p className="text-[10px] text-muted-foreground/50 text-center py-6">Ingen leads</p>
+                  <p className="text-[11px] text-muted-foreground/40 text-center py-8">Ingen leads</p>
                 )}
               </div>
             </div>

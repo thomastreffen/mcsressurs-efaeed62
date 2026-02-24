@@ -70,17 +70,17 @@ export default function CalculationsPage() {
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   return (
-    <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold flex items-center gap-2">
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight flex items-center gap-2">
             <Calculator className="h-6 w-6 text-primary" />
             Kalkulasjoner
           </h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} kalkulasjoner totalt</p>
+          <p className="text-sm text-muted-foreground/70">{filtered.length} kalkulasjoner totalt</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => navigate("/sales/calculations/new")} className="gap-1.5 self-start">
+          <Button onClick={() => navigate("/sales/calculations/new")} className="gap-1.5 self-start rounded-xl">
             <Plus className="h-4 w-4" />
             Ny kalkulasjon
           </Button>
@@ -89,16 +89,16 @@ export default function CalculationsPage() {
 
       <div className="flex flex-col sm:flex-row gap-2">
         <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
             placeholder="Søk kalkulasjoner..."
             value={search}
             onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            className="pl-9"
+            className="pl-9 rounded-xl"
           />
         </div>
         <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[180px]">
+          <SelectTrigger className="w-[180px] rounded-xl">
             <SelectValue placeholder="Alle statuser" />
           </SelectTrigger>
           <SelectContent>
@@ -111,26 +111,27 @@ export default function CalculationsPage() {
       </div>
 
       {loading ? (
-        <div className="flex items-center justify-center py-12">
+        <div className="flex items-center justify-center py-16">
           <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
         </div>
       ) : (
         <>
-          <div className="rounded-lg border overflow-x-auto">
+          <div className="rounded-2xl border border-border/40 bg-card shadow-sm overflow-x-auto">
             <Table>
               <TableHeader>
-                <TableRow>
-                  <TableHead>Prosjekt</TableHead>
-                  <TableHead>Kunde</TableHead>
-                  <TableHead className="hidden md:table-cell">Dato</TableHead>
-                  <TableHead>Status</TableHead>
-                  <TableHead className="text-right">Totalpris</TableHead>
+                <TableRow className="border-b border-border/30">
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider">Prosjekt</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider">Kunde</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Dato</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider">Status</TableHead>
+                  <TableHead className="text-right text-xs font-semibold uppercase tracking-wider">Totalpris</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
                 {paged.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={5} className="text-center text-muted-foreground py-8">
+                    <TableCell colSpan={5} className="text-center text-muted-foreground py-12">
+                      <Calculator className="h-8 w-8 mx-auto mb-2 opacity-30" />
                       Ingen kalkulasjoner funnet.
                     </TableCell>
                   </TableRow>
@@ -138,7 +139,7 @@ export default function CalculationsPage() {
                   paged.map((calc) => (
                     <TableRow
                       key={calc.id}
-                      className="cursor-pointer hover:bg-secondary/50"
+                      className="cursor-pointer hover:bg-secondary/40 transition-colors"
                       onClick={() => navigate(`/sales/calculations/${calc.id}`)}
                     >
                       <TableCell>
@@ -147,14 +148,14 @@ export default function CalculationsPage() {
                       <TableCell>
                         <p className="text-sm truncate max-w-[200px]">{calc.customer_name}</p>
                         {calc.customer_email && (
-                          <p className="text-xs text-muted-foreground truncate">{calc.customer_email}</p>
+                          <p className="text-xs text-muted-foreground/60 truncate">{calc.customer_email}</p>
                         )}
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground whitespace-nowrap">
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground/70 whitespace-nowrap">
                         {format(new Date(calc.created_at), "d. MMM yyyy", { locale: nb })}
                       </TableCell>
                       <TableCell>
-                        <Badge className={CALCULATION_STATUS_CONFIG[calc.status]?.className}>
+                        <Badge className={CALCULATION_STATUS_CONFIG[calc.status]?.className + " rounded-lg"}>
                           {CALCULATION_STATUS_CONFIG[calc.status]?.label || calc.status}
                         </Badge>
                       </TableCell>
@@ -174,10 +175,10 @@ export default function CalculationsPage() {
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">Side {page + 1} av {totalPages}</p>
               <div className="flex gap-1">
-                <Button variant="outline" size="icon" disabled={page === 0} onClick={() => setPage((p) => p - 1)}>
+                <Button variant="outline" size="icon" disabled={page === 0} onClick={() => setPage((p) => p - 1)} className="rounded-xl">
                   <ChevronLeft className="h-4 w-4" />
                 </Button>
-                <Button variant="outline" size="icon" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)}>
+                <Button variant="outline" size="icon" disabled={page >= totalPages - 1} onClick={() => setPage((p) => p + 1)} className="rounded-xl">
                   <ChevronRight className="h-4 w-4" />
                 </Button>
               </div>
