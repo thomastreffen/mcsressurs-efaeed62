@@ -408,7 +408,7 @@ export function PortfolioHealthGauges() {
             {filteredProjects.map((p) => (
               <button
                 key={p.id}
-                onClick={() => navigate(`/jobs/${p.id}`)}
+                onClick={() => navigate(`/projects/${p.id}`)}
                 className="flex items-center gap-3 w-full rounded-xl p-2.5 text-left hover:bg-secondary/50 transition-colors min-h-[44px]"
               >
                 <div

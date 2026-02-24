@@ -23,7 +23,7 @@ export default function ResourcePlan() {
   const [createOpen, setCreateOpen] = useState(false);
 
   const handleJobClick = (job: CalendarEvent) => {
-    navigate(`/jobs/${job.id}`);
+    navigate(`/projects/${job.id}`);
   };
 
   return (

@@ -363,7 +363,7 @@ function LeadDetailInner() {
 
     toast.success("Lead konvertert til prosjekt");
     setConvertDialogOpen(false);
-    navigate(`/jobs/${data!.id}`);
+    navigate(`/projects/${data!.id}`);
   };
 
   // ─── Re-auth Microsoft ───

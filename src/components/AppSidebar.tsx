@@ -38,12 +38,12 @@ import {
 } from "@/components/ui/sidebar";
 
 const mainNav = [
-  { title: "Dashboard", url: "/", icon: LayoutDashboard },
+  { title: "Oversikt", url: "/overview", icon: LayoutDashboard },
   { title: "Integrasjoner", url: "/settings/integrations", icon: Plug },
 ];
 
 const salesNav = [
-  { title: "Salgsdashboard", url: "/sales", icon: BarChart3 },
+  { title: "Sales Pulse", url: "/sales", icon: BarChart3 },
   { title: "Pipeline", url: "/sales/pipeline", icon: TrendingUp },
   { title: "Leads", url: "/sales/leads", icon: UserPlus },
   { title: "Kalkulasjoner", url: "/sales/calculations", icon: Calculator },
@@ -51,9 +51,9 @@ const salesNav = [
 ];
 
 const projectNav = [
-  { title: "Alle jobber", url: "/jobs", icon: FolderKanban },
-  { title: "Ressursplan", url: "/resource-plan", icon: CalendarDays },
-  { title: "Kontrakter", url: "/contracts", icon: FileSignature },
+  { title: "Alle prosjekter", url: "/projects", icon: FolderKanban },
+  { title: "Ressursplan", url: "/projects/plan", icon: CalendarDays },
+  { title: "Kontrakter", url: "/projects/contracts", icon: FileSignature },
 ];
 
 const fagNav = [
@@ -80,7 +80,7 @@ export function AppSidebar() {
   const location = useLocation();
 
   const isActive = (url: string) =>
-    url === "/" ? location.pathname === "/" : location.pathname.startsWith(url);
+    url === "/overview" ? location.pathname === "/overview" : location.pathname.startsWith(url);
 
   return (
     <Sidebar collapsible="icon">
@@ -106,7 +106,7 @@ export function AppSidebar() {
               {mainNav.map((item) => (
                 <SidebarMenuItem key={item.url}>
                   <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
-                    <NavLink to={item.url} end={item.url === "/"}>
+                    <NavLink to={item.url} end={item.url === "/overview"}>
                       <item.icon className="h-4 w-4" />
                       <span>{item.title}</span>
                     </NavLink>

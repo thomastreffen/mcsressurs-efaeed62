@@ -84,7 +84,7 @@ export default function ContractsPage() {
   });
 
   const getLinkInfo = (c: ContractWithLinks) => {
-    if (c.job_id) return { label: c.job_title || "Jobb", path: `/jobs/${c.job_id}`, icon: <FolderKanban className="h-3 w-3" />, type: "Jobb" };
+    if (c.job_id) return { label: c.job_title || "Prosjekt", path: `/projects/${c.job_id}`, icon: <FolderKanban className="h-3 w-3" />, type: "Prosjekt" };
     if (c.lead_id) return { label: c.lead_company || "Lead", path: `/sales/leads/${c.lead_id}`, icon: <UserPlus className="h-3 w-3" />, type: "Lead" };
     return { label: "Global", path: null, icon: <Globe className="h-3 w-3" />, type: "Global" };
   };

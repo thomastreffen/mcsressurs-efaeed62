@@ -104,7 +104,7 @@ function buildSubject(job: any): string {
 
 function buildHtmlBody(job: any, jobId: string): string {
   const displayNumber = job.internal_number || job.job_number || job.id.slice(0, 8);
-  const jobLink = `https://mcsressurs.lovable.app/jobs/${jobId}`;
+  const jobLink = `https://mcsressurs.lovable.app/projects/${jobId}`;
   return [
     `<b>Jobb:</b> ${displayNumber}`,
     `<b>Kunde:</b> ${normalizeText(job.customer) || "Ikke angitt"}`,

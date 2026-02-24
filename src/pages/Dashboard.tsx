@@ -19,7 +19,7 @@ export default function Dashboard() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
 
   const handleJobClick = (job: CalendarEvent) => {
-    navigate(`/jobs/${job.id}`);
+    navigate(`/projects/${job.id}`);
   };
 
   const handleSelectTech = (id: string | null) => {
