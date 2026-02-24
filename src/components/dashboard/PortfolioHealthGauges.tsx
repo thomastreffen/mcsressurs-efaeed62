@@ -56,44 +56,33 @@ function statusToHsl(s: StatusColor): string {
 
 // ── Donut gauge (SVG) ──
 
-function DonutGauge({ pct, status, size = 160 }: { pct: number; status: StatusColor; size?: number }) {
-  const strokeWidth = 14;
+function DonutGauge({ pct, status, size = 190, emphasis = false }: { pct: number; status: StatusColor; size?: number; emphasis?: boolean }) {
+  const strokeWidth = emphasis ? 16 : 14;
   const r = (size - strokeWidth) / 2;
   const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, pct / 100));
   const dashLen = clamped * circumference;
-  const rotation = -90; // start from top
 
   const strokeColor = status === "green"
-    ? "hsl(152, 60%, 38%)"
+    ? emphasis ? "hsl(152, 60%, 38%)" : "hsl(152, 40%, 48%)"
     : status === "yellow"
-      ? "hsl(28, 80%, 52%)"
-      : "hsl(0, 72%, 51%)";
+      ? emphasis ? "hsl(28, 80%, 52%)" : "hsl(28, 55%, 56%)"
+      : emphasis ? "hsl(0, 72%, 51%)" : "hsl(0, 50%, 55%)";
+
+  const trackColor = pct <= 0 ? "hsl(152, 30%, 82%)" : "hsl(210, 10%, 92%)";
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block mx-auto">
-      {/* Track */}
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke="hsl(210, 15%, 93%)"
-        strokeWidth={strokeWidth}
-      />
-      {/* Value arc */}
-      <circle
-        cx={size / 2}
-        cy={size / 2}
-        r={r}
-        fill="none"
-        stroke={strokeColor}
-        strokeWidth={strokeWidth}
-        strokeLinecap="round"
-        strokeDasharray={`${dashLen} ${circumference}`}
-        transform={`rotate(${rotation} ${size / 2} ${size / 2})`}
-        className="transition-all duration-700 ease-out"
-      />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={trackColor} strokeWidth={strokeWidth} />
+      {pct > 0 && (
+        <circle
+          cx={size / 2} cy={size / 2} r={r} fill="none"
+          stroke={strokeColor} strokeWidth={strokeWidth} strokeLinecap="round"
+          strokeDasharray={`${dashLen} ${circumference}`}
+          transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          className="transition-all duration-700 ease-out"
+        />
+      )}
     </svg>
   );
 }
@@ -360,49 +349,47 @@ export function PortfolioHealthGauges() {
   }, [projects, filter]);
 
   const totalJobs = statusCounts.reduce((s, d) => s + d.value, 0);
-  const gaugeSize = isMobile ? 120 : 160;
+  const gaugeSize = isMobile ? 130 : 190;
 
   if (loading) {
     return (
       <div className="space-y-5 animate-pulse">
-        <div className="rounded-3xl bg-card h-64" />
-        <div className="grid grid-cols-3 gap-3">
-          <div className="rounded-2xl bg-card h-24" />
-          <div className="rounded-2xl bg-card h-24" />
-          <div className="rounded-2xl bg-card h-24" />
-        </div>
+        <div className="bg-card h-56" />
       </div>
     );
   }
 
   return (
-    <div className="space-y-4">
+    <div className="space-y-3">
       {/* ── Gauges container ── */}
-      <div className="rounded-3xl bg-secondary/40 shadow-sm shadow-black/5 ring-1 ring-border/10 p-5 sm:p-8">
-        <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-6">
+      <div className="bg-secondary/30 border-b border-border/10 px-4 sm:px-6 py-4 sm:py-5">
+        <h3 className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest mb-4">
           Porteføljehelse
         </h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 max-w-5xl mx-auto">
-          {gauges.map((g) => (
-            <div key={g.label} className="flex flex-col items-center text-center">
-              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">
-                {g.icon} {g.label}
-              </span>
-              <div className="relative" style={{ width: gaugeSize, height: gaugeSize }}>
-                <DonutGauge pct={g.pct} status={g.status} size={gaugeSize} />
-                <div className="absolute inset-0 flex flex-col items-center justify-center">
-                  <p className="text-2xl sm:text-3xl font-semibold text-foreground font-mono leading-none">
-                    {g.mainLabel}
-                  </p>
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-3 max-w-5xl mx-auto">
+          {gauges.map((g) => {
+            const isRisk = g.label === "Risiko";
+            return (
+              <div key={g.label} className="flex flex-col items-center text-center">
+                <span className="text-[9px] font-medium text-muted-foreground/70 uppercase tracking-widest mb-1">
+                  {g.label}
+                </span>
+                <div className="relative" style={{ width: gaugeSize, height: gaugeSize }}>
+                  <DonutGauge pct={g.pct} status={g.status} size={gaugeSize} emphasis={isRisk} />
+                  <div className="absolute inset-0 flex flex-col items-center justify-center">
+                    <p className={`font-semibold text-foreground font-mono leading-none ${isRisk ? "text-3xl sm:text-4xl" : "text-2xl sm:text-[2rem]"}`}>
+                      {g.mainLabel}
+                    </p>
+                  </div>
                 </div>
+                <p className="text-[11px] text-muted-foreground/70 mt-0.5">{g.subLabel}</p>
               </div>
-              <p className="text-xs text-muted-foreground mt-1">{g.subLabel}</p>
-            </div>
-          ))}
+            );
+          })}
         </div>
 
         {/* ── Inline health summary ── */}
-        <div className="flex items-center justify-center gap-8 sm:gap-14 mt-6 pt-5 border-t border-border/40">
+        <div className="flex items-center justify-center gap-8 sm:gap-14 mt-3 pt-3 border-t border-border/20">
           <HealthStat label="Rød" count={counts.red.length} value={counts.red.reduce((s, p) => s + p.totalNow, 0)} color="destructive" active={filter === "red"} onClick={() => setFilter(filter === "red" ? null : "red")} />
           <div className="h-8 w-px bg-border/40" />
           <HealthStat label="Gul" count={counts.yellow.length} value={counts.yellow.reduce((s, p) => s + p.totalNow, 0)} color="accent" active={filter === "yellow"} onClick={() => setFilter(filter === "yellow" ? null : "yellow")} />
