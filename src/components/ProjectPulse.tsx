@@ -1,6 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
 import { supabase } from "@/integrations/supabase/client";
-import { canGenerateChangeOrder } from "@/lib/risk-categories";
 import {
   TrendingUp,
   ShieldAlert,
@@ -8,7 +7,6 @@ import {
   Wallet,
 } from "lucide-react";
 
-/* ── Types ── */
 interface PulseProps {
   jobId: string;
 }
@@ -21,31 +19,23 @@ interface PulseCard {
   status: StatusColor;
   mainValue: string;
   mainLabel: string;
-  secondaryValue: string;
-  secondaryLabel: string;
-  hint: string;
+  secondary: string;
+  warning?: string; // only shown when yellow/red
 }
 
-/* ── Status dot ── */
-const STATUS_DOT: Record<StatusColor, string> = {
+/* ── Accent left border per status ── */
+const BORDER_LEFT: Record<StatusColor, string> = {
+  green: "border-l-success/40",
+  yellow: "border-l-[hsl(var(--accent))]/60",
+  red: "border-l-destructive/50",
+};
+
+const DOT_BG: Record<StatusColor, string> = {
   green: "bg-success",
   yellow: "bg-[hsl(var(--accent))]",
   red: "bg-destructive",
 };
 
-const STATUS_RING: Record<StatusColor, string> = {
-  green: "ring-success/20",
-  yellow: "ring-[hsl(var(--accent))]/20",
-  red: "ring-destructive/20",
-};
-
-function StatusIndicator({ color }: { color: StatusColor }) {
-  return (
-    <span className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[color]} ring-4 ${STATUS_RING[color]}`} />
-  );
-}
-
-/* ── Format helpers ── */
 function fmtNOK(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `${Math.round(n / 1_000)}k`;
@@ -53,15 +43,13 @@ function fmtNOK(n: number): string {
 }
 
 function fmtPct(n: number): string {
-  return `${(n * 100).toFixed(0)}%`;
+  return `${(n * 100).toFixed(0)} %`;
 }
 
-/* ── Main component ── */
 export function ProjectPulse({ jobId }: PulseProps) {
   const [cards, setCards] = useState<PulseCard[] | null>(null);
 
   const fetchData = useCallback(async () => {
-    // Parallel fetch all data we need
     const [summaryRes, cosRes, risksRes, analysesRes] = await Promise.all([
       supabase.from("job_summaries").select("key_numbers").eq("job_id", jobId).maybeSingle(),
       supabase.from("job_change_orders").select("status, amount_ex_vat, linked_risk_id").eq("job_id", jobId),
@@ -73,23 +61,20 @@ export function ProjectPulse({ jobId }: PulseProps) {
     const cos = cosRes.data || [];
     const risks = risksRes.data || [];
 
-    // Base value from job_summaries or offer analysis
     let baseValue = kn.total_amount != null ? Number(kn.total_amount) : 0;
     const currency = kn.currency || "NOK";
-    const paymentTerms = kn.payment_terms || null;
+    const paymentTerms: string | null = kn.payment_terms || null;
 
     if (baseValue === 0 && analysesRes.data?.length) {
       const pf = (analysesRes.data[0].parsed_fields as any) || {};
       if (pf.total_amount != null) baseValue = Number(pf.total_amount);
     }
 
-    // ── Change order aggregates ──
     const approvedSum = cos.filter(c => c.status === "approved" || c.status === "invoiced").reduce((s, c) => s + Number(c.amount_ex_vat || 0), 0);
     const pendingCOs = cos.filter(c => c.status === "sent" || c.status === "pending");
     const pendingSum = pendingCOs.reduce((s, c) => s + Number(c.amount_ex_vat || 0), 0);
     const draftCount = cos.filter(c => c.status === "draft").length;
-    const sentAndApprovedCount = cos.filter(c => ["sent", "approved", "invoiced"].includes(c.status)).length;
-
+    const sentApproved = cos.filter(c => ["sent", "approved", "invoiced"].includes(c.status)).length;
     const totalNow = baseValue + approvedSum;
 
     // ── ØKONOMI ──
@@ -99,89 +84,80 @@ export function ProjectPulse({ jobId }: PulseProps) {
     else if (pendingPct >= 0.05) econStatus = "yellow";
 
     // ── RISIKO ──
-    // Filter out compliance/documentation for scoring
     const projectRisks = risks.filter(r =>
       (r.status === "open" || r.status === "acknowledged") &&
       r.severity !== "low" && r.category !== "documentation"
     );
     let riskScore = 0;
-    let highOpenCount = 0;
+    let highOpen = 0;
     for (const r of projectRisks) {
-      if (r.severity === "high") { riskScore += 2; highOpenCount++; }
+      if (r.severity === "high") { riskScore += 2; highOpen++; }
       else if (r.severity === "medium") riskScore += 1;
     }
     let riskStatus: StatusColor = "green";
-    if (riskScore >= 9 || highOpenCount >= 3) riskStatus = "red";
-    else if (riskScore >= 4 || highOpenCount >= 2) riskStatus = "yellow";
+    if (riskScore >= 9 || highOpen >= 3) riskStatus = "red";
+    else if (riskScore >= 4 || highOpen >= 2) riskStatus = "yellow";
 
     // ── TILLEGG ──
-    // Count risks that can generate change orders
-    const openRisks = risks.filter(r => r.status === "open" || r.status === "acknowledged");
-    // We need raw_key which isn't stored in DB, so estimate from known eligible count
-    // Use a simpler approach: count risks in categories that map to CO-eligible flags
-    const coEligibleCategories = new Set(["economic", "schedule"]);
-    const identifiedPotential = Math.max(
-      openRisks.filter(r => coEligibleCategories.has(r.category) && r.severity !== "low").length,
-      sentAndApprovedCount
-    );
-    const ratio = identifiedPotential > 0 ? sentAndApprovedCount / identifiedPotential : 1;
+    const coEligible = new Set(["economic", "schedule"]);
+    const openEligible = risks.filter(r => (r.status === "open" || r.status === "acknowledged") && coEligible.has(r.category) && r.severity !== "low").length;
+    const identified = Math.max(openEligible, sentApproved);
+    const ratio = identified > 0 ? sentApproved / identified : 1;
     let tilleggStatus: StatusColor = "green";
     if (ratio < 0.70) tilleggStatus = "red";
     else if (ratio < 0.90) tilleggStatus = "yellow";
 
     // ── CASHFLOW ──
     const outstanding = pendingSum;
-    const outstandingPct = totalNow > 0 ? outstanding / totalNow : 0;
-    const hasLatePaymentRisk = risks.some(r =>
+    const outPct = totalNow > 0 ? outstanding / totalNow : 0;
+    const hasLateRisk = risks.some(r =>
       (r.status === "open" || r.status === "acknowledged") &&
       r.category !== "documentation" &&
       r.label.toLowerCase().includes("betalingsrisiko")
     );
     let cashStatus: StatusColor = "green";
-    if (outstandingPct > 0.35) cashStatus = "red";
-    else if (outstandingPct >= 0.20 || hasLatePaymentRisk) cashStatus = "yellow";
-    if (hasLatePaymentRisk && cashStatus === "green") cashStatus = "yellow";
+    if (outPct > 0.35) cashStatus = "red";
+    else if (outPct >= 0.20 || hasLateRisk) cashStatus = "yellow";
+    if (hasLateRisk && cashStatus === "green") cashStatus = "yellow";
 
     setCards([
       {
         title: "Økonomi",
-        icon: <TrendingUp className="h-4 w-4" />,
+        icon: <TrendingUp className="h-3.5 w-3.5" />,
         status: econStatus,
-        mainValue: `${currency} ${fmtNOK(totalNow)}`,
+        mainValue: baseValue > 0 ? `${currency} ${fmtNOK(totalNow)}` : "—",
         mainLabel: "Total nå",
-        secondaryValue: pendingSum > 0 ? `${currency} ${fmtNOK(pendingSum)} (${fmtPct(pendingPct)})` : "Ingen",
-        secondaryLabel: "Avventende",
-        hint: pendingPct > 0.05 ? "Uavklarte tillegg påvirker margin" : "Økonomi under kontroll",
+        secondary: pendingSum > 0 ? `Avventer: ${currency} ${fmtNOK(pendingSum)}` : "Ingen avventende",
+        warning: econStatus !== "green" ? `Avventende ${fmtPct(pendingPct)}` : undefined,
       },
       {
         title: "Risiko",
-        icon: <ShieldAlert className="h-4 w-4" />,
+        icon: <ShieldAlert className="h-3.5 w-3.5" />,
         status: riskStatus,
         mainValue: String(riskScore),
-        mainLabel: "Risikopoeng",
-        secondaryValue: `${highOpenCount} HIGH åpne`,
-        secondaryLabel: "Prosjektkritiske",
-        hint: "Økonomi / teknikk / fremdrift",
+        mainLabel: "Poeng",
+        secondary: `${highOpen} HIGH · ${projectRisks.length} åpne`,
+        warning: riskStatus !== "green" ? `${highOpen} HIGH åpne` : undefined,
       },
       {
         title: "Tillegg",
-        icon: <FilePlus2 className="h-4 w-4" />,
+        icon: <FilePlus2 className="h-3.5 w-3.5" />,
         status: tilleggStatus,
-        mainValue: `${sentAndApprovedCount}/${identifiedPotential || "—"}`,
+        mainValue: identified > 0 ? `${sentApproved}/${identified}` : "—",
         mainLabel: "Sendt / identifisert",
-        secondaryValue: draftCount > 0 ? `${draftCount} utkast` : "Ingen utkast",
-        secondaryLabel: "Under arbeid",
-        hint: "Identifisert vs sendt",
+        secondary: draftCount > 0 ? `${draftCount} utkast` : "Ingen utkast",
+        warning: tilleggStatus !== "green" ? "Lav sendt-rate" : undefined,
       },
       {
         title: "Cashflow",
-        icon: <Wallet className="h-4 w-4" />,
+        icon: <Wallet className="h-3.5 w-3.5" />,
         status: cashStatus,
-        mainValue: `${currency} ${fmtNOK(outstanding)}`,
+        mainValue: totalNow > 0 ? `${currency} ${fmtNOK(outstanding)}` : "—",
         mainLabel: "Utestående",
-        secondaryValue: paymentTerms || "—",
-        secondaryLabel: "Betalingsvilkår",
-        hint: "Likviditetseksponering",
+        secondary: paymentTerms || "—",
+        warning: cashStatus !== "green"
+          ? (outPct > 0.35 ? `Utestående > 35 %` : hasLateRisk ? "Betalingsrisiko" : `Utestående ${fmtPct(outPct)}`)
+          : undefined,
       },
     ]);
   }, [jobId]);
@@ -195,31 +171,33 @@ export function ProjectPulse({ jobId }: PulseProps) {
       {cards.map((card) => (
         <div
           key={card.title}
-          className="rounded-2xl border border-border/60 bg-card shadow-sm p-4 flex flex-col justify-between min-h-[120px]"
+          className={`
+            rounded-2xl bg-muted/30 shadow-sm border-l-[3px] ${BORDER_LEFT[card.status]}
+            px-4 py-3.5 flex flex-col min-h-[112px]
+          `}
         >
-          {/* Top row: title + status dot */}
-          <div className="flex items-center justify-between mb-3">
-            <span className="flex items-center gap-1.5 text-xs font-semibold text-muted-foreground uppercase tracking-wider">
+          {/* Header row */}
+          <div className="flex items-center justify-between mb-2">
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
               {card.icon}
               {card.title}
             </span>
-            <StatusIndicator color={card.status} />
+            <span className={`h-2 w-2 rounded-full ${DOT_BG[card.status]} shrink-0`} />
           </div>
 
-          {/* Main value */}
-          <p className="text-xl sm:text-2xl font-bold text-foreground font-mono leading-tight truncate">
+          {/* Main value – visually dominant */}
+          <p className="text-[28px] leading-8 font-semibold text-foreground font-mono tracking-tight truncate">
             {card.mainValue}
           </p>
           <p className="text-[11px] text-muted-foreground mt-0.5">{card.mainLabel}</p>
 
           {/* Secondary */}
-          <div className="mt-2 pt-2 border-t border-border/40">
-            <p className="text-xs font-medium text-foreground truncate">{card.secondaryValue}</p>
-            <p className="text-[10px] text-muted-foreground">{card.secondaryLabel}</p>
-          </div>
+          <p className="text-xs text-muted-foreground mt-auto pt-2 truncate">{card.secondary}</p>
 
-          {/* Hint */}
-          <p className="text-[10px] text-muted-foreground/70 mt-1.5 leading-tight">{card.hint}</p>
+          {/* Warning line – only when not green */}
+          {card.warning && (
+            <p className="text-[10px] font-medium text-destructive mt-1 truncate">{card.warning}</p>
+          )}
         </div>
       ))}
     </div>
