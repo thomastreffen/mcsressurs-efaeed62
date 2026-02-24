@@ -12,6 +12,8 @@ import { AttendeeStatusList } from "@/components/AttendeeStatusList";
 import { DocumentCenter } from "@/components/DocumentCenter";
 import { JobRiskPanel } from "@/components/risk/JobRiskPanel";
 import { AuditInfo } from "@/components/AuditInfo";
+import { ProjectPulse } from "@/components/ProjectPulse";
+import { ProjectPulseActions } from "@/components/ProjectPulseActions";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
 import { JobSummaryCard } from "@/components/JobSummaryCard";
@@ -675,14 +677,19 @@ export default function JobDetail() {
 
         {/* ═══ Main Content: 2-col grid ═══ */}
         <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 pb-28 md:pb-8">
+          {/* ═══ PROSJEKT-PULS ═══ */}
+          <ProjectPulse jobId={id!} />
+
           {/* Job Summary Card */}
-          <JobSummaryCard
-            jobId={id!}
-            customer={job.customer}
-            status={job.status}
-            address={job.address}
-            technicianNames={technicianNames}
-          />
+          <div className="mt-4">
+            <JobSummaryCard
+              jobId={id!}
+              customer={job.customer}
+              status={job.status}
+              address={job.address}
+              technicianNames={technicianNames}
+            />
+          </div>
 
           {/* Tabbed Navigation */}
           <Tabs defaultValue="oversikt" className="mt-6">
@@ -698,28 +705,8 @@ export default function JobDetail() {
 
             {/* ── OVERSIKT ── */}
             <TabsContent value="oversikt" className="mt-5 space-y-6">
-              {/* KPI Cards */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Status</p>
-                  <JobStatusBadge status={job.status} />
-                </div>
-                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Kunde</p>
-                  <p className="text-sm font-medium truncate">{job.customer || "—"}</p>
-                </div>
-                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Dato & sted</p>
-                  <p className="text-xs font-medium">{format(job.start, "d. MMM yyyy", { locale: nb })}</p>
-                  <p className="text-[11px] text-muted-foreground truncate">{job.address || "—"}</p>
-                </div>
-                <div className="rounded-xl border border-border/40 bg-card p-3 space-y-1">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Montører</p>
-                  <p className="text-xs font-medium truncate">
-                    {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
-                  </p>
-                </div>
-              </div>
+              {/* Action section */}
+              <ProjectPulseActions jobId={id!} />
 
               {job.description && (
                 <SectionCard>
