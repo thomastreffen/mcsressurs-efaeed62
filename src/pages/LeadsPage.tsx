@@ -239,7 +239,7 @@ export default function LeadsPage() {
               )}
             </div>
           ) : (
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-2xl border border-border/40 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>

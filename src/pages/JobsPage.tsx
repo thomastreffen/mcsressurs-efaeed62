@@ -151,8 +151,8 @@ export default function JobsPage() {
     <div className="p-4 sm:p-6 space-y-4 max-w-7xl mx-auto">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Jobber</h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} jobber totalt</p>
+          <h1 className="text-xl sm:text-2xl font-bold tracking-tight">Jobber</h1>
+          <p className="text-sm text-muted-foreground/70">{filtered.length} jobber totalt</p>
         </div>
         {isAdmin && (
           <Button onClick={() => setCreateOpen(true)} className="gap-1.5 self-start">
@@ -202,7 +202,7 @@ export default function JobsPage() {
               onCancel={() => setSelectedIds([])}
             />
           )}
-          <div className="rounded-lg border overflow-x-auto">
+          <div className="rounded-2xl border border-border/40 overflow-x-auto">
             <Table>
               <TableHeader>
                 <TableRow>

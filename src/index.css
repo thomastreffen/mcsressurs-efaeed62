@@ -4,103 +4,113 @@
 
 @layer base {
   :root {
-    --background: 210 20% 98%;
-    --foreground: 215 25% 15%;
+    --background: 220 20% 97%;
+    --foreground: 222 28% 14%;
 
     --card: 0 0% 100%;
-    --card-foreground: 215 25% 15%;
+    --card-foreground: 222 28% 14%;
 
     --popover: 0 0% 100%;
-    --popover-foreground: 215 25% 15%;
+    --popover-foreground: 222 28% 14%;
 
-    --primary: 213 60% 42%;
+    --primary: 213 56% 38%;
     --primary-foreground: 0 0% 100%;
 
-    --secondary: 210 20% 95%;
-    --secondary-foreground: 215 25% 25%;
+    --secondary: 218 18% 94%;
+    --secondary-foreground: 222 24% 22%;
 
-    --muted: 210 15% 93%;
-    --muted-foreground: 215 12% 50%;
+    --muted: 220 14% 92%;
+    --muted-foreground: 220 10% 46%;
 
-    --accent: 28 80% 52%;
+    --accent: 28 76% 50%;
     --accent-foreground: 0 0% 100%;
 
-    --destructive: 0 72% 51%;
+    --destructive: 0 68% 50%;
     --destructive-foreground: 0 0% 100%;
 
-    --success: 152 60% 38%;
+    --success: 152 56% 36%;
     --success-foreground: 0 0% 100%;
 
-    --info: 213 50% 55%;
+    --info: 213 48% 52%;
     --info-foreground: 0 0% 100%;
 
-    --border: 214 20% 92%;
-    --input: 214 20% 90%;
-    --ring: 213 60% 42%;
+    --border: 220 16% 90%;
+    --input: 220 16% 88%;
+    --ring: 213 56% 38%;
 
-    --radius: 0.75rem;
+    --radius: 0.875rem;
+
+    /* Glass effect */
+    --glass-bg: 0 0% 100% / 0.72;
+    --glass-border: 220 16% 90% / 0.5;
+    --glass-shadow: 0 1px 3px 0 hsl(220 20% 20% / 0.04), 0 4px 14px 0 hsl(220 20% 20% / 0.06);
 
     /* Status colors */
-    --status-requested: 28 80% 52%;
+    --status-requested: 28 76% 50%;
     --status-requested-foreground: 0 0% 100%;
-    --status-approved: 152 60% 42%;
+    --status-approved: 152 56% 40%;
     --status-approved-foreground: 0 0% 100%;
-    --status-time-change-proposed: 213 60% 50%;
+    --status-time-change-proposed: 213 56% 48%;
     --status-time-change-proposed-foreground: 0 0% 100%;
-    --status-rejected: 0 72% 51%;
+    --status-rejected: 0 68% 50%;
     --status-rejected-foreground: 0 0% 100%;
-    --status-scheduled: 213 55% 55%;
+    --status-scheduled: 213 50% 52%;
     --status-scheduled-foreground: 0 0% 100%;
-    --status-in-progress: 213 60% 42%;
+    --status-in-progress: 213 56% 38%;
     --status-in-progress-foreground: 0 0% 100%;
-    --status-completed: 152 65% 32%;
+    --status-completed: 152 60% 30%;
     --status-completed-foreground: 0 0% 100%;
-    --status-ready-for-invoicing: 28 80% 52%;
+    --status-ready-for-invoicing: 28 76% 50%;
     --status-ready-for-invoicing-foreground: 0 0% 100%;
-    --status-invoiced: 215 15% 65%;
+    --status-invoiced: 220 12% 62%;
     --status-invoiced-foreground: 0 0% 100%;
 
-    --sidebar-background: 213 60% 28%;
-    --sidebar-foreground: 210 20% 95%;
+    --sidebar-background: 213 52% 24%;
+    --sidebar-foreground: 218 18% 94%;
     --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 213 60% 28%;
-    --sidebar-accent: 213 50% 34%;
+    --sidebar-primary-foreground: 213 52% 24%;
+    --sidebar-accent: 213 44% 30%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 213 40% 35%;
+    --sidebar-border: 213 36% 32%;
     --sidebar-ring: 0 0% 100%;
   }
 
   .dark {
-    --background: 215 25% 10%;
-    --foreground: 210 20% 95%;
-    --card: 215 25% 13%;
-    --card-foreground: 210 20% 95%;
-    --popover: 215 25% 13%;
-    --popover-foreground: 210 20% 95%;
-    --primary: 213 60% 55%;
+    --background: 222 24% 8%;
+    --foreground: 218 18% 94%;
+    --card: 222 22% 11%;
+    --card-foreground: 218 18% 94%;
+    --popover: 222 22% 11%;
+    --popover-foreground: 218 18% 94%;
+    --primary: 213 56% 52%;
     --primary-foreground: 0 0% 100%;
-    --secondary: 215 20% 18%;
-    --secondary-foreground: 210 20% 90%;
-    --muted: 215 20% 18%;
-    --muted-foreground: 215 12% 60%;
-    --accent: 28 70% 50%;
+    --secondary: 222 18% 16%;
+    --secondary-foreground: 218 18% 88%;
+    --muted: 222 18% 16%;
+    --muted-foreground: 220 10% 56%;
+    --accent: 28 66% 48%;
     --accent-foreground: 0 0% 100%;
-    --destructive: 0 62% 30%;
+    --destructive: 0 58% 28%;
     --destructive-foreground: 0 0% 100%;
-    --success: 152 50% 35%;
+    --success: 152 46% 32%;
     --success-foreground: 0 0% 100%;
-    --info: 213 45% 50%;
+    --info: 213 42% 48%;
     --info-foreground: 0 0% 100%;
-    --border: 215 20% 20%;
-    --input: 215 20% 20%;
-    --ring: 213 60% 55%;
-    --sidebar-background: 213 55% 18%;
-    --sidebar-foreground: 210 20% 90%;
+    --border: 222 18% 18%;
+    --input: 222 18% 18%;
+    --ring: 213 56% 52%;
+
+    --glass-bg: 222 22% 11% / 0.72;
+    --glass-border: 222 18% 18% / 0.5;
+    --glass-shadow: 0 1px 3px 0 hsl(0 0% 0% / 0.12), 0 4px 14px 0 hsl(0 0% 0% / 0.16);
+
+    --sidebar-background: 213 50% 14%;
+    --sidebar-foreground: 218 18% 88%;
     --sidebar-primary: 0 0% 100%;
-    --sidebar-primary-foreground: 213 55% 18%;
-    --sidebar-accent: 213 45% 25%;
+    --sidebar-primary-foreground: 213 50% 14%;
+    --sidebar-accent: 213 42% 22%;
     --sidebar-accent-foreground: 0 0% 100%;
-    --sidebar-border: 213 40% 25%;
+    --sidebar-border: 213 36% 22%;
     --sidebar-ring: 0 0% 100%;
   }
 }
@@ -112,7 +122,9 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'SF Pro Text', 'Segoe UI', Roboto, sans-serif;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
   }
 
   /* Disabled buttons get cursor-not-allowed globally */
@@ -125,6 +137,21 @@
 @layer utilities {
   .safe-area-bottom {
     padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+
+  .glass {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(20px) saturate(1.2);
+    -webkit-backdrop-filter: blur(20px) saturate(1.2);
+    border: 1px solid hsl(var(--glass-border));
+    box-shadow: var(--glass-shadow);
+  }
+
+  .glass-subtle {
+    background: hsl(var(--glass-bg));
+    backdrop-filter: blur(12px) saturate(1.1);
+    -webkit-backdrop-filter: blur(12px) saturate(1.1);
+    border: 1px solid hsl(var(--glass-border));
   }
 }
 

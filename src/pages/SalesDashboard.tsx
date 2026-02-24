@@ -81,7 +81,7 @@ export default function SalesDashboard() {
       {/* ── Recent offers + leads ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 px-4 sm:px-5 pb-5">
         {/* Siste tilbud */}
-        <div className="rounded-xl bg-card shadow-sm p-3.5 sm:p-4">
+        <div className="rounded-2xl bg-card border border-border/40 shadow-sm p-3.5 sm:p-4">
           <div className="flex items-center justify-between mb-2.5">
             <h4 className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Siste tilbud</h4>
             <button
@@ -147,7 +147,7 @@ export default function SalesDashboard() {
         </div>
 
         {/* Siste leads */}
-        <div className="rounded-xl bg-card shadow-sm p-3.5 sm:p-4">
+        <div className="rounded-2xl bg-card border border-border/40 shadow-sm p-3.5 sm:p-4">
           <div className="flex items-center justify-between mb-2.5">
             <h4 className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Siste leads</h4>
             <button

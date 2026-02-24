@@ -120,7 +120,7 @@ function MiniDonut({ pct, status, size = 72 }: { pct: number; status: "green" | 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-3">
-      <h2 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{title}</h2>
+      <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">{title}</h2>
       {action}
     </div>
   );
@@ -562,18 +562,18 @@ export default function OverviewPage() {
   if (loading) return <DashboardSkeleton />;
 
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8 w-full pb-24 lg:pb-8 max-w-[1400px] mx-auto">
+    <div className="p-4 sm:p-6 lg:p-8 space-y-5 lg:space-y-6 w-full pb-24 lg:pb-8 max-w-[1400px] mx-auto">
       {/* Page header + Pulse */}
       <div>
-        <h1 className="text-lg sm:text-xl font-bold text-foreground">Oversikt</h1>
-        <p className="text-xs text-muted-foreground">
+        <h1 className="text-lg sm:text-xl font-bold text-foreground tracking-tight">Oversikt</h1>
+        <p className="text-xs text-muted-foreground/70 mt-0.5">
           {format(new Date(), "EEEE d. MMMM", { locale: nb })} · Uke {format(new Date(), "w", { locale: nb })}
         </p>
         {pulse && <PulseStripe pulse={pulse} />}
       </div>
 
       {/* ── SECTION 1: I DAG ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
         <TodayBlock
           icon={<Briefcase className="h-4 w-4" />}
           label="Aktive prosjekter"
@@ -610,9 +610,9 @@ export default function OverviewPage() {
       </div>
 
       {/* ── SECTION 2: SELSKAPETS HELSE ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
         <div
-          className="rounded-xl bg-card/60 border border-border/40 p-4 cursor-pointer hover:bg-card/80 transition-colors"
+          className="rounded-2xl bg-card border border-border/40 p-4 cursor-pointer hover:shadow-md transition-all duration-200"
           onClick={() => navigate("/projects")}
         >
           <SectionHeader
@@ -662,7 +662,7 @@ export default function OverviewPage() {
 
         {isAdmin && (
           <div
-            className="rounded-xl bg-card/60 border border-border/40 p-4 cursor-pointer hover:bg-card/80 transition-colors"
+            className="rounded-2xl bg-card border border-border/40 p-4 cursor-pointer hover:shadow-md transition-all duration-200"
             onClick={() => navigate("/sales")}
           >
             <SectionHeader
@@ -688,7 +688,7 @@ export default function OverviewPage() {
 
       {/* ── TEMPO: BEVEGELSE SISTE 7 DAGER ── */}
       {tempoLines.length > 0 && (
-        <div className="rounded-xl bg-card/60 border border-border/40 p-4">
+        <div className="rounded-2xl bg-card border border-border/40 p-4">
           <SectionHeader title="Bevegelse siste 7 dager" />
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0.5">
             {tempoLines.map(line => (
@@ -728,7 +728,7 @@ export default function OverviewPage() {
         <SectionHeader title="Denne uken" />
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
           {/* Resource load */}
-          <div className="rounded-xl bg-card/60 border border-border/40 p-4">
+          <div className="rounded-2xl bg-card border border-border/40 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-muted-foreground">Ressursbelastning</span>
               <button onClick={() => navigate("/projects/plan")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
@@ -756,7 +756,7 @@ export default function OverviewPage() {
           </div>
 
           {/* Active projects */}
-          <div className="rounded-xl bg-card/60 border border-border/40 p-4">
+          <div className="rounded-2xl bg-card border border-border/40 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-muted-foreground">Prosjekter i arbeid</span>
               <button onClick={() => navigate("/projects")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
@@ -770,7 +770,7 @@ export default function OverviewPage() {
           </div>
 
           {/* Closings */}
-          <div className="rounded-xl bg-card/60 border border-border/40 p-4">
+          <div className="rounded-2xl bg-card border border-border/40 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-muted-foreground">Forventet closing</span>
               <button onClick={() => navigate("/sales/pipeline")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
@@ -843,7 +843,7 @@ function TodayBlock({ icon, label, value, delta, subline, status, onClick }: {
   return (
     <button
       onClick={onClick}
-      className="flex items-center gap-3 rounded-xl bg-card/60 border border-border/40 px-3 py-3 text-left hover:bg-card/80 transition-colors group min-h-[60px]"
+      className="flex items-center gap-3 rounded-2xl bg-card border border-border/40 px-3.5 py-3.5 text-left hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 group min-h-[64px]"
     >
       <div className={`shrink-0 ${
         status === "critical" ? "text-destructive" : status === "warning" ? "text-accent" : "text-muted-foreground"
