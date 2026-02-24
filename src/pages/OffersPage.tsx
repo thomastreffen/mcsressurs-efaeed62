@@ -70,11 +70,11 @@ export default function OffersPage() {
   if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
   return (
-    <div className="mx-auto max-w-5xl p-4 sm:p-6 space-y-6">
+    <div className="mx-auto max-w-5xl p-4 sm:p-6 lg:p-8 space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Tilbud</h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} tilbud</p>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Tilbud</h1>
+          <p className="text-sm text-muted-foreground/70">{filtered.length} tilbud</p>
         </div>
         <Button onClick={() => navigate("/sales/offers/new")} className="gap-1.5">
           <Plus className="h-4 w-4" /> Nytt tilbud
@@ -106,7 +106,7 @@ export default function OffersPage() {
           onCancel={() => setSelectedIds([])}
         />
       )}
-      <div className="rounded-lg border overflow-x-auto">
+      <div className="rounded-2xl border border-border/40 bg-card shadow-sm overflow-x-auto">
         <Table>
           <TableHeader>
             <TableRow>
