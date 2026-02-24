@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchActiveLeads } from "@/lib/lead-queries";
 import { Badge } from "@/components/ui/badge";
 import { ArrowRight } from "lucide-react";
 import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
@@ -35,17 +36,12 @@ export default function SalesDashboard() {
 
   useEffect(() => {
     (async () => {
-      const [offersRes, leadsRes] = await Promise.all([
+      const leadsRes = await fetchActiveLeads("id, company_name, status, lead_ref_code, updated_at");
+      const [offersRes] = await Promise.all([
         supabase
           .from("offers")
           .select("id, offer_number, status, total_inc_vat, created_at, lead_id, calculations(customer_name)")
           .order("created_at", { ascending: false })
-          .limit(6),
-        supabase
-          .from("leads")
-          .select("id, company_name, status, lead_ref_code, updated_at")
-          .is("deleted_at", null)
-          .order("updated_at", { ascending: false })
           .limit(6),
       ]);
 
@@ -62,13 +58,16 @@ export default function SalesDashboard() {
       );
 
       setRecentLeads(
-        (leadsRes.data || []).map((l: any) => ({
-          id: l.id,
-          company_name: l.company_name,
-          status: l.status as LeadStatus,
-          ref_code: l.lead_ref_code,
-          updated_at: l.updated_at,
-        }))
+        (leadsRes.data || [])
+          .sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime())
+          .slice(0, 6)
+          .map((l: any) => ({
+            id: l.id,
+            company_name: l.company_name,
+            status: l.status as LeadStatus,
+            ref_code: l.lead_ref_code,
+            updated_at: l.updated_at,
+          }))
       );
 
       setLoading(false);

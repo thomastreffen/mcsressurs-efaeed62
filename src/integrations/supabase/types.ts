@@ -1737,6 +1737,8 @@ export type Database = {
       }
       leads: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
           assigned_owner_user_id: string | null
           company_id: string | null
           company_name: string
@@ -1765,6 +1767,8 @@ export type Database = {
           updated_at: string
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
           assigned_owner_user_id?: string | null
           company_id?: string | null
           company_name: string
@@ -1793,6 +1797,8 @@ export type Database = {
           updated_at?: string
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
           assigned_owner_user_id?: string | null
           company_id?: string | null
           company_name?: string

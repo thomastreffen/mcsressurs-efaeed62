@@ -3,6 +3,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import { formatDistanceToNow, isPast, isToday } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchActiveLeads, fetchDeletedLeads, fetchArchivedLeads } from "@/lib/lead-queries";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -13,11 +14,12 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BulkDeleteBar } from "@/components/BulkDeleteBar";
-import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, PIPELINE_STAGES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
-import { Search, Plus, Loader2, ArrowRight, Lightbulb } from "lucide-react";
+import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, PIPELINE_STAGES, type LeadStatus } from "@/lib/lead-status";
+import { Search, Plus, Loader2, ArrowRight, Lightbulb, RotateCcw, Archive, Trash2 } from "lucide-react";
 import { toast } from "sonner";
 
-// Next step label based on status
+type ViewMode = "active" | "archived" | "trash";
+
 function getNextStepLabel(status: LeadStatus): string {
   switch (status) {
     case "new": return "Kontakt";
@@ -51,6 +53,8 @@ interface Lead {
   next_action_date: string | null;
   next_action_note: string | null;
   lead_ref_code: string | null;
+  deleted_at: string | null;
+  archived_at: string | null;
 }
 
 export default function LeadsPage() {
@@ -61,11 +65,11 @@ export default function LeadsPage() {
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "all");
+  const [viewMode, setViewMode] = useState<ViewMode>("active");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
-  // Create form state
   const [companyName, setCompanyName] = useState("");
   const [contactName, setContactName] = useState("");
   const [email, setEmail] = useState("");
@@ -75,12 +79,22 @@ export default function LeadsPage() {
 
   const fetchLeads = async () => {
     setLoading(true);
-    const { data } = await supabase.from("leads").select("*").is("deleted_at", null).order("updated_at", { ascending: false });
-    setLeads((data || []) as any as Lead[]);
+    let result;
+    if (viewMode === "trash") {
+      result = await fetchDeletedLeads();
+    } else if (viewMode === "archived") {
+      result = await fetchArchivedLeads();
+    } else {
+      result = await fetchActiveLeads();
+    }
+    // Sort by updated_at desc client-side since helpers don't chain .order
+    const sorted = (result.data || []).sort((a: any, b: any) => new Date(b.updated_at).getTime() - new Date(a.updated_at).getTime());
+    setLeads(sorted as any as Lead[]);
+    setSelectedIds([]);
     setLoading(false);
   };
 
-  useEffect(() => { fetchLeads(); }, []);
+  useEffect(() => { fetchLeads(); }, [viewMode]);
 
   const resetForm = () => {
     setCompanyName(""); setContactName(""); setEmail(""); setPhone("");
@@ -116,8 +130,18 @@ export default function LeadsPage() {
     setSaving(false);
   };
 
+  const handleRestore = async (leadId: string) => {
+    if (viewMode === "trash") {
+      await supabase.from("leads").update({ deleted_at: null, deleted_by: null, delete_reason: null } as any).eq("id", leadId);
+    } else if (viewMode === "archived") {
+      await supabase.from("leads").update({ archived_at: null, archived_by: null } as any).eq("id", leadId);
+    }
+    toast.success("Lead gjenopprettet");
+    fetchLeads();
+  };
+
   const filtered = leads.filter((l) => {
-    if (statusFilter !== "all" && l.status !== statusFilter) return false;
+    if (viewMode === "active" && statusFilter !== "all" && l.status !== statusFilter) return false;
     if (search) {
       const s = search.toLowerCase();
       return l.company_name.toLowerCase().includes(s) ||
@@ -128,28 +152,53 @@ export default function LeadsPage() {
     return true;
   });
 
+  const viewModeLabel = viewMode === "active" ? "Aktive" : viewMode === "archived" ? "Arkiv" : "Papirkurv";
+
   return (
     <div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
-      {/* ── Compact header ── */}
       <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
+        {/* View mode toggle */}
+        <div className="flex items-center gap-1 rounded-lg border border-border/40 p-0.5">
+          {([
+            { key: "active" as ViewMode, label: "Aktive", icon: null },
+            { key: "archived" as ViewMode, label: "Arkiv", icon: Archive },
+            { key: "trash" as ViewMode, label: "Papirkurv", icon: Trash2 },
+          ]).map(v => (
+            <button
+              key={v.key}
+              onClick={() => setViewMode(v.key)}
+              className={`text-xs px-2.5 py-1.5 rounded-md transition-colors flex items-center gap-1 ${
+                viewMode === v.key ? "bg-secondary text-foreground font-medium" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {v.icon && <v.icon className="h-3 w-3" />}
+              {v.label}
+            </button>
+          ))}
+        </div>
+
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input placeholder="Søk firma, kontakt, referanse..." className="pl-9 h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle statuser</SelectItem>
-            {ALL_LEAD_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        {viewMode === "active" && (
+          <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Alle statuser</SelectItem>
+              {ALL_LEAD_STATUSES.map((s) => (
+                <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
         <div className="flex items-center gap-2 ml-auto">
           <span className="text-xs text-muted-foreground">{filtered.length} leads</span>
-          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 h-9">
-            <Plus className="h-3.5 w-3.5" /> Ny lead
-          </Button>
+          {viewMode === "active" && (
+            <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 h-9">
+              <Plus className="h-3.5 w-3.5" /> Ny lead
+            </Button>
+          )}
         </div>
       </div>
 
@@ -157,7 +206,7 @@ export default function LeadsPage() {
         <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>
       ) : (
         <>
-          {selectedIds.length > 0 && (
+          {viewMode === "active" && selectedIds.length > 0 && (
             <BulkDeleteBar
               selectedIds={selectedIds}
               entityType="leads"
@@ -168,28 +217,33 @@ export default function LeadsPage() {
           )}
 
           {filtered.length === 0 ? (
-            /* ── Helpful empty state ── */
             <div className="rounded-xl border border-dashed bg-card/50 py-12 px-6 text-center space-y-4">
               <Lightbulb className="h-8 w-8 mx-auto text-muted-foreground/40" />
               <div>
-                <p className="text-sm font-medium text-foreground">Ingen leads funnet</p>
-                <p className="text-xs text-muted-foreground mt-1">Opprett din første lead for å starte salgspipeline</p>
+                <p className="text-sm font-medium text-foreground">
+                  {viewMode === "active" ? "Ingen leads funnet" : viewMode === "archived" ? "Ingen arkiverte leads" : "Papirkurven er tom"}
+                </p>
+                {viewMode === "active" && (
+                  <p className="text-xs text-muted-foreground mt-1">Opprett din første lead for å starte salgspipeline</p>
+                )}
               </div>
-              <div className="flex items-center justify-center gap-3">
-                <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5">
-                  <Plus className="h-3.5 w-3.5" /> Opprett lead
-                </Button>
-                <Button size="sm" variant="outline" onClick={() => navigate("/sales/pipeline")} className="gap-1.5">
-                  Slik fungerer pipeline <ArrowRight className="h-3.5 w-3.5" />
-                </Button>
-              </div>
+              {viewMode === "active" && (
+                <div className="flex items-center justify-center gap-3">
+                  <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5">
+                    <Plus className="h-3.5 w-3.5" /> Opprett lead
+                  </Button>
+                  <Button size="sm" variant="outline" onClick={() => navigate("/sales/pipeline")} className="gap-1.5">
+                    Slik fungerer pipeline <ArrowRight className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
             </div>
           ) : (
             <div className="rounded-lg border overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
-                    {isAdmin && (
+                    {isAdmin && viewMode === "active" && (
                       <TableHead className="w-10">
                         <Checkbox
                           checked={filtered.length > 0 && selectedIds.length === filtered.length}
@@ -200,16 +254,21 @@ export default function LeadsPage() {
                     <TableHead>Lead</TableHead>
                     <TableHead>Status</TableHead>
                     <TableHead className="hidden md:table-cell">Sist aktivitet</TableHead>
-                    <TableHead className="hidden md:table-cell">Neste steg</TableHead>
+                    {viewMode === "active" && <TableHead className="hidden md:table-cell">Neste steg</TableHead>}
                     <TableHead className="text-right">Est. verdi</TableHead>
+                    {viewMode !== "active" && <TableHead className="w-20" />}
                   </TableRow>
                 </TableHeader>
                 <TableBody>
                   {filtered.map((lead) => {
                     const stageColor = PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)";
                     return (
-                      <TableRow key={lead.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/leads/${lead.id}`)}>
-                        {isAdmin && (
+                      <TableRow
+                        key={lead.id}
+                        className="cursor-pointer hover:bg-muted/50"
+                        onClick={() => viewMode === "active" ? navigate(`/sales/leads/${lead.id}`) : undefined}
+                      >
+                        {isAdmin && viewMode === "active" && (
                           <TableCell onClick={(e) => e.stopPropagation()}>
                             <Checkbox
                               checked={selectedIds.includes(lead.id)}
@@ -236,12 +295,21 @@ export default function LeadsPage() {
                             {formatDistanceToNow(new Date(lead.updated_at), { addSuffix: true, locale: nb })}
                           </span>
                         </TableCell>
-                        <TableCell className="hidden md:table-cell">
-                          <span className="text-xs text-muted-foreground">{getNextStepLabel(lead.status)}</span>
-                        </TableCell>
+                        {viewMode === "active" && (
+                          <TableCell className="hidden md:table-cell">
+                            <span className="text-xs text-muted-foreground">{getNextStepLabel(lead.status)}</span>
+                          </TableCell>
+                        )}
                         <TableCell className="text-right font-mono text-sm">
                           {lead.estimated_value > 0 ? `kr ${Number(lead.estimated_value).toLocaleString("nb-NO")}` : "—"}
                         </TableCell>
+                        {viewMode !== "active" && (
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Button variant="ghost" size="sm" onClick={() => handleRestore(lead.id)} className="gap-1 text-xs h-7">
+                              <RotateCcw className="h-3 w-3" /> Gjenopprett
+                            </Button>
+                          </TableCell>
+                        )}
                       </TableRow>
                     );
                   })}
