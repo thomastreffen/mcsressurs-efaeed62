@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchActiveLeads } from "@/lib/lead-queries";
+import { calculateCompanyPulse, calculateActionPriority, getProjectHealthMicro, type CompanyPulse, type ProjectHealthMicro } from "@/lib/company-pulse";
 import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays, formatDistanceToNow } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -44,6 +45,7 @@ interface MiniGauge {
   value: string;
   status: "green" | "yellow" | "red";
   href: string;
+  micro?: string;
 }
 
 interface WeekItem {
@@ -61,6 +63,7 @@ interface ActionItem {
   urgency: "today" | "this_week" | "overdue";
   module: string;
   owner?: string;
+  priorityScore: number;
 }
 
 interface TempoLine {
@@ -75,6 +78,11 @@ interface ActivityFeedItem {
   description: string;
   created_at: string;
   href: string;
+}
+
+interface ProjectTempoLine {
+  label: string;
+  value: number;
 }
 
 // ── Mini donut ──
@@ -174,6 +182,24 @@ function ActivityIcon({ type }: { type: ActivityFeedItem["type"] }) {
   }
 }
 
+// ── Pulse stripe ──
+
+function PulseStripe({ pulse }: { pulse: CompanyPulse }) {
+  const dotColor = pulse.level === "stable" ? "bg-success"
+    : pulse.level === "elevated" ? "bg-accent"
+    : "bg-destructive";
+
+  return (
+    <div className="flex items-start gap-2.5 py-2">
+      <span className={`h-2.5 w-2.5 rounded-full ${dotColor} mt-0.5 shrink-0`} />
+      <div className="min-w-0">
+        <p className="text-sm font-medium text-foreground leading-tight">{pulse.statusLabel}</p>
+        <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{pulse.explanation}</p>
+      </div>
+    </div>
+  );
+}
+
 // ── Main ──
 
 export default function OverviewPage() {
@@ -188,9 +214,11 @@ export default function OverviewPage() {
   const [projectGauges, setProjectGauges] = useState<MiniGauge[]>([]);
   const [salesGauges, setSalesGauges] = useState<MiniGauge[]>([]);
   const [tempoLines, setTempoLines] = useState<TempoLine[]>([]);
+  const [projectTempo, setProjectTempo] = useState<ProjectTempoLine[]>([]);
   const [weekItems, setWeekItems] = useState<{ resources: { name: string; hours: number }[]; milestones: WeekItem[]; closings: WeekItem[] }>({ resources: [], milestones: [], closings: [] });
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
+  const [pulse, setPulse] = useState<CompanyPulse | null>(null);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -286,12 +314,24 @@ export default function OverviewPage() {
     const riskPct = Math.min(100, Math.round((riskScore / Math.max(1, 20)) * 100));
     const riskStatus: "green" | "yellow" | "red" = riskScore >= 9 ? "red" : riskScore >= 4 ? "yellow" : "green";
 
+    const mediumRiskCount = openRisks.filter(r => r.severity === "medium").length;
     const cashflowPct = 0;
 
+    // Budget over 10% – approximate from change orders
+    const budgetOverCount = changeOrders.filter((c: any) => c.status === "sent" && Number(c.amount_ex_vat || 0) > 0).length;
+
+    const healthMicro = getProjectHealthMicro({
+      budgetOverCount,
+      highRiskCount: criticalRisks,
+      mediumRiskCount,
+      overdueInvoices: 0,
+      oldestInvoiceDays: 0,
+    });
+
     setProjectGauges([
-      { label: "Økonomi", pct: pendingPct, value: `${pendingPct}%`, status: pendingPct > 15 ? "red" : pendingPct > 8 ? "yellow" : "green", href: "/projects" },
-      { label: "Risiko", pct: riskPct, value: `${riskScore}p`, status: riskStatus, href: "/projects" },
-      { label: "Cashflow", pct: cashflowPct, value: `${cashflowPct}%`, status: "green", href: "/projects" },
+      { label: "Økonomi", pct: pendingPct, value: `${pendingPct}%`, status: pendingPct > 15 ? "red" : pendingPct > 8 ? "yellow" : "green", href: "/projects", micro: healthMicro.econ },
+      { label: "Risiko", pct: riskPct, value: `${riskScore}p`, status: riskStatus, href: "/projects", micro: healthMicro.risk },
+      { label: "Cashflow", pct: cashflowPct, value: `${cashflowPct}%`, status: "green", href: "/projects", micro: healthMicro.cashflow },
     ]);
 
     // Sales gauges
@@ -341,6 +381,17 @@ export default function OverviewPage() {
       { label: "Pipeline-endring", value: pipelineDeltaK, suffix: "k" },
     ]);
 
+    // ── PROJECT TEMPO SISTE 7 DAGER ──
+    const riskChanges7d = risks.filter(r => new Date(r.updated_at || r.created_at) >= d7).length;
+    const budgetChanges7d = changeOrders.filter((c: any) => new Date(c.created_at || "") >= d7).length;
+    const plansApproved7d = events.filter((e: any) => e.status === "approved" && new Date(e.updated_at || e.created_at) >= d7).length;
+    setProjectTempo([
+      { label: "Nye prosjekter", value: newProjects7d },
+      { label: "Endret risikonivå", value: riskChanges7d },
+      { label: "Endret budsjettstatus", value: budgetChanges7d },
+      { label: "Plan godkjent", value: plansApproved7d },
+    ]);
+
     // ── SECTION 3: THIS WEEK ──
     const thisWeekEvents = events.filter((e: any) => {
       const s = new Date(e.start_time);
@@ -373,8 +424,7 @@ export default function OverviewPage() {
 
     setWeekItems({ resources, milestones: [], closings });
 
-    // ── SECTION 4: ACTION REQUIRED (enriched) ──
-    // Build tech name map for owners
+    // ── SECTION 4: ACTION REQUIRED (with priority scores) ──
     const techByUser = new Map<string, string>();
     for (const t of techs) if (t.user_id) techByUser.set(t.user_id, t.name);
 
@@ -384,86 +434,121 @@ export default function OverviewPage() {
     const leadsInactive7d = openLeads.filter(l => new Date(l.updated_at) < d7);
     if (leadsInactive7d.length > 0) {
       const hasOld = leadsInactive7d.some(l => new Date(l.updated_at) < d14);
-      actionList.push({ label: "Leads uten aktivitet > 7 dager", count: leadsInactive7d.length, severity: "warning", href: "/sales/leads", urgency: hasOld ? "overdue" : "this_week", module: "Salg" });
+      const urgency: ActionItem["urgency"] = hasOld ? "overdue" : "this_week";
+      actionList.push({
+        label: "Leads uten aktivitet > 7 dager", count: leadsInactive7d.length, severity: "warning", href: "/sales/leads",
+        urgency, module: "Salg",
+        priorityScore: calculateActionPriority({ urgency, isInactiveLead: true }),
+      });
     }
 
     // Critical risks without mitigation
     const highRiskJobs = openRisks.filter(r => r.severity === "high");
     if (highRiskJobs.length > 0) {
-      actionList.push({ label: "Prosjekter med kritisk risiko", count: highRiskJobs.length, severity: "critical", href: "/projects", urgency: "today", module: "Prosjekt" });
+      actionList.push({
+        label: "Prosjekter med kritisk risiko", count: highRiskJobs.length, severity: "critical", href: "/projects",
+        urgency: "today", module: "Prosjekt",
+        priorityScore: calculateActionPriority({ urgency: "today", isHighRisk: true }),
+      });
     }
 
     // Offers without follow-up
     if (overdueOffers > 0) {
       const hasVeryOld = offers.some((o: any) => o.status === "sent" && o.sent_at && differenceInDays(now, new Date(o.sent_at)) > 10);
-      actionList.push({ label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers", urgency: hasVeryOld ? "overdue" : "this_week", module: "Salg" });
+      const urgency: ActionItem["urgency"] = hasVeryOld ? "overdue" : "this_week";
+      actionList.push({
+        label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers",
+        urgency, module: "Salg",
+        priorityScore: calculateActionPriority({ urgency }),
+      });
     }
 
     // Projects without approved plan
     const requestedJobs = events.filter((e: any) => e.status === "requested").length;
     if (requestedJobs > 0) {
-      actionList.push({ label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects", urgency: "this_week", module: "Prosjekt" });
+      actionList.push({
+        label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects",
+        urgency: "this_week", module: "Prosjekt",
+        priorityScore: calculateActionPriority({ urgency: "this_week", isProjectWithoutPlan: true }),
+      });
     }
 
     // Overdue lead follow-ups
     if (overdueLeads.length > 0) {
       const hasOverdue = overdueLeads.some(l => differenceInDays(now, new Date(l.next_action_date!)) > 3);
-      actionList.push({ label: "Leads med forfalt oppfølging", count: overdueLeads.length, severity: "warning", href: "/sales/leads", urgency: hasOverdue ? "overdue" : "today", module: "Salg" });
+      const urgency: ActionItem["urgency"] = hasOverdue ? "overdue" : "today";
+      actionList.push({
+        label: "Leads med forfalt oppfølging", count: overdueLeads.length, severity: "warning", href: "/sales/leads",
+        urgency, module: "Salg",
+        priorityScore: calculateActionPriority({ urgency }),
+      });
     }
 
     // Calculations done without offer
-    // Calculations done without offer – calculation_status enum uses "approved"/"draft"/etc
-    const { data: allCalcs } = await supabase.from("calculations").select("id, lead_id, status").is("deleted_at", null);
+    const { data: allCalcs } = await supabase.from("calculations").select("id, lead_id, status, created_at").is("deleted_at", null);
     const calcsWithOffer = new Set(offers.map((o: any) => o.calculation_id));
     const calcsNoOffer = (allCalcs || []).filter((c: any) => c.status === "approved" && !calcsWithOffer.has(c.id));
     if (calcsNoOffer.length > 0) {
-      actionList.push({ label: "Kalkyle ferdig uten tilbud", count: calcsNoOffer.length, severity: "info", href: "/sales/calculations", urgency: "this_week", module: "Salg" });
+      const hasOld = calcsNoOffer.some((c: any) => differenceInDays(now, new Date(c.created_at)) > 3);
+      actionList.push({
+        label: "Kalkyle ferdig uten tilbud", count: calcsNoOffer.length, severity: "info", href: "/sales/calculations",
+        urgency: "this_week", module: "Salg",
+        priorityScore: calculateActionPriority({ urgency: "this_week", isCalcWithoutOfferOld: hasOld }),
+      });
     }
 
     // Sync errors
     const syncErrors = (calLinksRes.data || []).filter(l => l.sync_status === "error");
     if (syncErrors.length > 0) {
-      actionList.push({ label: "Synkroniseringsfeil", count: syncErrors.length, severity: "critical", href: "/admin/integration-health", urgency: "today", module: "System" });
+      actionList.push({
+        label: "Synkroniseringsfeil", count: syncErrors.length, severity: "critical", href: "/admin/integration-health",
+        urgency: "today", module: "System",
+        priorityScore: calculateActionPriority({ urgency: "today", isSyncError: true }),
+      });
     }
 
-    const severityOrder = { critical: 0, warning: 1, info: 2 };
-    const urgencyOrder = { overdue: 0, today: 1, this_week: 2 };
-    actionList.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency] || severityOrder[a.severity] - severityOrder[b.severity]);
-
+    // Sort by priority score descending
+    actionList.sort((a, b) => b.priorityScore - a.priorityScore);
     setActions(actionList);
+
+    // ── COMPANY PULSE ──
+    const pipelineMomentumNegative = pipelineDeltaK < 0;
+    const companyPulse = calculateCompanyPulse({
+      overdueFollowups: overdueLeads.length,
+      highRiskProjects: criticalRisks,
+      calcsWithoutOffer: calcsNoOffer.length,
+      syncErrors: syncErrors.length,
+      pipelineMomentumNegative,
+      projectsWithoutPlan: requestedJobs,
+    });
+    setPulse(companyPulse);
 
     // ── ACTIVITY FEED (last 24h) ──
     const feed: ActivityFeedItem[] = [];
 
-    // New leads
     const newLeads24h = leads.filter(l => new Date(l.created_at) >= new Date(h24));
     for (const l of newLeads24h.slice(0, 5)) {
       feed.push({ id: `lead-${l.id}`, type: "lead", description: `Ny lead: ${l.company_name}`, created_at: l.created_at, href: `/sales/leads/${l.id}` });
     }
 
-    // Lead status changes from activity_log
     for (const a of activities24.filter((a: any) => a.entity_type === "lead" && a.action === "status_change").slice(0, 5)) {
       feed.push({ id: `act-${a.id}`, type: "lead", description: a.title || `Statusendring: ${a.action}`, created_at: a.created_at, href: `/sales/leads/${a.entity_id}` });
     }
 
-    // New calculations
     for (const c of calcs24.slice(0, 3)) {
       feed.push({ id: `calc-${c.id}`, type: "offer", description: `Ny kalkyle: ${c.project_title}`, created_at: c.created_at, href: `/sales/calculations/${c.id}` });
     }
 
-    // New offers
     const offers24h = offers.filter((o: any) => new Date(o.created_at) >= new Date(h24));
     for (const o of offers24h.slice(0, 3)) {
       feed.push({ id: `offer-${o.id}`, type: "offer", description: `Nytt tilbud: ${o.offer_number}`, created_at: o.created_at, href: `/sales/offers` });
     }
 
-    // Risk changes
     const riskChanges24h = risks.filter(r => new Date(r.updated_at || r.created_at) >= new Date(h24) && r.severity === "high");
     for (const r of riskChanges24h.slice(0, 3)) {
       feed.push({ id: `risk-${r.id}`, type: "project", description: `Risiko (HIGH): ${r.category}`, created_at: r.updated_at || r.created_at, href: `/projects/${r.job_id}?tab=risiko` });
     }
 
-    // Sync errors
     for (const s of syncErrors.slice(0, 2)) {
       feed.push({ id: `sync-${s.id}`, type: "system", description: `Synkfeil: ${s.last_error || "Kalendersynk feilet"}`, created_at: new Date().toISOString(), href: `/admin/integration-health` });
     }
@@ -478,12 +563,13 @@ export default function OverviewPage() {
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-6 lg:space-y-8 w-full pb-24 lg:pb-8 max-w-[1400px] mx-auto">
-      {/* Page header */}
+      {/* Page header + Pulse */}
       <div>
         <h1 className="text-lg sm:text-xl font-bold text-foreground">Oversikt</h1>
         <p className="text-xs text-muted-foreground">
           {format(new Date(), "EEEE d. MMMM", { locale: nb })} · Uke {format(new Date(), "w", { locale: nb })}
         </p>
+        {pulse && <PulseStripe pulse={pulse} />}
       </div>
 
       {/* ── SECTION 1: I DAG ── */}
@@ -543,9 +629,35 @@ export default function OverviewPage() {
                   </span>
                 </div>
                 <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{g.label}</span>
+                {g.micro && (
+                  <span className="text-[9px] text-muted-foreground/70 text-center leading-tight max-w-[100px]">{g.micro}</span>
+                )}
               </div>
             ))}
           </div>
+
+          {/* Project tempo 7d */}
+          {projectTempo.length > 0 && (
+            <div className="mt-4 pt-3 border-t border-border/30">
+              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">Prosjekt-tempo siste 7 dager</p>
+              <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
+                {projectTempo.map(pt => {
+                  const isPos = pt.value > 0;
+                  const isNeg = pt.value < 0;
+                  const arrow = isPos ? "↑" : isNeg ? "↓" : "";
+                  const colorCls = isPos ? "text-success" : isNeg ? "text-destructive" : "text-muted-foreground";
+                  return (
+                    <div key={pt.label} className="flex items-center justify-between py-0.5">
+                      <span className="text-[10px] text-muted-foreground">{pt.label}</span>
+                      <span className={`text-[10px] font-mono font-medium ${colorCls}`}>
+                        {pt.value === 0 ? "—" : `${arrow} ${Math.abs(pt.value)}`}
+                      </span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
         </div>
 
         {isAdmin && (
@@ -685,10 +797,10 @@ export default function OverviewPage() {
         </div>
       </div>
 
-      {/* ── SECTION 4: KREVER HANDLING ── */}
-      {actions.length > 0 && (
-        <div>
-          <SectionHeader title="Krever handling" />
+      {/* ── SECTION 4: KREVER HANDLING 2.0 ── */}
+      <div>
+        <SectionHeader title="Krever handling" />
+        {actions.length > 0 ? (
           <div className="space-y-1">
             {actions.map((a, i) => (
               <button
@@ -709,8 +821,10 @@ export default function OverviewPage() {
               </button>
             ))}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-xs text-muted-foreground/60 py-4 text-center">Systemet er i balanse. Ingen kritiske oppgaver.</p>
+        )}
+      </div>
     </div>
   );
 }
