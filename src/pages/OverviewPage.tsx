@@ -85,19 +85,56 @@ interface ProjectTempoLine {
   value: number;
 }
 
-// ── Mini donut ──
+// ── Large Donut Chart ──
 
-function MiniDonut({ pct, status, size = 72 }: { pct: number; status: "green" | "yellow" | "red"; size?: number }) {
-  const sw = 8;
+function LargeDonut({ segments, size = 200 }: { segments: { pct: number; color: string; label: string }[]; size?: number }) {
+  const sw = 32;
+  const r = (size - sw) / 2;
+  const circ = 2 * Math.PI * r;
+
+  let offset = 0;
+  const rings = segments.map((seg, i) => {
+    const dash = (seg.pct / 100) * circ;
+    const ring = (
+      <circle
+        key={i}
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
+        fill="none"
+        stroke={seg.color}
+        strokeWidth={sw}
+        strokeDasharray={`${dash} ${circ - dash}`}
+        strokeDashoffset={-offset}
+        transform={`rotate(-90 ${size / 2} ${size / 2})`}
+        className="transition-all duration-700 ease-out"
+      />
+    );
+    offset += dash;
+    return ring;
+  });
+
+  return (
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="hsl(var(--border))" strokeWidth={sw} opacity={0.3} />
+      {rings}
+    </svg>
+  );
+}
+
+// ── Mini Donut for gauges ──
+
+function MiniDonut({ pct, status, size = 80 }: { pct: number; status: "green" | "yellow" | "red"; size?: number }) {
+  const sw = 6;
   const r = (size - sw) / 2;
   const circ = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, pct / 100));
   const dash = clamped * circ;
 
-  const color = status === "green" ? "hsl(152, 55%, 40%)"
-    : status === "yellow" ? "hsl(38, 60%, 52%)"
-    : "hsl(0, 50%, 58%)";
-  const track = pct <= 0 ? "hsl(152, 20%, 85%)" : "hsl(210, 8%, 91%)";
+  const color = status === "green" ? "hsl(var(--success))"
+    : status === "yellow" ? "hsl(var(--accent))"
+    : "hsl(var(--destructive))";
+  const track = pct <= 0 ? "hsl(var(--success) / 0.2)" : "hsl(var(--border) / 0.4)";
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block">
@@ -119,67 +156,35 @@ function MiniDonut({ pct, status, size = 72 }: { pct: number; status: "green" | 
 
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
-    <div className="flex items-center justify-between mb-3">
-      <h2 className="text-[11px] font-semibold uppercase tracking-widest text-muted-foreground/70">{title}</h2>
+    <div className="flex items-center justify-between mb-4">
+      <h2 className="text-sm font-semibold text-foreground tracking-tight">{title}</h2>
       {action}
     </div>
   );
 }
 
-// ── Delta badge ──
-
-function DeltaBadge({ delta }: { delta: number | null }) {
-  if (delta === null || delta === 0) return null;
-  const positive = delta > 0;
-  return (
-    <span className={`ml-1.5 text-[9px] font-mono font-medium rounded px-1 py-px ${
-      positive ? "text-success bg-success/10" : "text-destructive bg-destructive/10"
-    }`}>
-      {positive ? "+" : ""}{delta}
-    </span>
-  );
-}
-
-// ── Tempo line ──
-
-function TempoLineItem({ line }: { line: TempoLine }) {
-  const isPositive = line.value > 0;
-  const isNegative = line.value < 0;
-  const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
-  const colorClass = isPositive ? "text-success" : isNegative ? "text-destructive" : "text-muted-foreground";
-
-  return (
-    <div className="flex items-center justify-between py-1">
-      <span className="text-xs text-muted-foreground">{line.label}</span>
-      <span className={`text-xs font-mono font-medium ${colorClass}`}>
-        {arrow} {line.value === 0 ? "—" : `${Math.abs(line.value)}${line.suffix || ""}`}
-      </span>
-    </div>
-  );
-}
-
-// ── Urgency label ──
-
-function UrgencyLabel({ urgency }: { urgency: "today" | "this_week" | "overdue" }) {
-  const map = {
-    overdue: { text: "Forfalt", cls: "text-destructive bg-destructive/10" },
-    today: { text: "I dag", cls: "text-foreground bg-secondary" },
-    this_week: { text: "Denne uken", cls: "text-muted-foreground bg-secondary" },
-  };
-  const { text, cls } = map[urgency];
-  return <span className={`text-[9px] font-medium rounded px-1.5 py-px ${cls}`}>{text}</span>;
-}
-
 // ── Activity type icon ──
 
 function ActivityIcon({ type }: { type: ActivityFeedItem["type"] }) {
-  const cls = "h-3.5 w-3.5";
+  const cls = "h-4 w-4";
   switch (type) {
-    case "lead": return <UserPlus className={`${cls} text-primary`} />;
-    case "offer": return <FileText className={`${cls} text-accent`} />;
-    case "project": return <ShieldAlert className={`${cls} text-destructive`} />;
-    case "system": return <Zap className={`${cls} text-muted-foreground`} />;
+    case "lead": return <div className="flex items-center justify-center h-8 w-8 rounded-full bg-primary/10"><UserPlus className={`${cls} text-primary`} /></div>;
+    case "offer": return <div className="flex items-center justify-center h-8 w-8 rounded-full bg-accent/10"><FileText className={`${cls} text-accent`} /></div>;
+    case "project": return <div className="flex items-center justify-center h-8 w-8 rounded-full bg-destructive/10"><ShieldAlert className={`${cls} text-destructive`} /></div>;
+    case "system": return <div className="flex items-center justify-center h-8 w-8 rounded-full bg-muted"><Zap className={`${cls} text-muted-foreground`} /></div>;
   }
+}
+
+// ── Urgency badge ──
+
+function UrgencyBadge({ urgency }: { urgency: "today" | "this_week" | "overdue" }) {
+  const map = {
+    overdue: { text: "Forfalt", cls: "bg-destructive/10 text-destructive" },
+    today: { text: "I dag", cls: "bg-primary/10 text-primary" },
+    this_week: { text: "Denne uken", cls: "bg-muted text-muted-foreground" },
+  };
+  const { text, cls } = map[urgency];
+  return <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${cls}`}>{text}</span>;
 }
 
 // ── Pulse stripe ──
@@ -190,13 +195,70 @@ function PulseStripe({ pulse }: { pulse: CompanyPulse }) {
     : "bg-destructive";
 
   return (
-    <div className="flex items-start gap-2.5 py-2">
-      <span className={`h-2.5 w-2.5 rounded-full ${dotColor} mt-0.5 shrink-0`} />
+    <div className="flex items-center gap-3 rounded-xl bg-card border border-border/40 px-4 py-3 mt-4">
+      <span className={`h-3 w-3 rounded-full ${dotColor} shrink-0 animate-pulse`} />
       <div className="min-w-0">
-        <p className="text-sm font-medium text-foreground leading-tight">{pulse.statusLabel}</p>
-        <p className="text-[11px] text-muted-foreground leading-snug mt-0.5">{pulse.explanation}</p>
+        <p className="text-sm font-medium text-foreground">{pulse.statusLabel}</p>
+        <p className="text-xs text-muted-foreground/70 mt-0.5">{pulse.explanation}</p>
       </div>
     </div>
+  );
+}
+
+// ── KPI Card ──
+
+function KpiCard({ icon, label, value, delta, subline, status, onClick, gradient }: {
+  icon: React.ReactNode;
+  label: string;
+  value: number | string;
+  delta?: number | null;
+  subline?: string;
+  status?: "warning" | "critical";
+  onClick: () => void;
+  gradient?: string;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="relative flex flex-col items-center justify-center rounded-2xl bg-card border border-border/40 p-5 text-center hover:shadow-lg hover:scale-[1.02] active:scale-[0.98] transition-all duration-200 group overflow-hidden min-h-[140px]"
+    >
+      {/* Subtle gradient top stripe */}
+      <div className={`absolute top-0 left-0 right-0 h-1 ${gradient || "bg-primary/30"}`} />
+
+      {/* Icon */}
+      <div className={`mb-2 ${
+        status === "critical" ? "text-destructive" : status === "warning" ? "text-accent" : "text-primary/60"
+      }`}>
+        {icon}
+      </div>
+
+      {/* Big number */}
+      <p className="text-4xl font-bold font-mono text-primary tracking-tight leading-none">{value}</p>
+
+      {/* Delta */}
+      {delta !== null && delta !== undefined && delta !== 0 && (
+        <span className={`mt-1 text-[10px] font-mono font-medium rounded-full px-2 py-0.5 ${
+          delta > 0 ? "text-success bg-success/10" : "text-destructive bg-destructive/10"
+        }`}>
+          {delta > 0 ? "+" : ""}{delta}
+        </span>
+      )}
+
+      {/* Label */}
+      <p className="text-xs text-muted-foreground mt-2 font-medium">{label}</p>
+
+      {/* Subline */}
+      {subline && (
+        <p className="text-[10px] text-muted-foreground/60 mt-0.5">{subline}</p>
+      )}
+
+      {/* Status indicator */}
+      {status && (
+        <span className={`absolute top-3 right-3 h-2 w-2 rounded-full ${
+          status === "critical" ? "bg-destructive animate-pulse" : "bg-accent"
+        }`} />
+      )}
+    </button>
   );
 }
 
@@ -262,7 +324,6 @@ export default function OverviewPage() {
 
     const activeStatuses: JobStatus[] = ["requested", "approved", "scheduled", "in_progress", "time_change_proposed"];
 
-    // ── SECTION 1: TODAY + DELTAS + CONTEXT ──
     const activeProjects = events.filter((e: any) => activeStatuses.includes(e.status)).length;
     const meetingsToday = calEvents.length;
     const openLeads = leads.filter(l => !["lost", "won"].includes(l.status));
@@ -272,7 +333,6 @@ export default function OverviewPage() {
     const openRisks = risks.filter(r => r.status === "open");
     const criticalRisks = openRisks.filter(r => r.severity === "high").length;
 
-    // Yesterday snapshot for deltas
     const yesterdayActive = events.filter((e: any) => activeStatuses.includes(e.status) && new Date(e.created_at) < new Date(yesterdayStart)).length;
     const yesterdayOverdueLeads = openLeads.filter(l => l.next_action_date && new Date(l.next_action_date) < new Date(yesterdayStart)).length;
     const yesterdayOverdueOffers = offers.filter((o: any) => o.status === "sent" && o.sent_at && differenceInDays(new Date(yesterdayStart), new Date(o.sent_at)) > 5).length;
@@ -282,12 +342,10 @@ export default function OverviewPage() {
     const overdueDelta = (overdueLeads.length + overdueOffers) - (yesterdayOverdueLeads + yesterdayOverdueOffers);
     const critDelta = criticalRisks - yesterdayCritical;
 
-    // Risk delta 7d
     const highRisksNow = openRisks.filter(r => r.severity === "high").length;
     const highRisks7dAgo = risks.filter(r => r.status === "open" && r.severity === "high" && new Date(r.created_at) < d7).length;
     const riskDelta7d = highRisksNow - highRisks7dAgo;
 
-    // Next meeting
     const nextMeeting = calEvents.find(m => new Date(m.event_start!) >= now);
     const nextMeetingTime = nextMeeting?.event_start ? format(new Date(nextMeeting.event_start), "HH:mm") : null;
 
@@ -298,12 +356,7 @@ export default function OverviewPage() {
       overdueFollowups: overdueDelta !== 0 ? overdueDelta : null,
       criticalRisks: critDelta !== 0 ? critDelta : null,
     });
-    setTodayCtx({
-      nextMeetingTime,
-      overdueCount: overdueLeads.length,
-      todayCount: todayActionLeads.length,
-      riskDelta7d,
-    });
+    setTodayCtx({ nextMeetingTime, overdueCount: overdueLeads.length, todayCount: todayActionLeads.length, riskDelta7d });
 
     // ── SECTION 2: COMPANY HEALTH ──
     const totalCO = changeOrders.length;
@@ -317,7 +370,6 @@ export default function OverviewPage() {
     const mediumRiskCount = openRisks.filter(r => r.severity === "medium").length;
     const cashflowPct = 0;
 
-    // Budget over 10% – approximate from change orders
     const budgetOverCount = changeOrders.filter((c: any) => c.status === "sent" && Number(c.amount_ex_vat || 0) > 0).length;
 
     const healthMicro = getProjectHealthMicro({
@@ -363,7 +415,7 @@ export default function OverviewPage() {
       { label: "Vinnrate", pct: winRate, value: `${winRate}%`, status: winStatus, href: "/sales" },
     ]);
 
-    // ── TEMPO: BEVEGELSE SISTE 7 DAGER ──
+    // ── TEMPO ──
     const newProjects7d = events.filter((e: any) => new Date(e.created_at) >= d7 && activeStatuses.includes(e.status)).length;
     const newLeads7d = leads.filter(l => new Date(l.created_at) >= d7).length;
     const offersSent7d = offers.filter((o: any) => o.status !== "draft" && o.sent_at && new Date(o.sent_at) >= d7).length;
@@ -381,123 +433,100 @@ export default function OverviewPage() {
       { label: "Pipeline-endring", value: pipelineDeltaK, suffix: "k" },
     ]);
 
-    // ── PROJECT TEMPO SISTE 7 DAGER ──
+    // ── PROJECT TEMPO ──
     const riskChanges7d = risks.filter(r => new Date(r.updated_at || r.created_at) >= d7).length;
     const budgetChanges7d = changeOrders.filter((c: any) => new Date(c.created_at || "") >= d7).length;
     const plansApproved7d = events.filter((e: any) => e.status === "approved" && new Date(e.updated_at || e.created_at) >= d7).length;
     setProjectTempo([
       { label: "Nye prosjekter", value: newProjects7d },
       { label: "Endret risikonivå", value: riskChanges7d },
-      { label: "Endret budsjettstatus", value: budgetChanges7d },
-      { label: "Plan godkjent", value: plansApproved7d },
+      { label: "Budsjett-endringer", value: budgetChanges7d },
+      { label: "Planer godkjent", value: plansApproved7d },
     ]);
 
-    // ── SECTION 3: THIS WEEK ──
-    const thisWeekEvents = events.filter((e: any) => {
+    // ── WEEK ──
+    const weekEvts = events.filter((e: any) => {
       const s = new Date(e.start_time);
       return s >= weekStart && s <= weekEnd && activeStatuses.includes(e.status);
     });
-    const techHours = new Map<string, number>();
-    for (const tech of techs) techHours.set(tech.name, 0);
-    for (const ev of thisWeekEvents) {
-      const hours = (new Date(ev.end_time).getTime() - new Date(ev.start_time).getTime()) / 3600000;
-      for (const et of (ev as any).event_technicians || []) {
-        const name = et.technicians?.name;
-        if (name) techHours.set(name, (techHours.get(name) || 0) + hours);
+
+    const techHoursMap: Record<string, number> = {};
+    for (const e of weekEvts) {
+      const hours = (new Date(e.end_time).getTime() - new Date(e.start_time).getTime()) / 3600000;
+      const techNames = (e as any).event_technicians?.map((et: any) => et.technicians?.name).filter(Boolean) || [];
+      for (const name of techNames) {
+        techHoursMap[name] = (techHoursMap[name] || 0) + hours;
       }
     }
-    const resources = Array.from(techHours.entries())
-      .map(([name, hours]) => ({ name, hours: Math.round(hours * 10) / 10 }))
-      .filter(r => r.hours > 0)
-      .sort((a, b) => b.hours - a.hours)
-      .slice(0, 5);
+    const resources = Object.entries(techHoursMap).map(([name, hours]) => ({ name, hours: Math.round(hours) })).sort((a, b) => b.hours - a.hours).slice(0, 5);
 
-    const closings = openLeads
-      .filter(l => l.expected_close_date && new Date(l.expected_close_date) >= weekStart && new Date(l.expected_close_date) <= weekEnd)
-      .slice(0, 5)
-      .map(l => ({
-        id: l.id,
-        label: l.company_name,
-        sub: `${fmtNOK(Number(l.estimated_value || 0))}`,
-        href: `/sales/leads/${l.id}`,
-      }));
+    const closingLeads = openLeads.filter(l => {
+      if (!l.expected_close_date) return false;
+      const d = new Date(l.expected_close_date);
+      return d >= weekStart && d <= weekEnd;
+    });
+    const closings = closingLeads.map(l => ({
+      id: l.id,
+      label: l.company_name,
+      sub: l.estimated_value ? fmtNOK(Number(l.estimated_value)) : "—",
+      href: `/sales/leads/${l.id}`,
+    }));
 
     setWeekItems({ resources, milestones: [], closings });
 
-    // ── SECTION 4: ACTION REQUIRED (with priority scores) ──
-    const techByUser = new Map<string, string>();
-    for (const t of techs) if (t.user_id) techByUser.set(t.user_id, t.name);
-
+    // ── ACTIONS ──
     const actionList: ActionItem[] = [];
-
-    // Leads without activity > 7d
-    const leadsInactive7d = openLeads.filter(l => new Date(l.updated_at) < d7);
-    if (leadsInactive7d.length > 0) {
-      const hasOld = leadsInactive7d.some(l => new Date(l.updated_at) < d14);
-      const urgency: ActionItem["urgency"] = hasOld ? "overdue" : "this_week";
+    
+    if (overdueLeads.length > 0) {
       actionList.push({
-        label: "Leads uten aktivitet > 7 dager", count: leadsInactive7d.length, severity: "warning", href: "/sales/leads",
-        urgency, module: "Salg",
-        priorityScore: calculateActionPriority({ urgency, isInactiveLead: true }),
+        label: "Leads med forfalt oppfølging", count: overdueLeads.length, severity: "critical", href: "/sales/leads",
+        urgency: "overdue", module: "Salg",
+        priorityScore: calculateActionPriority({ urgency: "overdue" }),
       });
     }
-
-    // Critical risks without mitigation
-    const highRiskJobs = openRisks.filter(r => r.severity === "high");
-    if (highRiskJobs.length > 0) {
+    if (todayActionLeads.length > 0) {
       actionList.push({
-        label: "Prosjekter med kritisk risiko", count: highRiskJobs.length, severity: "critical", href: "/projects",
+        label: "Leads som krever handling i dag", count: todayActionLeads.length, severity: "warning", href: "/sales/leads",
+        urgency: "today", module: "Salg",
+        priorityScore: calculateActionPriority({ urgency: "today" }),
+      });
+    }
+    if (overdueOffers > 0) {
+      actionList.push({
+        label: "Tilbud uten svar >5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers",
+        urgency: "overdue", module: "Salg",
+        priorityScore: calculateActionPriority({ urgency: "overdue" }),
+      });
+    }
+    if (criticalRisks > 0) {
+      actionList.push({
+        label: "Prosjekter med kritisk risiko", count: criticalRisks, severity: "critical", href: "/projects",
         urgency: "today", module: "Prosjekt",
         priorityScore: calculateActionPriority({ urgency: "today", isHighRisk: true }),
       });
     }
 
-    // Offers without follow-up
-    if (overdueOffers > 0) {
-      const hasVeryOld = offers.some((o: any) => o.status === "sent" && o.sent_at && differenceInDays(now, new Date(o.sent_at)) > 10);
-      const urgency: ActionItem["urgency"] = hasVeryOld ? "overdue" : "this_week";
-      actionList.push({
-        label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers",
-        urgency, module: "Salg",
-        priorityScore: calculateActionPriority({ urgency }),
-      });
-    }
-
-    // Projects without approved plan
     const requestedJobs = events.filter((e: any) => e.status === "requested").length;
     if (requestedJobs > 0) {
       actionList.push({
-        label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects",
+        label: "Jobber som venter på planlegging", count: requestedJobs, severity: "warning", href: "/projects",
         urgency: "this_week", module: "Prosjekt",
-        priorityScore: calculateActionPriority({ urgency: "this_week", isProjectWithoutPlan: true }),
+        priorityScore: calculateActionPriority({ urgency: "this_week" }),
       });
     }
 
-    // Overdue lead follow-ups
-    if (overdueLeads.length > 0) {
-      const hasOverdue = overdueLeads.some(l => differenceInDays(now, new Date(l.next_action_date!)) > 3);
-      const urgency: ActionItem["urgency"] = hasOverdue ? "overdue" : "today";
-      actionList.push({
-        label: "Leads med forfalt oppfølging", count: overdueLeads.length, severity: "warning", href: "/sales/leads",
-        urgency, module: "Salg",
-        priorityScore: calculateActionPriority({ urgency }),
-      });
-    }
-
-    // Calculations done without offer
-    const { data: allCalcs } = await supabase.from("calculations").select("id, lead_id, status, created_at").is("deleted_at", null);
-    const calcsWithOffer = new Set(offers.map((o: any) => o.calculation_id));
-    const calcsNoOffer = (allCalcs || []).filter((c: any) => c.status === "approved" && !calcsWithOffer.has(c.id));
+    const calcsNoOffer = (calcsRes.data || []).filter((c: any) => {
+      const hasOffer = offers.some((o: any) => o.calculation_id === c.id);
+      return !hasOffer && c.status === "draft";
+    });
     if (calcsNoOffer.length > 0) {
-      const hasOld = calcsNoOffer.some((c: any) => differenceInDays(now, new Date(c.created_at)) > 3);
       actionList.push({
-        label: "Kalkyle ferdig uten tilbud", count: calcsNoOffer.length, severity: "info", href: "/sales/calculations",
+        label: "Kalkyler uten tilbud", count: calcsNoOffer.length, severity: "info", href: "/sales/calculations",
         urgency: "this_week", module: "Salg",
-        priorityScore: calculateActionPriority({ urgency: "this_week", isCalcWithoutOfferOld: hasOld }),
+        priorityScore: calculateActionPriority({ urgency: "this_week" }),
       });
     }
 
-    // Sync errors
     const syncErrors = (calLinksRes.data || []).filter(l => l.sync_status === "error");
     if (syncErrors.length > 0) {
       actionList.push({
@@ -507,7 +536,6 @@ export default function OverviewPage() {
       });
     }
 
-    // Sort by priority score descending
     actionList.sort((a, b) => b.priorityScore - a.priorityScore);
     setActions(actionList);
 
@@ -523,7 +551,7 @@ export default function OverviewPage() {
     });
     setPulse(companyPulse);
 
-    // ── ACTIVITY FEED (last 24h) ──
+    // ── ACTIVITY FEED ──
     const feed: ActivityFeedItem[] = [];
 
     const newLeads24h = leads.filter(l => new Date(l.created_at) >= new Date(h24));
@@ -561,181 +589,237 @@ export default function OverviewPage() {
 
   if (loading) return <DashboardSkeleton />;
 
+  // ── Health donut segments ──
+  const healthSegments = [
+    ...projectGauges.map(g => ({
+      pct: Math.max(g.pct, 3),
+      color: g.status === "green" ? "hsl(var(--success))" : g.status === "yellow" ? "hsl(var(--accent))" : "hsl(var(--destructive))",
+      label: g.label,
+    })),
+    ...salesGauges.map(g => ({
+      pct: Math.max(g.pct * 0.3, 3),
+      color: g.status === "green" ? "hsl(152, 55%, 50%)" : g.status === "yellow" ? "hsl(38, 70%, 55%)" : "hsl(0, 60%, 55%)",
+      label: g.label,
+    })),
+  ];
+
+  // Normalize to 100%
+  const totalPct = healthSegments.reduce((s, seg) => s + seg.pct, 0);
+  const normalizedSegments = healthSegments.map(seg => ({ ...seg, pct: (seg.pct / Math.max(totalPct, 1)) * 100 }));
+
   return (
-    <div className="p-4 sm:p-6 lg:p-8 space-y-5 lg:space-y-6 w-full pb-24 lg:pb-8 max-w-[1400px] mx-auto">
-      {/* Page header + Pulse */}
+    <div className="p-4 sm:p-6 lg:p-8 space-y-6 w-full pb-24 lg:pb-8 max-w-[1440px] mx-auto">
+      {/* Page header */}
       <div>
-        <h1 className="text-lg sm:text-xl font-bold text-foreground tracking-tight">Oversikt</h1>
-        <p className="text-xs text-muted-foreground/70 mt-0.5">
-          {format(new Date(), "EEEE d. MMMM", { locale: nb })} · Uke {format(new Date(), "w", { locale: nb })}
+        <h1 className="text-2xl sm:text-3xl font-bold text-foreground tracking-tight">Oversikt</h1>
+        <p className="text-sm text-muted-foreground/70 mt-1">
+          {format(new Date(), "EEEE d. MMMM yyyy", { locale: nb })} · Uke {format(new Date(), "w", { locale: nb })}
         </p>
         {pulse && <PulseStripe pulse={pulse} />}
       </div>
 
-      {/* ── SECTION 1: I DAG ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <TodayBlock
-          icon={<Briefcase className="h-4 w-4" />}
-          label="Aktive prosjekter"
+      {/* ── KPI CARDS ── */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <KpiCard
+          icon={<Briefcase className="h-5 w-5" />}
+          label="Prosjekter"
           value={today.activeProjects}
           delta={deltas.activeProjects}
           onClick={() => navigate("/projects")}
+          gradient="bg-gradient-to-r from-primary/40 to-primary/10"
         />
-        <TodayBlock
-          icon={<CalendarDays className="h-4 w-4" />}
+        <KpiCard
+          icon={<CalendarDays className="h-5 w-5" />}
           label="Møter i dag"
           value={today.meetingsToday}
           delta={deltas.meetingsToday}
           subline={todayCtx.nextMeetingTime ? `Neste kl ${todayCtx.nextMeetingTime}` : undefined}
           onClick={() => navigate("/sales/leads")}
+          gradient="bg-gradient-to-r from-info/40 to-info/10"
         />
-        <TodayBlock
-          icon={<Clock className="h-4 w-4" />}
-          label="Forfalte oppfølginger"
+        <KpiCard
+          icon={<Clock className="h-5 w-5" />}
+          label="Oppfølginger"
           value={today.overdueFollowups}
           delta={deltas.overdueFollowups}
-          subline={todayCtx.overdueCount > 0 || todayCtx.todayCount > 0 ? `${todayCtx.overdueCount} forfalt · ${todayCtx.todayCount} i dag` : undefined}
+          subline={todayCtx.overdueCount > 0 ? `${todayCtx.overdueCount} forfalt` : undefined}
           status={today.overdueFollowups > 0 ? "warning" : undefined}
           onClick={() => navigate("/sales/leads")}
+          gradient="bg-gradient-to-r from-accent/40 to-accent/10"
         />
-        <TodayBlock
-          icon={<ShieldAlert className="h-4 w-4" />}
+        <KpiCard
+          icon={<ShieldAlert className="h-5 w-5" />}
           label="Kritiske risikoer"
           value={today.criticalRisks}
           delta={deltas.criticalRisks}
           subline={todayCtx.riskDelta7d !== 0 ? `${todayCtx.riskDelta7d > 0 ? "+" : ""}${todayCtx.riskDelta7d} siste 7d` : undefined}
           status={today.criticalRisks > 0 ? "critical" : undefined}
           onClick={() => navigate("/projects")}
+          gradient="bg-gradient-to-r from-destructive/30 to-destructive/5"
         />
       </div>
 
-      {/* ── SECTION 2: SELSKAPETS HELSE ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-3 lg:gap-4">
+      {/* ── HEALTH + ACTIVITY DONUT ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Health card */}
         <div
-          className="rounded-2xl bg-card border border-border/40 p-4 cursor-pointer hover:shadow-md transition-all duration-200"
+          className="lg:col-span-4 rounded-2xl bg-card border border-border/40 p-5 cursor-pointer hover:shadow-md transition-all duration-200"
           onClick={() => navigate("/projects")}
         >
           <SectionHeader
-            title="Prosjekthelse"
-            action={<span className="text-xs text-muted-foreground flex items-center gap-1">Detaljer <ChevronRight className="h-3 w-3" /></span>}
+            title="Helse"
+            action={<span className="text-xs text-muted-foreground/70 flex items-center gap-1 hover:text-foreground transition-colors">Prosjekt & Salg <ChevronRight className="h-3.5 w-3.5" /></span>}
           />
-          <div className="flex items-center justify-around gap-2">
+          <div className="flex gap-5 flex-wrap">
+            {[...projectGauges, ...salesGauges].map(g => (
+              <div key={g.label} className="flex items-center gap-2">
+                <span className={`h-2.5 w-2.5 rounded-full ${
+                  g.status === "green" ? "bg-success" : g.status === "yellow" ? "bg-accent" : "bg-destructive"
+                }`} />
+                <span className="text-xs text-muted-foreground">{g.label}</span>
+              </div>
+            ))}
+          </div>
+
+          {/* Mini gauges */}
+          <div className="flex items-center justify-around mt-5">
             {projectGauges.map(g => (
-              <div key={g.label} className="flex flex-col items-center gap-1.5">
+              <div key={g.label} className="flex flex-col items-center gap-1">
                 <div className="relative">
-                  <MiniDonut pct={g.pct} status={g.status} size={isMobile ? 60 : 72} />
-                  <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold font-mono text-foreground">
+                  <MiniDonut pct={g.pct} status={g.status} size={isMobile ? 56 : 68} />
+                  <span className="absolute inset-0 flex items-center justify-center text-xs font-bold font-mono text-foreground">
                     {g.value}
                   </span>
                 </div>
-                <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{g.label}</span>
-                {g.micro && (
-                  <span className="text-[9px] text-muted-foreground/70 text-center leading-tight max-w-[100px]">{g.micro}</span>
-                )}
+                <span className="text-[10px] text-muted-foreground font-medium">{g.label}</span>
               </div>
             ))}
           </div>
+        </div>
 
-          {/* Project tempo 7d */}
-          {projectTempo.length > 0 && (
-            <div className="mt-4 pt-3 border-t border-border/30">
-              <p className="text-[10px] uppercase tracking-wider text-muted-foreground font-semibold mb-1.5">Prosjekt-tempo siste 7 dager</p>
-              <div className="grid grid-cols-2 gap-x-6 gap-y-0.5">
-                {projectTempo.map(pt => {
-                  const isPos = pt.value > 0;
-                  const isNeg = pt.value < 0;
-                  const arrow = isPos ? "↑" : isNeg ? "↓" : "";
-                  const colorCls = isPos ? "text-success" : isNeg ? "text-destructive" : "text-muted-foreground";
-                  return (
-                    <div key={pt.label} className="flex items-center justify-between py-0.5">
-                      <span className="text-[10px] text-muted-foreground">{pt.label}</span>
-                      <span className={`text-[10px] font-mono font-medium ${colorCls}`}>
-                        {pt.value === 0 ? "—" : `${arrow} ${Math.abs(pt.value)}`}
-                      </span>
-                    </div>
-                  );
-                })}
+        {/* Activity Donut card */}
+        <div
+          className="lg:col-span-4 rounded-2xl bg-card border border-border/40 p-5 cursor-pointer hover:shadow-md transition-all duration-200"
+          onClick={() => navigate("/sales")}
+        >
+          <SectionHeader
+            title="Aktivitet"
+            action={<span className="text-xs text-muted-foreground/70 flex items-center gap-1 hover:text-foreground transition-colors">Siste 7 dager <ChevronRight className="h-3.5 w-3.5" /></span>}
+          />
+          <div className="flex items-center justify-center my-2">
+            <LargeDonut segments={normalizedSegments} size={isMobile ? 160 : 190} />
+          </div>
+          {/* Sales gauges row */}
+          <div className="flex items-center justify-around mt-3">
+            {salesGauges.map(g => (
+              <div key={g.label} className="text-center">
+                <p className="text-lg font-bold font-mono text-foreground">{g.value}</p>
+                <p className="text-[10px] text-muted-foreground">{g.label}</p>
               </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Actions panel */}
+        <div className="lg:col-span-4 rounded-2xl bg-card border border-border/40 p-5">
+          <SectionHeader title="Krever handling" />
+          {actions.length > 0 ? (
+            <div className="space-y-1">
+              {actions.slice(0, 6).map((a, i) => (
+                <button
+                  key={i}
+                  onClick={() => navigate(a.href)}
+                  className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors group"
+                >
+                  <div className={`flex items-center justify-center h-8 w-8 rounded-full shrink-0 ${
+                    a.severity === "critical" ? "bg-destructive/10" : a.severity === "warning" ? "bg-accent/10" : "bg-muted"
+                  }`}>
+                    <span className={`h-2 w-2 rounded-full ${
+                      a.severity === "critical" ? "bg-destructive" : a.severity === "warning" ? "bg-accent" : "bg-muted-foreground"
+                    }`} />
+                  </div>
+                  <div className="min-w-0 flex-1">
+                    <p className="text-xs font-medium text-foreground truncate">{a.label}</p>
+                    <p className="text-[10px] text-muted-foreground">{a.module}</p>
+                  </div>
+                  <Badge variant="secondary" className="text-[10px] font-mono rounded-full px-2">
+                    {a.count}
+                  </Badge>
+                </button>
+              ))}
+            </div>
+          ) : (
+            <div className="flex flex-col items-center justify-center py-8 text-center">
+              <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center mb-2">
+                <Activity className="h-5 w-5 text-success" />
+              </div>
+              <p className="text-sm font-medium text-foreground">Alt i balanse</p>
+              <p className="text-xs text-muted-foreground/70 mt-0.5">Ingen kritiske oppgaver</p>
             </div>
           )}
         </div>
+      </div>
 
-        {isAdmin && (
-          <div
-            className="rounded-2xl bg-card border border-border/40 p-4 cursor-pointer hover:shadow-md transition-all duration-200"
-            onClick={() => navigate("/sales")}
-          >
-            <SectionHeader
-              title="Salgshelse"
-              action={<span className="text-xs text-muted-foreground flex items-center gap-1">Detaljer <ChevronRight className="h-3 w-3" /></span>}
-            />
-            <div className="flex items-center justify-around gap-2">
-              {salesGauges.map(g => (
-                <div key={g.label} className="flex flex-col items-center gap-1.5">
-                  <div className="relative">
-                    <MiniDonut pct={g.pct} status={g.status} size={isMobile ? 60 : 72} />
-                    <span className="absolute inset-0 flex items-center justify-center text-sm font-semibold font-mono text-foreground">
-                      {g.value}
-                    </span>
+      {/* ── ACTIVITY TIMELINE ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {/* Activity feed */}
+        <div className="rounded-2xl bg-card border border-border/40 p-5">
+          <SectionHeader
+            title="Aktivitet siste 24 timer"
+            action={<span className="text-xs text-muted-foreground/70">Siste hendelser</span>}
+          />
+          {activityFeed.length > 0 ? (
+            <div className="space-y-1">
+              {activityFeed.map(item => (
+                <button
+                  key={item.id}
+                  onClick={() => navigate(item.href)}
+                  className="flex items-center gap-3 w-full rounded-xl px-2 py-2 text-left hover:bg-secondary/50 transition-colors group"
+                >
+                  <ActivityIcon type={item.type} />
+                  <div className="min-w-0 flex-1">
+                    <span className="text-xs text-foreground truncate block">{item.description}</span>
                   </div>
-                  <span className="text-[10px] uppercase tracking-wider text-muted-foreground font-medium">{g.label}</span>
-                </div>
+                  <span className="text-[10px] text-muted-foreground shrink-0">
+                    {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: nb })}
+                  </span>
+                </button>
               ))}
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* ── TEMPO: BEVEGELSE SISTE 7 DAGER ── */}
-      {tempoLines.length > 0 && (
-        <div className="rounded-2xl bg-card border border-border/40 p-4">
-          <SectionHeader title="Bevegelse siste 7 dager" />
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0.5">
-            {tempoLines.map(line => (
-              <TempoLineItem key={line.label} line={line} />
-            ))}
-          </div>
+          ) : (
+            <p className="text-xs text-muted-foreground/60 py-6 text-center">Ingen ny aktivitet siste 24 timer</p>
+          )}
         </div>
-      )}
 
-      {/* ── AKTIVITET SISTE 24 TIMER ── */}
-      <div>
-        <SectionHeader title="Aktivitet siste 24 timer" />
-        {activityFeed.length > 0 ? (
-          <div className="space-y-0.5">
-            {activityFeed.map(item => (
-              <button
-                key={item.id}
-                onClick={() => navigate(item.href)}
-                className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-secondary/50 transition-colors group"
-              >
-                <ActivityIcon type={item.type} />
-                <span className="text-xs text-foreground flex-1 truncate">{item.description}</span>
-                <span className="text-[10px] text-muted-foreground shrink-0">
-                  {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: nb })}
-                </span>
-                <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
-              </button>
-            ))}
+        {/* Tempo + Week summary */}
+        <div className="rounded-2xl bg-card border border-border/40 p-5">
+          <SectionHeader title="Bevegelse siste 7 dager" />
+          <div className="space-y-2.5">
+            {tempoLines.map(line => {
+              const isPositive = line.value > 0;
+              const isNegative = line.value < 0;
+              const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
+              const colorClass = isPositive ? "text-success" : isNegative ? "text-destructive" : "text-muted-foreground";
+              return (
+                <div key={line.label} className="flex items-center justify-between">
+                  <span className="text-xs text-muted-foreground">{line.label}</span>
+                  <span className={`text-sm font-mono font-semibold ${colorClass}`}>
+                    {line.value === 0 ? "—" : `${arrow} ${Math.abs(line.value)}${line.suffix || ""}`}
+                  </span>
+                </div>
+              );
+            })}
           </div>
-        ) : (
-          <p className="text-xs text-muted-foreground/60 py-4 text-center">Ingen ny aktivitet siste 24 timer</p>
-        )}
-      </div>
 
-      {/* ── SECTION 3: DENNE UKEN ── */}
-      <div>
-        <SectionHeader title="Denne uken" />
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-3">
-          {/* Resource load */}
-          <div className="rounded-2xl bg-card border border-border/40 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-muted-foreground">Ressursbelastning</span>
-              <button onClick={() => navigate("/projects/plan")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
-                Plan <ArrowRight className="h-2.5 w-2.5" />
-              </button>
-            </div>
-            {weekItems.resources.length > 0 ? (
+          {/* Resource utilization */}
+          {weekItems.resources.length > 0 && (
+            <div className="mt-5 pt-4 border-t border-border/30">
+              <div className="flex items-center justify-between mb-3">
+                <span className="text-xs font-medium text-muted-foreground">Ressursbelastning denne uken</span>
+                <button onClick={() => navigate("/projects/plan")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
+                  Plan <ArrowRight className="h-2.5 w-2.5" />
+                </button>
+              </div>
               <div className="space-y-2">
                 {weekItems.resources.map(r => (
                   <div key={r.name} className="flex items-center gap-2">
@@ -750,122 +834,11 @@ export default function OverviewPage() {
                   </div>
                 ))}
               </div>
-            ) : (
-              <p className="text-xs text-muted-foreground/60 text-center py-3">Ingen planlagte timer</p>
-            )}
-          </div>
-
-          {/* Active projects */}
-          <div className="rounded-2xl bg-card border border-border/40 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-muted-foreground">Prosjekter i arbeid</span>
-              <button onClick={() => navigate("/projects")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
-                Alle <ArrowRight className="h-2.5 w-2.5" />
-              </button>
             </div>
-            <div className="flex items-center justify-center py-3">
-              <span className="text-3xl font-bold font-mono text-foreground">{today.activeProjects}</span>
-              <span className="text-xs text-muted-foreground ml-2">aktive</span>
-            </div>
-          </div>
-
-          {/* Closings */}
-          <div className="rounded-2xl bg-card border border-border/40 p-4">
-            <div className="flex items-center justify-between mb-3">
-              <span className="text-xs font-medium text-muted-foreground">Forventet closing</span>
-              <button onClick={() => navigate("/sales/pipeline")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
-                Pipeline <ArrowRight className="h-2.5 w-2.5" />
-              </button>
-            </div>
-            {weekItems.closings.length > 0 ? (
-              <div className="space-y-1.5">
-                {weekItems.closings.map(c => (
-                  <button
-                    key={c.id}
-                    onClick={(e) => { e.stopPropagation(); navigate(c.href); }}
-                    className="flex items-center justify-between w-full rounded-lg px-2 py-1.5 text-left hover:bg-secondary/50 transition-colors"
-                  >
-                    <span className="text-xs text-foreground truncate">{c.label}</span>
-                    <span className="text-[10px] text-muted-foreground font-mono">{c.sub}</span>
-                  </button>
-                ))}
-              </div>
-            ) : (
-              <p className="text-xs text-muted-foreground/60 text-center py-3">Ingen denne uken</p>
-            )}
-          </div>
+          )}
         </div>
-      </div>
-
-      {/* ── SECTION 4: KREVER HANDLING 2.0 ── */}
-      <div>
-        <SectionHeader title="Krever handling" />
-        {actions.length > 0 ? (
-          <div className="space-y-1">
-            {actions.map((a, i) => (
-              <button
-                key={i}
-                onClick={() => navigate(a.href)}
-                className="flex items-center gap-3 w-full rounded-lg px-3 py-2.5 text-left hover:bg-secondary/50 transition-colors group"
-              >
-                <span className={`h-2 w-2 rounded-full shrink-0 ${
-                  a.severity === "critical" ? "bg-destructive" : a.severity === "warning" ? "bg-accent" : "bg-muted-foreground"
-                }`} />
-                <span className="text-sm text-foreground flex-1">{a.label}</span>
-                <span className="text-[9px] text-muted-foreground/70 shrink-0 hidden sm:inline">{a.module}</span>
-                <UrgencyLabel urgency={a.urgency} />
-                <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
-                  {a.count}
-                </Badge>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity" />
-              </button>
-            ))}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground/60 py-4 text-center">Systemet er i balanse. Ingen kritiske oppgaver.</p>
-        )}
       </div>
     </div>
-  );
-}
-
-// ── Today block ──
-
-function TodayBlock({ icon, label, value, delta, subline, status, onClick }: {
-  icon: React.ReactNode;
-  label: string;
-  value: number;
-  delta?: number | null;
-  subline?: string;
-  status?: "warning" | "critical";
-  onClick: () => void;
-}) {
-  return (
-    <button
-      onClick={onClick}
-      className="flex items-center gap-3 rounded-2xl bg-card border border-border/40 px-3.5 py-3.5 text-left hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all duration-200 group min-h-[64px]"
-    >
-      <div className={`shrink-0 ${
-        status === "critical" ? "text-destructive" : status === "warning" ? "text-accent" : "text-muted-foreground"
-      }`}>
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="flex items-baseline">
-          <p className="text-lg font-bold font-mono text-foreground leading-none">{value}</p>
-          <DeltaBadge delta={delta ?? null} />
-        </div>
-        <p className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</p>
-        {subline && (
-          <p className="text-[9px] text-muted-foreground/70 truncate mt-0.5">{subline}</p>
-        )}
-      </div>
-      {status && (
-        <span className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
-          status === "critical" ? "bg-destructive" : "bg-accent"
-        }`} />
-      )}
-    </button>
   );
 }
 
