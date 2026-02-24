@@ -54,43 +54,44 @@ function statusToHsl(s: StatusColor): string {
   return "hsl(0, 72%, 51%)";
 }
 
-// ── Half-circle gauge (SVG) with gradient ──
+// ── Donut gauge (SVG) ──
 
-function HalfGauge({ pct, status, size = 200 }: { pct: number; status: StatusColor; size?: number }) {
-  const strokeWidth = 18;
+function DonutGauge({ pct, status, size = 160 }: { pct: number; status: StatusColor; size?: number }) {
+  const strokeWidth = 14;
   const r = (size - strokeWidth) / 2;
-  const cx = size / 2;
-  const cy = size / 2;
-  const circumference = Math.PI * r;
+  const circumference = 2 * Math.PI * r;
   const clamped = Math.max(0, Math.min(1, pct / 100));
-  const dashLen = Math.max(clamped, 0.005) * circumference; // min visible arc when 0%
-  const gradientId = `gauge-grad-${status}-${size}`;
+  const dashLen = clamped * circumference;
+  const rotation = -90; // start from top
+
+  const strokeColor = status === "green"
+    ? "hsl(152, 60%, 38%)"
+    : status === "yellow"
+      ? "hsl(28, 80%, 52%)"
+      : "hsl(0, 72%, 51%)";
 
   return (
-    <svg width={size} height={size / 2 + strokeWidth / 2 + 2} viewBox={`0 0 ${size} ${size / 2 + strokeWidth / 2 + 2}`} className="block mx-auto">
-      <defs>
-        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
-          <stop offset="0%" stopColor="hsl(152, 60%, 38%)" />
-          <stop offset="50%" stopColor="hsl(28, 80%, 52%)" />
-          <stop offset="100%" stopColor="hsl(0, 72%, 51%)" />
-        </linearGradient>
-      </defs>
+    <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block mx-auto">
       {/* Track */}
-      <path
-        d={`M ${strokeWidth / 2} ${cy} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
         fill="none"
         stroke="hsl(210, 15%, 93%)"
         strokeWidth={strokeWidth}
-        strokeLinecap="round"
       />
       {/* Value arc */}
-      <path
-        d={`M ${strokeWidth / 2} ${cy} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
+      <circle
+        cx={size / 2}
+        cy={size / 2}
+        r={r}
         fill="none"
-        stroke={pct <= 0 ? "hsl(152, 60%, 38%)" : `url(#${gradientId})`}
+        stroke={strokeColor}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
-        strokeDasharray={pct <= 0 ? `${circumference} 0` : `${dashLen} ${circumference}`}
+        strokeDasharray={`${dashLen} ${circumference}`}
+        transform={`rotate(${rotation} ${size / 2} ${size / 2})`}
         className="transition-all duration-700 ease-out"
       />
     </svg>
@@ -359,7 +360,7 @@ export function PortfolioHealthGauges() {
   }, [projects, filter]);
 
   const totalJobs = statusCounts.reduce((s, d) => s + d.value, 0);
-  const gaugeSize = isMobile ? 150 : 200;
+  const gaugeSize = isMobile ? 120 : 160;
 
   if (loading) {
     return (
@@ -384,21 +385,18 @@ export function PortfolioHealthGauges() {
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 max-w-5xl mx-auto">
           {gauges.map((g) => (
             <div key={g.label} className="flex flex-col items-center text-center">
-              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-2">
                 {g.icon} {g.label}
               </span>
-              <div className="relative w-full" style={{ maxWidth: gaugeSize }}>
-                <HalfGauge pct={g.pct} status={g.status} size={gaugeSize} />
-                <div
-                  className="absolute left-1/2 -translate-x-1/2"
-                  style={{ bottom: isMobile ? 0 : 4 }}
-                >
-                  <p className="text-3xl sm:text-5xl font-semibold text-foreground font-mono leading-none">
+              <div className="relative" style={{ width: gaugeSize, height: gaugeSize }}>
+                <DonutGauge pct={g.pct} status={g.status} size={gaugeSize} />
+                <div className="absolute inset-0 flex flex-col items-center justify-center">
+                  <p className="text-2xl sm:text-3xl font-semibold text-foreground font-mono leading-none">
                     {g.mainLabel}
                   </p>
                 </div>
               </div>
-              <p className="text-xs text-muted-foreground -mt-1">{g.subLabel}</p>
+              <p className="text-xs text-muted-foreground mt-1">{g.subLabel}</p>
             </div>
           ))}
         </div>
