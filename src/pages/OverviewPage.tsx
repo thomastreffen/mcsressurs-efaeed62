@@ -1,13 +1,13 @@
-import { useEffect, useState, useMemo } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchActiveLeads } from "@/lib/lead-queries";
-import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays } from "date-fns";
+import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays, formatDistanceToNow } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
   Briefcase, CalendarDays, AlertTriangle, TrendingUp,
   ChevronRight, ArrowRight, Clock, ShieldAlert, Wallet,
-  FileText, UserPlus, BarChart3,
+  FileText, UserPlus, BarChart3, Zap, Mail, Activity,
 } from "lucide-react";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { useAuth } from "@/hooks/useAuth";
@@ -31,6 +31,13 @@ interface TodayDeltas {
   criticalRisks: number | null;
 }
 
+interface TodayContext {
+  nextMeetingTime: string | null;
+  overdueCount: number;
+  todayCount: number;
+  riskDelta7d: number;
+}
+
 interface MiniGauge {
   label: string;
   pct: number;
@@ -52,12 +59,22 @@ interface ActionItem {
   severity: "critical" | "warning" | "info";
   href: string;
   urgency: "today" | "this_week" | "overdue";
+  module: string;
+  owner?: string;
 }
 
 interface TempoLine {
   label: string;
   value: number;
   suffix?: string;
+}
+
+interface ActivityFeedItem {
+  id: string;
+  type: "lead" | "offer" | "project" | "system";
+  description: string;
+  created_at: string;
+  href: string;
 }
 
 // ── Mini donut ──
@@ -145,6 +162,18 @@ function UrgencyLabel({ urgency }: { urgency: "today" | "this_week" | "overdue" 
   return <span className={`text-[9px] font-medium rounded px-1.5 py-px ${cls}`}>{text}</span>;
 }
 
+// ── Activity type icon ──
+
+function ActivityIcon({ type }: { type: ActivityFeedItem["type"] }) {
+  const cls = "h-3.5 w-3.5";
+  switch (type) {
+    case "lead": return <UserPlus className={`${cls} text-primary`} />;
+    case "offer": return <FileText className={`${cls} text-accent`} />;
+    case "project": return <ShieldAlert className={`${cls} text-destructive`} />;
+    case "system": return <Zap className={`${cls} text-muted-foreground`} />;
+  }
+}
+
 // ── Main ──
 
 export default function OverviewPage() {
@@ -155,11 +184,13 @@ export default function OverviewPage() {
 
   const [today, setToday] = useState<TodayMetrics>({ activeProjects: 0, meetingsToday: 0, overdueFollowups: 0, criticalRisks: 0 });
   const [deltas, setDeltas] = useState<TodayDeltas>({ activeProjects: null, meetingsToday: null, overdueFollowups: null, criticalRisks: null });
+  const [todayCtx, setTodayCtx] = useState<TodayContext>({ nextMeetingTime: null, overdueCount: 0, todayCount: 0, riskDelta7d: 0 });
   const [projectGauges, setProjectGauges] = useState<MiniGauge[]>([]);
   const [salesGauges, setSalesGauges] = useState<MiniGauge[]>([]);
   const [tempoLines, setTempoLines] = useState<TempoLine[]>([]);
   const [weekItems, setWeekItems] = useState<{ resources: { name: string; hours: number }[]; milestones: WeekItem[]; closings: WeekItem[] }>({ resources: [], milestones: [], closings: [] });
   const [actions, setActions] = useState<ActionItem[]>([]);
+  const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -169,6 +200,7 @@ export default function OverviewPage() {
     const todayStart = startOfDay(now).toISOString();
     const todayEnd = new Date(startOfDay(now).getTime() + 86400000).toISOString();
     const yesterdayStart = subDays(startOfDay(now), 1).toISOString();
+    const h24 = subDays(now, 1).toISOString();
     const weekStart = startOfWeek(now, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
     const d7 = subDays(now, 7);
@@ -176,16 +208,18 @@ export default function OverviewPage() {
     const d30 = subDays(now, 30);
     const d90 = subDays(now, 90);
 
-    const leadsRes = await fetchActiveLeads("id, status, company_name, estimated_value, probability, next_action_date, updated_at, created_at, expected_close_date");
+    const leadsRes = await fetchActiveLeads("id, status, company_name, estimated_value, probability, next_action_date, updated_at, created_at, expected_close_date, assigned_owner_user_id");
 
-    const [eventsRes, risksRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes] = await Promise.all([
+    const [eventsRes, risksRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes, calcsRes, activityRes] = await Promise.all([
       supabase.from("events").select("id, title, status, customer, start_time, end_time, meeting_join_url, internal_number, created_at, event_technicians(technician_id, technicians(name))").is("deleted_at", null),
-      supabase.from("job_risk_items").select("id, job_id, severity, status, category, created_at"),
-      supabase.from("offers").select("id, offer_number, status, total_inc_vat, sent_at, created_at, calculation_id, calculations(customer_name)").order("created_at", { ascending: false }),
+      supabase.from("job_risk_items").select("id, job_id, severity, status, category, created_at, updated_at"),
+      supabase.from("offers").select("id, offer_number, status, total_inc_vat, sent_at, created_at, calculation_id, lead_id, calculations(customer_name, project_title)").order("created_at", { ascending: false }),
       supabase.from("job_change_orders").select("id, job_id, status, amount_ex_vat"),
       supabase.from("technicians").select("id, name, user_id"),
-      supabase.from("job_calendar_links").select("id, sync_status, user_id"),
-      supabase.from("lead_calendar_links").select("id, lead_id, event_start, event_subject").gte("event_start", todayStart).lt("event_start", todayEnd),
+      supabase.from("job_calendar_links").select("id, sync_status, user_id, last_error"),
+      supabase.from("lead_calendar_links").select("id, lead_id, event_start, event_subject, event_end").gte("event_start", todayStart).lt("event_start", todayEnd).order("event_start", { ascending: true }),
+      supabase.from("calculations").select("id, project_title, customer_name, created_at, status, lead_id").is("deleted_at", null).gte("created_at", h24),
+      supabase.from("activity_log").select("id, entity_type, entity_id, action, title, created_at").gte("created_at", h24).order("created_at", { ascending: false }).limit(20),
     ]);
 
     const events = eventsRes.data || [];
@@ -194,14 +228,18 @@ export default function OverviewPage() {
     const offers = offersRes.data || [];
     const changeOrders = changeOrdersRes.data || [];
     const techs = techsRes.data || [];
+    const calEvents = calEventsRes.data || [];
+    const calcs24 = calcsRes.data || [];
+    const activities24 = activityRes.data || [];
 
     const activeStatuses: JobStatus[] = ["requested", "approved", "scheduled", "in_progress", "time_change_proposed"];
 
-    // ── SECTION 1: TODAY + DELTAS ──
+    // ── SECTION 1: TODAY + DELTAS + CONTEXT ──
     const activeProjects = events.filter((e: any) => activeStatuses.includes(e.status)).length;
-    const meetingsToday = (calEventsRes.data || []).length;
+    const meetingsToday = calEvents.length;
     const openLeads = leads.filter(l => !["lost", "won"].includes(l.status));
-    const overdueLeads = openLeads.filter(l => l.next_action_date && new Date(l.next_action_date) < now).length;
+    const overdueLeads = openLeads.filter(l => l.next_action_date && new Date(l.next_action_date) < now);
+    const todayActionLeads = openLeads.filter(l => l.next_action_date && new Date(l.next_action_date) >= startOfDay(now) && new Date(l.next_action_date) < new Date(startOfDay(now).getTime() + 86400000));
     const overdueOffers = offers.filter((o: any) => o.status === "sent" && o.sent_at && differenceInDays(now, new Date(o.sent_at)) > 5).length;
     const openRisks = risks.filter(r => r.status === "open");
     const criticalRisks = openRisks.filter(r => r.severity === "high").length;
@@ -213,15 +251,30 @@ export default function OverviewPage() {
     const yesterdayCritical = risks.filter(r => r.status === "open" && r.severity === "high" && new Date(r.created_at) < new Date(yesterdayStart)).length;
 
     const activeDelta = activeProjects - yesterdayActive;
-    const overdueDelta = (overdueLeads + overdueOffers) - (yesterdayOverdueLeads + yesterdayOverdueOffers);
+    const overdueDelta = (overdueLeads.length + overdueOffers) - (yesterdayOverdueLeads + yesterdayOverdueOffers);
     const critDelta = criticalRisks - yesterdayCritical;
 
-    setToday({ activeProjects, meetingsToday, overdueFollowups: overdueLeads + overdueOffers, criticalRisks });
+    // Risk delta 7d
+    const highRisksNow = openRisks.filter(r => r.severity === "high").length;
+    const highRisks7dAgo = risks.filter(r => r.status === "open" && r.severity === "high" && new Date(r.created_at) < d7).length;
+    const riskDelta7d = highRisksNow - highRisks7dAgo;
+
+    // Next meeting
+    const nextMeeting = calEvents.find(m => new Date(m.event_start!) >= now);
+    const nextMeetingTime = nextMeeting?.event_start ? format(new Date(nextMeeting.event_start), "HH:mm") : null;
+
+    setToday({ activeProjects, meetingsToday, overdueFollowups: overdueLeads.length + overdueOffers, criticalRisks });
     setDeltas({
       activeProjects: activeDelta !== 0 ? activeDelta : null,
       meetingsToday: null,
       overdueFollowups: overdueDelta !== 0 ? overdueDelta : null,
       criticalRisks: critDelta !== 0 ? critDelta : null,
+    });
+    setTodayCtx({
+      nextMeetingTime,
+      overdueCount: overdueLeads.length,
+      todayCount: todayActionLeads.length,
+      riskDelta7d,
     });
 
     // ── SECTION 2: COMPANY HEALTH ──
@@ -243,7 +296,7 @@ export default function OverviewPage() {
 
     // Sales gauges
     let score = 50;
-    const meetings14 = (calEventsRes.data || []).length;
+    const meetings14 = calEvents.length;
     const offersSent14 = offers.filter((o: any) => o.status !== "draft" && new Date(o.created_at) >= d14).length;
     score += Math.min(meetings14 * 5, 20);
     score += Math.min(offersSent14 * 5, 20);
@@ -275,10 +328,6 @@ export default function OverviewPage() {
     const newLeads7d = leads.filter(l => new Date(l.created_at) >= d7).length;
     const offersSent7d = offers.filter((o: any) => o.status !== "draft" && o.sent_at && new Date(o.sent_at) >= d7).length;
 
-    const highRisksNow = openRisks.filter(r => r.severity === "high").length;
-    const highRisks7dAgo = risks.filter(r => r.status === "open" && r.severity === "high" && new Date(r.created_at) < d7).length;
-    const highRiskDelta = highRisksNow - highRisks7dAgo;
-
     const pipelineNow = pipelineValue;
     const leadsOlderThan7d = leads.filter(l => !["lost", "won"].includes(l.status) && new Date(l.created_at) < d7);
     const pipeline7dAgo = leadsOlderThan7d.reduce((s, l) => s + (Number(l.estimated_value || 0) * (Number(l.probability || 50) / 100)), 0);
@@ -288,7 +337,7 @@ export default function OverviewPage() {
       { label: "Nye prosjekter", value: newProjects7d },
       { label: "Nye leads", value: newLeads7d },
       { label: "Tilbud sendt", value: offersSent7d },
-      { label: "Endring HIGH-risiko", value: highRiskDelta },
+      { label: "Endring HIGH-risiko", value: riskDelta7d },
       { label: "Pipeline-endring", value: pipelineDeltaK, suffix: "k" },
     ]);
 
@@ -324,35 +373,104 @@ export default function OverviewPage() {
 
     setWeekItems({ resources, milestones: [], closings });
 
-    // ── SECTION 4: ACTION REQUIRED (with urgency) ──
+    // ── SECTION 4: ACTION REQUIRED (enriched) ──
+    // Build tech name map for owners
+    const techByUser = new Map<string, string>();
+    for (const t of techs) if (t.user_id) techByUser.set(t.user_id, t.name);
+
     const actionList: ActionItem[] = [];
 
-    const leadsInactive = openLeads.filter(l => new Date(l.updated_at) < d7).length;
-    if (leadsInactive > 0) {
-      const hasOld = openLeads.some(l => new Date(l.updated_at) < d14);
-      actionList.push({ label: "Leads uten aktivitet > 7 dager", count: leadsInactive, severity: "warning", href: "/sales/leads", urgency: hasOld ? "overdue" : "this_week" });
+    // Leads without activity > 7d
+    const leadsInactive7d = openLeads.filter(l => new Date(l.updated_at) < d7);
+    if (leadsInactive7d.length > 0) {
+      const hasOld = leadsInactive7d.some(l => new Date(l.updated_at) < d14);
+      actionList.push({ label: "Leads uten aktivitet > 7 dager", count: leadsInactive7d.length, severity: "warning", href: "/sales/leads", urgency: hasOld ? "overdue" : "this_week", module: "Salg" });
     }
 
-    if (criticalRisks > 0) actionList.push({ label: "Prosjekter med kritisk risiko", count: criticalRisks, severity: "critical", href: "/projects", urgency: "today" });
+    // Critical risks without mitigation
+    const highRiskJobs = openRisks.filter(r => r.severity === "high");
+    if (highRiskJobs.length > 0) {
+      actionList.push({ label: "Prosjekter med kritisk risiko", count: highRiskJobs.length, severity: "critical", href: "/projects", urgency: "today", module: "Prosjekt" });
+    }
 
+    // Offers without follow-up
     if (overdueOffers > 0) {
       const hasVeryOld = offers.some((o: any) => o.status === "sent" && o.sent_at && differenceInDays(now, new Date(o.sent_at)) > 10);
-      actionList.push({ label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers", urgency: hasVeryOld ? "overdue" : "this_week" });
+      actionList.push({ label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers", urgency: hasVeryOld ? "overdue" : "this_week", module: "Salg" });
     }
 
+    // Projects without approved plan
     const requestedJobs = events.filter((e: any) => e.status === "requested").length;
-    if (requestedJobs > 0) actionList.push({ label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects", urgency: "this_week" });
+    if (requestedJobs > 0) {
+      actionList.push({ label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects", urgency: "this_week", module: "Prosjekt" });
+    }
 
-    if (overdueLeads > 0) {
-      const hasOverdue = openLeads.some(l => l.next_action_date && differenceInDays(now, new Date(l.next_action_date)) > 3);
-      actionList.push({ label: "Leads med forfalt oppfølging", count: overdueLeads, severity: "warning", href: "/sales/leads", urgency: hasOverdue ? "overdue" : "today" });
+    // Overdue lead follow-ups
+    if (overdueLeads.length > 0) {
+      const hasOverdue = overdueLeads.some(l => differenceInDays(now, new Date(l.next_action_date!)) > 3);
+      actionList.push({ label: "Leads med forfalt oppfølging", count: overdueLeads.length, severity: "warning", href: "/sales/leads", urgency: hasOverdue ? "overdue" : "today", module: "Salg" });
+    }
+
+    // Calculations done without offer
+    // Calculations done without offer – calculation_status enum uses "approved"/"draft"/etc
+    const { data: allCalcs } = await supabase.from("calculations").select("id, lead_id, status").is("deleted_at", null);
+    const calcsWithOffer = new Set(offers.map((o: any) => o.calculation_id));
+    const calcsNoOffer = (allCalcs || []).filter((c: any) => c.status === "approved" && !calcsWithOffer.has(c.id));
+    if (calcsNoOffer.length > 0) {
+      actionList.push({ label: "Kalkyle ferdig uten tilbud", count: calcsNoOffer.length, severity: "info", href: "/sales/calculations", urgency: "this_week", module: "Salg" });
+    }
+
+    // Sync errors
+    const syncErrors = (calLinksRes.data || []).filter(l => l.sync_status === "error");
+    if (syncErrors.length > 0) {
+      actionList.push({ label: "Synkroniseringsfeil", count: syncErrors.length, severity: "critical", href: "/admin/integration-health", urgency: "today", module: "System" });
     }
 
     const severityOrder = { critical: 0, warning: 1, info: 2 };
     const urgencyOrder = { overdue: 0, today: 1, this_week: 2 };
-    actionList.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
+    actionList.sort((a, b) => urgencyOrder[a.urgency] - urgencyOrder[b.urgency] || severityOrder[a.severity] - severityOrder[b.severity]);
 
     setActions(actionList);
+
+    // ── ACTIVITY FEED (last 24h) ──
+    const feed: ActivityFeedItem[] = [];
+
+    // New leads
+    const newLeads24h = leads.filter(l => new Date(l.created_at) >= new Date(h24));
+    for (const l of newLeads24h.slice(0, 5)) {
+      feed.push({ id: `lead-${l.id}`, type: "lead", description: `Ny lead: ${l.company_name}`, created_at: l.created_at, href: `/sales/leads/${l.id}` });
+    }
+
+    // Lead status changes from activity_log
+    for (const a of activities24.filter((a: any) => a.entity_type === "lead" && a.action === "status_change").slice(0, 5)) {
+      feed.push({ id: `act-${a.id}`, type: "lead", description: a.title || `Statusendring: ${a.action}`, created_at: a.created_at, href: `/sales/leads/${a.entity_id}` });
+    }
+
+    // New calculations
+    for (const c of calcs24.slice(0, 3)) {
+      feed.push({ id: `calc-${c.id}`, type: "offer", description: `Ny kalkyle: ${c.project_title}`, created_at: c.created_at, href: `/sales/calculations/${c.id}` });
+    }
+
+    // New offers
+    const offers24h = offers.filter((o: any) => new Date(o.created_at) >= new Date(h24));
+    for (const o of offers24h.slice(0, 3)) {
+      feed.push({ id: `offer-${o.id}`, type: "offer", description: `Nytt tilbud: ${o.offer_number}`, created_at: o.created_at, href: `/sales/offers` });
+    }
+
+    // Risk changes
+    const riskChanges24h = risks.filter(r => new Date(r.updated_at || r.created_at) >= new Date(h24) && r.severity === "high");
+    for (const r of riskChanges24h.slice(0, 3)) {
+      feed.push({ id: `risk-${r.id}`, type: "project", description: `Risiko (HIGH): ${r.category}`, created_at: r.updated_at || r.created_at, href: `/projects/${r.job_id}?tab=risiko` });
+    }
+
+    // Sync errors
+    for (const s of syncErrors.slice(0, 2)) {
+      feed.push({ id: `sync-${s.id}`, type: "system", description: `Synkfeil: ${s.last_error || "Kalendersynk feilet"}`, created_at: new Date().toISOString(), href: `/admin/integration-health` });
+    }
+
+    feed.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
+    setActivityFeed(feed.slice(0, 10));
+
     setLoading(false);
   }
 
@@ -382,6 +500,7 @@ export default function OverviewPage() {
           label="Møter i dag"
           value={today.meetingsToday}
           delta={deltas.meetingsToday}
+          subline={todayCtx.nextMeetingTime ? `Neste kl ${todayCtx.nextMeetingTime}` : undefined}
           onClick={() => navigate("/sales/leads")}
         />
         <TodayBlock
@@ -389,6 +508,7 @@ export default function OverviewPage() {
           label="Forfalte oppfølginger"
           value={today.overdueFollowups}
           delta={deltas.overdueFollowups}
+          subline={todayCtx.overdueCount > 0 || todayCtx.todayCount > 0 ? `${todayCtx.overdueCount} forfalt · ${todayCtx.todayCount} i dag` : undefined}
           status={today.overdueFollowups > 0 ? "warning" : undefined}
           onClick={() => navigate("/sales/leads")}
         />
@@ -397,6 +517,7 @@ export default function OverviewPage() {
           label="Kritiske risikoer"
           value={today.criticalRisks}
           delta={deltas.criticalRisks}
+          subline={todayCtx.riskDelta7d !== 0 ? `${todayCtx.riskDelta7d > 0 ? "+" : ""}${todayCtx.riskDelta7d} siste 7d` : undefined}
           status={today.criticalRisks > 0 ? "critical" : undefined}
           onClick={() => navigate("/projects")}
         />
@@ -464,6 +585,31 @@ export default function OverviewPage() {
           </div>
         </div>
       )}
+
+      {/* ── AKTIVITET SISTE 24 TIMER ── */}
+      <div>
+        <SectionHeader title="Aktivitet siste 24 timer" />
+        {activityFeed.length > 0 ? (
+          <div className="space-y-0.5">
+            {activityFeed.map(item => (
+              <button
+                key={item.id}
+                onClick={() => navigate(item.href)}
+                className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-secondary/50 transition-colors group"
+              >
+                <ActivityIcon type={item.type} />
+                <span className="text-xs text-foreground flex-1 truncate">{item.description}</span>
+                <span className="text-[10px] text-muted-foreground shrink-0">
+                  {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: nb })}
+                </span>
+                <ChevronRight className="h-3 w-3 text-muted-foreground opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+              </button>
+            ))}
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground/60 py-4 text-center">Ingen ny aktivitet siste 24 timer</p>
+        )}
+      </div>
 
       {/* ── SECTION 3: DENNE UKEN ── */}
       <div>
@@ -554,6 +700,7 @@ export default function OverviewPage() {
                   a.severity === "critical" ? "bg-destructive" : a.severity === "warning" ? "bg-accent" : "bg-muted-foreground"
                 }`} />
                 <span className="text-sm text-foreground flex-1">{a.label}</span>
+                <span className="text-[9px] text-muted-foreground/70 shrink-0 hidden sm:inline">{a.module}</span>
                 <UrgencyLabel urgency={a.urgency} />
                 <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
                   {a.count}
@@ -570,11 +717,12 @@ export default function OverviewPage() {
 
 // ── Today block ──
 
-function TodayBlock({ icon, label, value, delta, status, onClick }: {
+function TodayBlock({ icon, label, value, delta, subline, status, onClick }: {
   icon: React.ReactNode;
   label: string;
   value: number;
   delta?: number | null;
+  subline?: string;
   status?: "warning" | "critical";
   onClick: () => void;
 }) {
@@ -594,6 +742,9 @@ function TodayBlock({ icon, label, value, delta, status, onClick }: {
           <DeltaBadge delta={delta ?? null} />
         </div>
         <p className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</p>
+        {subline && (
+          <p className="text-[9px] text-muted-foreground/70 truncate mt-0.5">{subline}</p>
+        )}
       </div>
       {status && (
         <span className={`ml-auto h-1.5 w-1.5 rounded-full shrink-0 ${
