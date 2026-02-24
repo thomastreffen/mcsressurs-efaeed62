@@ -16,6 +16,7 @@ function RedirectContractToProject() {
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
+import OverviewPage from "./pages/OverviewPage";
 import KpiDashboard from "./pages/KpiDashboard";
 import JobsPage from "./pages/JobsPage";
 import ResourcePlan from "./pages/ResourcePlan";
@@ -78,7 +79,7 @@ const App = () => (
               }
             >
               <Route path="/" element={<Navigate to="/overview" replace />} />
-              <Route path="/overview" element={<KpiDashboard />} />
+              <Route path="/overview" element={<OverviewPage />} />
               <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
               <Route path="/projects" element={<JobsPage />} />
               <Route path="/projects/:id" element={<JobDetail />} />
