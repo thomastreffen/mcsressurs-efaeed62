@@ -1,6 +1,9 @@
 import { useState, useEffect } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useIsMobile } from "@/hooks/use-mobile";
+import { PIPELINE_STAGES, LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status";
+import { ArrowRight } from "lucide-react";
 
 type StatusColor = "green" | "yellow" | "red";
 
@@ -15,7 +18,7 @@ interface SalesGauge {
   emphasis?: boolean;
 }
 
-// ── Donut gauge (same visual language as PortfolioHealthGauges) ──
+// ── Donut gauge (positive-first: green baseline, soft red accent only) ──
 
 function DonutGauge({ pct, status, size = 190, emphasis = false }: { pct: number; status: StatusColor; size?: number; emphasis?: boolean }) {
   const strokeWidth = emphasis ? 16 : 14;
@@ -24,13 +27,15 @@ function DonutGauge({ pct, status, size = 190, emphasis = false }: { pct: number
   const clamped = Math.max(0, Math.min(1, pct / 100));
   const dashLen = clamped * circumference;
 
+  // Positive-first colors: green is warm, yellow is calm, red is a subtle accent
   const strokeColor = status === "green"
-    ? emphasis ? "hsl(152, 60%, 38%)" : "hsl(152, 40%, 48%)"
+    ? emphasis ? "hsl(152, 55%, 40%)" : "hsl(152, 38%, 48%)"
     : status === "yellow"
-      ? emphasis ? "hsl(28, 80%, 52%)" : "hsl(28, 55%, 56%)"
-      : emphasis ? "hsl(0, 72%, 51%)" : "hsl(0, 50%, 55%)";
+      ? emphasis ? "hsl(38, 65%, 52%)" : "hsl(38, 50%, 56%)"
+      : emphasis ? "hsl(0, 55%, 55%)" : "hsl(0, 40%, 60%)"; // softer red, never aggressive
 
-  const trackColor = pct <= 0 ? "hsl(152, 30%, 82%)" : "hsl(210, 10%, 92%)";
+  // Zero = calm grey with subtle green tint, non-zero = neutral track
+  const trackColor = pct <= 0 ? "hsl(152, 20%, 85%)" : "hsl(210, 8%, 91%)";
 
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="block mx-auto">
@@ -48,26 +53,34 @@ function DonutGauge({ pct, status, size = 190, emphasis = false }: { pct: number
   );
 }
 
-// ── Action list item ──
-
+// ── Action item ──
 interface ActionItem {
   label: string;
   count: number;
   severity: "high" | "medium";
+  href: string;
+}
+
+// ── Pulse message (positive-first) ──
+function getPulseMessage(score: number): string {
+  if (score >= 80) return "Bra trykk siste 14 dager";
+  if (score >= 60) return "Jevn aktivitet. Fortsett slik";
+  if (score >= 40) return "Rolig periode. Prioriter oppfølging";
+  return "Lav aktivitet. Fokuser på møter og tilbud";
 }
 
 // ── Main component ──
 
 export function SalesPulse() {
+  const navigate = useNavigate();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [gauges, setGauges] = useState<SalesGauge[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
-  const [pipelineData, setPipelineData] = useState<{ month: string; value: number }[]>([]);
+  const [statusCounts, setStatusCounts] = useState<{ key: LeadStatus; label: string; color: string; count: number }[]>([]);
+  const [pulseScore, setPulseScore] = useState(50);
 
-  useEffect(() => {
-    fetchSalesData();
-  }, []);
+  useEffect(() => { fetchSalesData(); }, []);
 
   async function fetchSalesData() {
     setLoading(true);
@@ -77,72 +90,69 @@ export function SalesPulse() {
     const d60 = new Date(now.getTime() - 60 * 86400000).toISOString();
     const d90 = new Date(now.getTime() - 90 * 86400000).toISOString();
     const d7 = new Date(now.getTime() - 7 * 86400000).toISOString();
+    const d5 = new Date(now.getTime() - 5 * 86400000).toISOString();
 
-    const [leadsRes, offersRes, allLeadsRes] = await Promise.all([
+    const [leadsRes, offersRes, calcsRes] = await Promise.all([
       supabase.from("leads").select("id, status, estimated_value, probability, next_action_date, updated_at, created_at").is("deleted_at", null),
-      supabase.from("offers").select("id, status, created_at, total_inc_vat").order("created_at", { ascending: false }),
-      supabase.from("leads").select("id, updated_at, next_action_date, status").is("deleted_at", null),
+      supabase.from("offers").select("id, status, created_at, total_inc_vat, lead_id").order("created_at", { ascending: false }),
+      supabase.from("calculations").select("id, lead_id, status").is("deleted_at", null),
     ]);
 
     const leads = leadsRes.data || [];
     const offers = offersRes.data || [];
-    const allLeads = allLeadsRes.data || [];
+    const calcs = calcsRes.data || [];
 
-    // ── 1. SALGSPULS (Activity Score) ──
+    // ── Status counts for pipeline flow ──
+    const counts = ALL_LEAD_STATUSES
+      .filter(s => s !== "won" && s !== "lost")
+      .map(s => {
+        const stage = PIPELINE_STAGES.find(p => p.key === s);
+        return {
+          key: s,
+          label: stage?.label || LEAD_STATUS_CONFIG[s].label,
+          color: stage?.color || "hsl(210, 10%, 60%)",
+          count: leads.filter(l => l.status === s).length,
+        };
+      });
+    setStatusCounts(counts);
+
+    // ── 1. SALGSPULS ──
     let score = 50;
-
-    // Meetings (leads with befaring status in last 14 days - proxy)
-    const meetingsLast14 = leads.filter(l =>
-      l.status === "befaring" && l.updated_at && new Date(l.updated_at) >= new Date(d14)
-    ).length;
+    const meetingsLast14 = leads.filter(l => l.status === "befaring" && l.updated_at && new Date(l.updated_at) >= new Date(d14)).length;
     score += Math.min(meetingsLast14 * 5, 20);
 
-    // Offers sent last 14 days
-    const offersSent14 = offers.filter(o =>
-      o.status !== "draft" && o.created_at && new Date(o.created_at) >= new Date(d14)
-    ).length;
+    const offersSent14 = offers.filter(o => o.status !== "draft" && o.created_at && new Date(o.created_at) >= new Date(d14)).length;
     score += Math.min(offersSent14 * 5, 20);
 
-    // All active leads have activity < 7 days
-    const activeLeads = allLeads.filter(l => !["won", "lost"].includes(l.status));
-    const allActive7 = activeLeads.length > 0 && activeLeads.every(l =>
-      l.updated_at && new Date(l.updated_at) >= new Date(d7)
-    );
+    const activeLeads = leads.filter(l => !["won", "lost"].includes(l.status));
+    const allActive7 = activeLeads.length > 0 && activeLeads.every(l => l.updated_at && new Date(l.updated_at) >= new Date(d7));
     if (allActive7) score += 10;
 
-    // All offers have follow-up (non-draft offers that are sent have been responded to)
     const sentOffers = offers.filter(o => o.status === "sent");
     const allFollowedUp = sentOffers.length === 0 || sentOffers.every(o => {
-      const created = new Date(o.created_at);
-      const daysSinceSent = (now.getTime() - created.getTime()) / 86400000;
-      return daysSinceSent < 7;
+      const daysSince = (now.getTime() - new Date(o.created_at).getTime()) / 86400000;
+      return daysSince < 7;
     });
     if (allFollowedUp) score += 10;
 
-    // Penalties
-    const inactiveLeads = activeLeads.filter(l =>
-      !l.updated_at || new Date(l.updated_at) < new Date(d7)
-    ).length;
+    const inactiveLeads = activeLeads.filter(l => !l.updated_at || new Date(l.updated_at) < new Date(d7)).length;
     if (inactiveLeads > 5) score -= 5;
 
     const offersWithoutFollowup = sentOffers.filter(o => {
       const daysSince = (now.getTime() - new Date(o.created_at).getTime()) / 86400000;
-      return daysSince > 7;
+      return daysSince > 5;
     }).length;
     if (offersWithoutFollowup > 3) score -= 5;
-
     if (meetingsLast14 === 0) score -= 10;
 
     score = Math.max(0, Math.min(100, score));
-
+    setPulseScore(score);
     const pulsStatus: StatusColor = score >= 70 ? "green" : score >= 50 ? "yellow" : "red";
 
-    // ── 2. PIPELINE STYRKE ──
+    // ── 2. PIPELINE ──
     const pipelineValue = leads
       .filter(l => !["won", "lost"].includes(l.status))
       .reduce((s, l) => s + Number(l.estimated_value || 0) * (Number(l.probability || 50) / 100), 0);
-
-    // Quarterly target: use a reasonable default (can be made configurable)
     const quarterlyTarget = 2_000_000;
     const pipelinePct = quarterlyTarget > 0 ? (pipelineValue / quarterlyTarget) * 100 : 0;
     const pipelineStatus: StatusColor = pipelinePct >= 100 ? "green" : pipelinePct >= 80 ? "yellow" : "red";
@@ -154,78 +164,73 @@ export function SalesPulse() {
     const winRate = sent90 > 0 ? (won90 / sent90) * 100 : 0;
     const winStatus: StatusColor = winRate >= 35 ? "green" : winRate >= 20 ? "yellow" : "red";
 
-    // ── 4. CLOSING MOMENTUM ──
+    // ── 4. MOMENTUM ──
     const offersLast30 = offers.filter(o => o.status !== "draft" && new Date(o.created_at) >= new Date(d30)).length;
     const offersPrev30 = offers.filter(o => o.status !== "draft" && new Date(o.created_at) >= new Date(d60) && new Date(o.created_at) < new Date(d30)).length;
     const momentumPct = offersPrev30 > 0 ? ((offersLast30 - offersPrev30) / offersPrev30) * 100 : (offersLast30 > 0 ? 100 : 0);
     const momentumStatus: StatusColor = momentumPct > 10 ? "green" : momentumPct >= -20 ? "yellow" : "red";
-    // For gauge, show ratio as percentage (capped)
     const momentumGaugePct = Math.max(0, Math.min(100, 50 + momentumPct / 2));
 
     const mobileSize = 120;
     setGauges([
       {
-        key: "salgspuls",
-        label: "SALGSPULS",
-        value: `${score}`,
-        pct: score,
-        status: pulsStatus,
-        subLabel: "Basert på aktivitet siste 14 dager",
-        size: isMobile ? mobileSize + 10 : 200,
-        emphasis: true,
+        key: "salgspuls", label: "SALGSPULS",
+        value: `${score}`, pct: score, status: pulsStatus,
+        subLabel: getPulseMessage(score),
+        size: isMobile ? mobileSize + 10 : 200, emphasis: true,
       },
       {
-        key: "pipeline",
-        label: "PIPELINE",
-        value: `${Math.round(pipelinePct)}%`,
-        pct: Math.min(pipelinePct, 100),
-        status: pipelineStatus,
+        key: "pipeline", label: "PIPELINE",
+        value: `${Math.round(pipelinePct)}%`, pct: Math.min(pipelinePct, 100), status: pipelineStatus,
         subLabel: `Mål: ${(quarterlyTarget / 1_000_000).toFixed(1)} MNOK`,
         size: isMobile ? mobileSize : 190,
       },
       {
-        key: "vinnrate",
-        label: "VINNRATE",
-        value: `${winRate.toFixed(0)}%`,
-        pct: Math.min(winRate, 100),
-        status: winStatus,
+        key: "vinnrate", label: "VINNRATE",
+        value: `${winRate.toFixed(0)}%`, pct: Math.min(winRate, 100), status: winStatus,
         subLabel: "Siste 90 dager",
         size: isMobile ? mobileSize - 5 : 180,
       },
       {
-        key: "momentum",
-        label: "MOMENTUM",
+        key: "momentum", label: "MOMENTUM",
         value: `${momentumPct > 0 ? "+" : ""}${momentumPct.toFixed(0)}%`,
-        pct: momentumGaugePct,
-        status: momentumStatus,
+        pct: momentumGaugePct, status: momentumStatus,
         subLabel: "Tilbud siste 30 dager",
         size: isMobile ? mobileSize - 5 : 180,
       },
     ]);
 
-    // ── Actions ──
+    // ── Actions (Krever handling nå) ──
     const actionItems: ActionItem[] = [];
-    if (inactiveLeads > 0) actionItems.push({ label: "Leads uten aktivitet (>7d)", count: inactiveLeads, severity: inactiveLeads > 5 ? "high" : "medium" });
-    if (offersWithoutFollowup > 0) actionItems.push({ label: "Tilbud uten oppfølging", count: offersWithoutFollowup, severity: offersWithoutFollowup > 3 ? "high" : "medium" });
+    if (inactiveLeads > 0) actionItems.push({
+      label: "Leads uten aktivitet > 7 dager", count: inactiveLeads,
+      severity: inactiveLeads > 5 ? "high" : "medium",
+      href: "/sales/leads?status=all",
+    });
+    if (offersWithoutFollowup > 0) actionItems.push({
+      label: "Tilbud uten oppfølging > 5 dager", count: offersWithoutFollowup,
+      severity: offersWithoutFollowup > 3 ? "high" : "medium",
+      href: "/sales/offers",
+    });
+
+    // Calcs done but no offer generated
+    const leadsWithCalcNoOffer = leads.filter(l => {
+      const hasCalc = calcs.some(c => (c as any).lead_id === l.id && (c as any).status === "completed");
+      const hasOffer = offers.some(o => (o as any).lead_id === l.id);
+      return hasCalc && !hasOffer;
+    }).length;
+    if (leadsWithCalcNoOffer > 0) actionItems.push({
+      label: "Kalkyle ferdig, tilbud ikke generert", count: leadsWithCalcNoOffer,
+      severity: "medium", href: "/sales/leads?status=all",
+    });
 
     const rejectedLast30 = offers.filter(o => o.status === "rejected" && new Date(o.created_at) >= new Date(d30)).length;
-    if (rejectedLast30 > 0) actionItems.push({ label: "Avviste tilbud siste 30 dager", count: rejectedLast30, severity: rejectedLast30 > 2 ? "high" : "medium" });
+    if (rejectedLast30 > 0) actionItems.push({
+      label: "Avviste tilbud siste 30 dager", count: rejectedLast30,
+      severity: "medium", href: "/sales/offers",
+    });
 
-    setActions(actionItems);
-
-    // ── Pipeline flow data (last 6 months) ──
-    const months: { month: string; value: number }[] = [];
-    for (let i = 5; i >= 0; i--) {
-      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-      const monthEnd = new Date(now.getFullYear(), now.getMonth() - i + 1, 0);
-      const label = d.toLocaleDateString("nb-NO", { month: "short" });
-      const val = offers
-        .filter(o => o.status !== "draft" && new Date(o.created_at) >= d && new Date(o.created_at) <= monthEnd)
-        .reduce((s, o) => s + Number(o.total_inc_vat || 0), 0);
-      months.push({ month: label, value: val });
-    }
-    setPipelineData(months);
-
+    setActions(actionItems.slice(0, 5));
     setLoading(false);
   }
 
@@ -240,8 +245,8 @@ export function SalesPulse() {
   return (
     <div className="space-y-3">
       {/* ── Sales-Puls gauges ── */}
-      <div className="bg-secondary/30 border-b border-border/10 px-4 sm:px-6 py-4 sm:py-5">
-        <h3 className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest mb-4">
+      <div className="bg-secondary/30 border-b border-border/10 px-3.5 sm:px-5 py-3.5 sm:py-4">
+        <h3 className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest mb-3">
           Salgspuls
         </h3>
         <div className="flex items-end justify-center gap-2 sm:gap-4 max-w-5xl mx-auto">
@@ -265,29 +270,36 @@ export function SalesPulse() {
       </div>
 
       {/* ── Analyse section ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 px-4 sm:px-6">
-        {/* Pipeline Flow chart */}
+      <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 px-4 sm:px-5">
+        {/* Pipeline Flow – leads per status */}
         <div className="lg:col-span-3 rounded-xl bg-card shadow-sm p-4 sm:p-5">
           <h4 className="text-xs font-semibold text-foreground mb-4 uppercase tracking-wider">Pipeline Flow</h4>
-          {pipelineData.length > 0 ? (
-            <div className="flex items-end gap-2 h-32">
-              {pipelineData.map((d, i) => {
-                const maxVal = Math.max(...pipelineData.map(p => p.value), 1);
-                const h = (d.value / maxVal) * 100;
+          {statusCounts.length > 0 ? (
+            <div className="flex items-end gap-1.5 h-32">
+              {statusCounts.map((s) => {
+                const maxVal = Math.max(...statusCounts.map(p => p.count), 1);
+                const h = (s.count / maxVal) * 100;
                 return (
-                  <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                    <span className="text-[9px] text-muted-foreground/70 font-mono">
-                      {d.value > 0 ? `${(d.value / 1000).toFixed(0)}k` : ""}
+                  <button
+                    key={s.key}
+                    onClick={() => navigate(`/sales/leads?status=${s.key}`)}
+                    className="flex-1 flex flex-col items-center gap-1 group cursor-pointer"
+                  >
+                    <span className="text-[9px] text-muted-foreground/70 font-mono group-hover:text-foreground transition-colors">
+                      {s.count > 0 ? s.count : ""}
                     </span>
                     <div
-                      className="w-full rounded-t transition-all duration-500"
+                      className="w-full rounded-t transition-all duration-500 group-hover:opacity-80"
                       style={{
-                        height: `${Math.max(h, 2)}%`,
-                        backgroundColor: "hsl(210, 10%, 82%)",
+                        height: `${Math.max(h, 4)}%`,
+                        backgroundColor: "hsl(210, 8%, 84%)",
                       }}
                     />
-                    <span className="text-[9px] text-muted-foreground/70">{d.month}</span>
-                  </div>
+                    <div className="flex items-center gap-1">
+                      <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                      <span className="text-[8px] sm:text-[9px] text-muted-foreground/70 truncate max-w-[60px]">{s.label}</span>
+                    </div>
+                  </button>
                 );
               })}
             </div>
@@ -296,22 +308,27 @@ export function SalesPulse() {
           )}
         </div>
 
-        {/* Krever handling */}
+        {/* Krever handling nå */}
         <div className="lg:col-span-2 rounded-xl bg-card shadow-sm p-4 sm:p-5">
           <h4 className="text-xs font-semibold text-foreground mb-3 uppercase tracking-wider">Krever handling nå</h4>
           {actions.length > 0 ? (
-            <div className="space-y-2">
+            <div className="space-y-1.5">
               {actions.map((a, i) => (
-                <div key={i} className="flex items-center gap-3 py-2 border-b border-border/10 last:border-0">
+                <button
+                  key={i}
+                  onClick={() => navigate(a.href)}
+                  className="flex items-center gap-3 py-2 px-1 w-full text-left border-b border-border/10 last:border-0 hover:bg-secondary/30 rounded transition-colors"
+                >
                   <div
-                    className="h-2 w-2 rounded-full shrink-0"
-                    style={{ backgroundColor: a.severity === "high" ? "hsl(0, 72%, 51%)" : "hsl(28, 80%, 52%)" }}
+                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                    style={{ backgroundColor: a.severity === "high" ? "hsl(0, 50%, 58%)" : "hsl(38, 60%, 52%)" }}
                   />
-                  <span className="text-sm text-foreground flex-1">{a.label}</span>
-                  <span className={`text-sm font-mono font-semibold ${a.severity === "high" ? "text-destructive" : "text-muted-foreground"}`}>
+                  <span className="text-sm text-foreground flex-1 truncate">{a.label}</span>
+                  <span className={`text-xs font-mono font-medium px-1.5 py-0.5 rounded ${a.severity === "high" ? "text-destructive/80" : "text-muted-foreground"}`}>
                     {a.count}
                   </span>
-                </div>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+                </button>
               ))}
             </div>
           ) : (

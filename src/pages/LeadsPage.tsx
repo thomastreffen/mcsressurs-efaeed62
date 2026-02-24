@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
-import { format, isPast, isToday } from "date-fns";
+import { useNavigate, useSearchParams } from "react-router-dom";
+import { formatDistanceToNow, isPast, isToday } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -14,8 +14,23 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, PIPELINE_STAGES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
-import { Search, Plus, Loader2, Building2, AlertTriangle, Clock, User } from "lucide-react";
+import { Search, Plus, Loader2, ArrowRight, Lightbulb } from "lucide-react";
 import { toast } from "sonner";
+
+// Next step label based on status
+function getNextStepLabel(status: LeadStatus): string {
+  switch (status) {
+    case "new": return "Kontakt";
+    case "contacted": return "Avtal befaring";
+    case "befaring": return "Kvalifiser";
+    case "qualified": return "Lag kalkyle";
+    case "tilbud_sendt": return "Følg opp";
+    case "forhandling": return "Lukk";
+    case "won": return "Start prosjekt";
+    case "lost": return "—";
+    default: return "—";
+  }
+}
 
 interface Lead {
   id: string;
@@ -30,22 +45,24 @@ interface Lead {
   expected_close_date: string | null;
   notes: string | null;
   created_at: string;
+  updated_at: string;
   assigned_owner_user_id: string | null;
   next_action_type: string | null;
   next_action_date: string | null;
   next_action_note: string | null;
+  lead_ref_code: string | null;
 }
 
 export default function LeadsPage() {
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const { user, isAdmin } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState(searchParams.get("status") || "all");
   const [dialogOpen, setDialogOpen] = useState(false);
   const [saving, setSaving] = useState(false);
-  const [ownerNames, setOwnerNames] = useState<Record<string, string>>({});
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
 
   // Create form state
@@ -58,18 +75,8 @@ export default function LeadsPage() {
 
   const fetchLeads = async () => {
     setLoading(true);
-    const { data } = await supabase.from("leads").select("*").is("deleted_at", null).order("created_at", { ascending: false });
-    const leadData = (data || []) as any as Lead[];
-    setLeads(leadData);
-
-    // Fetch owner names
-    const ownerIds = [...new Set(leadData.map(l => l.assigned_owner_user_id).filter(Boolean))];
-    if (ownerIds.length > 0) {
-      const { data: techs } = await supabase.from("technicians").select("user_id, name").in("user_id", ownerIds as string[]);
-      const map: Record<string, string> = {};
-      (techs || []).forEach((t: any) => { map[t.user_id] = t.name; });
-      setOwnerNames(map);
-    }
+    const { data } = await supabase.from("leads").select("*").is("deleted_at", null).order("updated_at", { ascending: false });
+    setLeads((data || []) as any as Lead[]);
     setLoading(false);
   };
 
@@ -95,7 +102,6 @@ export default function LeadsPage() {
     } as any).select("id").single();
 
     if (data) {
-      // Add creator as owner participant
       await supabase.from("lead_participants").insert({ lead_id: data.id, user_id: user!.id, role: "owner" });
       await supabase.from("lead_history").insert({
         lead_id: data.id, action: "created", description: `Lead opprettet: ${companyName.trim()}`, performed_by: user?.id,
@@ -116,30 +122,22 @@ export default function LeadsPage() {
       const s = search.toLowerCase();
       return l.company_name.toLowerCase().includes(s) ||
         (l.contact_name || "").toLowerCase().includes(s) ||
-        (l.email || "").toLowerCase().includes(s);
+        (l.email || "").toLowerCase().includes(s) ||
+        (l.lead_ref_code || "").toLowerCase().includes(s);
     }
     return true;
   });
 
   return (
-    <div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-6">
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-xl sm:text-2xl font-bold">Leads</h1>
-          <p className="text-sm text-muted-foreground">{filtered.length} leads</p>
-        </div>
-        <Button onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 self-start">
-          <Plus className="h-4 w-4" /> Ny lead
-        </Button>
-      </div>
-
-      <div className="flex flex-col sm:flex-row gap-3">
+    <div className="mx-auto max-w-6xl p-4 sm:p-6 space-y-4">
+      {/* ── Compact header ── */}
+      <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Søk firma, kontakt, e-post..." className="pl-9" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Søk firma, kontakt, referanse..." className="pl-9 h-9" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[160px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[150px] h-9"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle statuser</SelectItem>
             {ALL_LEAD_STATUSES.map((s) => (
@@ -147,6 +145,12 @@ export default function LeadsPage() {
             ))}
           </SelectContent>
         </Select>
+        <div className="flex items-center gap-2 ml-auto">
+          <span className="text-xs text-muted-foreground">{filtered.length} leads</span>
+          <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 h-9">
+            <Plus className="h-3.5 w-3.5" /> Ny lead
+          </Button>
+        </div>
       </div>
 
       {loading ? (
@@ -162,96 +166,89 @@ export default function LeadsPage() {
               onCancel={() => setSelectedIds([])}
             />
           )}
-          <div className="rounded-lg border overflow-x-auto">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                {isAdmin && (
-                  <TableHead className="w-10">
-                    <Checkbox
-                      checked={filtered.length > 0 && selectedIds.length === filtered.length}
-                      onCheckedChange={() => selectedIds.length === filtered.length ? setSelectedIds([]) : setSelectedIds(filtered.map(l => l.id))}
-                    />
-                  </TableHead>
-                )}
-                <TableHead>Firma</TableHead>
-                <TableHead className="hidden md:table-cell">Eier</TableHead>
-                <TableHead>Pipeline</TableHead>
-                <TableHead className="hidden md:table-cell">Neste aksjon</TableHead>
-                <TableHead className="text-right">Est. verdi</TableHead>
-                <TableHead className="hidden md:table-cell">Opprettet</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {filtered.length === 0 ? (
-                <TableRow>
-                  <TableCell colSpan={isAdmin ? 7 : 6} className="text-center text-muted-foreground py-8">
-                    <Building2 className="h-8 w-8 mx-auto mb-2 opacity-40" />
-                    Ingen leads funnet
-                  </TableCell>
-                </TableRow>
-              ) : filtered.map((lead) => {
-                const isOverdue = lead.next_action_date && isPast(new Date(lead.next_action_date)) && !isToday(new Date(lead.next_action_date));
-                return (
-                  <TableRow key={lead.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/leads/${lead.id}`)}>
+
+          {filtered.length === 0 ? (
+            /* ── Helpful empty state ── */
+            <div className="rounded-xl border border-dashed bg-card/50 py-12 px-6 text-center space-y-4">
+              <Lightbulb className="h-8 w-8 mx-auto text-muted-foreground/40" />
+              <div>
+                <p className="text-sm font-medium text-foreground">Ingen leads funnet</p>
+                <p className="text-xs text-muted-foreground mt-1">Opprett din første lead for å starte salgspipeline</p>
+              </div>
+              <div className="flex items-center justify-center gap-3">
+                <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5">
+                  <Plus className="h-3.5 w-3.5" /> Opprett lead
+                </Button>
+                <Button size="sm" variant="outline" onClick={() => navigate("/sales/pipeline")} className="gap-1.5">
+                  Slik fungerer pipeline <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <div className="rounded-lg border overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
                     {isAdmin && (
-                      <TableCell onClick={(e) => e.stopPropagation()}>
+                      <TableHead className="w-10">
                         <Checkbox
-                          checked={selectedIds.includes(lead.id)}
-                          onCheckedChange={() => setSelectedIds(prev => prev.includes(lead.id) ? prev.filter(x => x !== lead.id) : [...prev, lead.id])}
+                          checked={filtered.length > 0 && selectedIds.length === filtered.length}
+                          onCheckedChange={() => selectedIds.length === filtered.length ? setSelectedIds([]) : setSelectedIds(filtered.map(l => l.id))}
                         />
-                      </TableCell>
+                      </TableHead>
                     )}
-                    <TableCell>
-                      <p className="text-sm font-medium">{lead.company_name}</p>
-                      {lead.contact_name && <p className="text-xs text-muted-foreground">{lead.contact_name}</p>}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      <span className="text-sm text-muted-foreground">
-                        {lead.assigned_owner_user_id ? ownerNames[lead.assigned_owner_user_id] || "—" : "—"}
-                      </span>
-                    </TableCell>
-                    <TableCell>
-                      <div className="flex items-center gap-1.5">
-                        <div
-                          className="h-2 w-2 rounded-full shrink-0"
-                          style={{ backgroundColor: PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)" }}
-                        />
-                        <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
-                          {LEAD_STATUS_CONFIG[lead.status]?.label}
-                        </Badge>
-                      </div>
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell">
-                      {lead.next_action_date ? (
-                        <div className="flex items-center gap-1.5">
-                          {isOverdue ? (
-                            <AlertTriangle className="h-3.5 w-3.5 text-destructive" />
-                          ) : (
-                            <Clock className="h-3.5 w-3.5 text-muted-foreground" />
-                          )}
-                          <span className={`text-xs ${isOverdue ? "text-destructive font-medium" : "text-muted-foreground"}`}>
-                            {NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || ""}
-                            {" "}
-                            {format(new Date(lead.next_action_date), "d. MMM", { locale: nb })}
-                          </span>
-                        </div>
-                      ) : (
-                        <span className="text-xs text-muted-foreground">—</span>
-                      )}
-                    </TableCell>
-                    <TableCell className="text-right font-mono text-sm">
-                      {lead.estimated_value > 0 ? `kr ${Number(lead.estimated_value).toLocaleString("nb-NO")}` : "—"}
-                    </TableCell>
-                    <TableCell className="hidden md:table-cell text-sm text-muted-foreground">
-                      {format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}
-                    </TableCell>
+                    <TableHead>Lead</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead className="hidden md:table-cell">Sist aktivitet</TableHead>
+                    <TableHead className="hidden md:table-cell">Neste steg</TableHead>
+                    <TableHead className="text-right">Est. verdi</TableHead>
                   </TableRow>
-                );
-              })}
-            </TableBody>
-          </Table>
-        </div>
+                </TableHeader>
+                <TableBody>
+                  {filtered.map((lead) => {
+                    const stageColor = PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)";
+                    return (
+                      <TableRow key={lead.id} className="cursor-pointer hover:bg-muted/50" onClick={() => navigate(`/sales/leads/${lead.id}`)}>
+                        {isAdmin && (
+                          <TableCell onClick={(e) => e.stopPropagation()}>
+                            <Checkbox
+                              checked={selectedIds.includes(lead.id)}
+                              onCheckedChange={() => setSelectedIds(prev => prev.includes(lead.id) ? prev.filter(x => x !== lead.id) : [...prev, lead.id])}
+                            />
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          <div className="flex items-center gap-2">
+                            <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: stageColor }} />
+                            <div className="min-w-0">
+                              <p className="text-sm font-medium truncate">{lead.company_name}</p>
+                              <p className="text-[10px] text-muted-foreground/60 font-mono">{lead.lead_ref_code || "—"}</p>
+                            </div>
+                          </div>
+                        </TableCell>
+                        <TableCell>
+                          <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
+                            {LEAD_STATUS_CONFIG[lead.status]?.label}
+                          </Badge>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <span className="text-xs text-muted-foreground/70">
+                            {formatDistanceToNow(new Date(lead.updated_at), { addSuffix: true, locale: nb })}
+                          </span>
+                        </TableCell>
+                        <TableCell className="hidden md:table-cell">
+                          <span className="text-xs text-muted-foreground">{getNextStepLabel(lead.status)}</span>
+                        </TableCell>
+                        <TableCell className="text-right font-mono text-sm">
+                          {lead.estimated_value > 0 ? `kr ${Number(lead.estimated_value).toLocaleString("nb-NO")}` : "—"}
+                        </TableCell>
+                      </TableRow>
+                    );
+                  })}
+                </TableBody>
+              </Table>
+            </div>
+          )}
         </>
       )}
 
