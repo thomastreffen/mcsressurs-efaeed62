@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { formatDistanceToNow } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchActiveLeads } from "@/lib/lead-queries";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
 import { PIPELINE_STAGES, LEAD_STATUS_CONFIG, type PipelineStage, type LeadStatus } from "@/lib/lead-status";
@@ -33,10 +34,10 @@ export default function PipelinePage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const { data: leads } = await supabase
-        .from("leads").select("*").is("deleted_at", null).not("status", "eq", "lost");
+      const { data: leads } = await fetchActiveLeads();
+      const activeLeads = (leads || []).filter((l: any) => l.status !== "lost");
 
-      const leadIds = (leads || []).map((l: any) => l.id);
+      const leadIds = activeLeads.map((l: any) => l.id);
 
       const [calcsRes, offersRes, activityRes] = await Promise.all([
         leadIds.length > 0
@@ -58,7 +59,7 @@ export default function PipelinePage() {
         if (!activityMap.has(a.entity_id)) activityMap.set(a.entity_id, a.created_at);
       }
 
-      const items: PipelineCard[] = (leads || []).map((lead: any) => ({
+      const items: PipelineCard[] = activeLeads.map((lead: any) => ({
         id: lead.id, leadId: lead.id,
         title: lead.company_name,
         subtitle: lead.contact_name || lead.email || "",
@@ -101,7 +102,6 @@ export default function PipelinePage() {
 
   return (
     <div className="p-4 sm:p-5 space-y-4">
-      {/* ── Header ── */}
       <div className="flex items-end justify-between gap-3">
         <div>
           <h1 className="text-lg font-semibold">Salgspipeline</h1>
@@ -109,7 +109,6 @@ export default function PipelinePage() {
         </div>
       </div>
 
-      {/* ── Kanban board ── */}
       <div className="flex gap-2.5 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
         {activeStages.map((stage) => {
           const sc = stageCards(stage.key);
@@ -120,14 +119,12 @@ export default function PipelinePage() {
               onDragOver={(e) => e.preventDefault()}
               onDrop={() => handleDrop(stage.key)}
             >
-              {/* Column header – dot + label, no heavy color */}
               <div className="px-3 py-2.5 border-b border-border/10 flex items-center gap-2">
                 <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: stage.color }} />
                 <span className="text-xs font-medium text-foreground">{stage.label}</span>
                 <span className="text-[10px] text-muted-foreground/60 font-mono ml-auto">{sc.length}</span>
               </div>
 
-              {/* Cards */}
               <div className="flex-1 p-1.5 space-y-1.5 overflow-y-auto">
                 {sc.map((card) => (
                   <div
@@ -136,7 +133,7 @@ export default function PipelinePage() {
                     onDragStart={() => handleDragStart(card.id)}
                     onDragEnd={handleDragEnd}
                     onClick={() => navigate(`/sales/leads/${card.leadId}`)}
-                    className={`bg-card rounded-md border border-border/40 p-2.5 cursor-pointer hover:shadow-sm transition-all ${dragging === card.id ? "opacity-50" : ""}`}
+                    className={`bg-card rounded-md border border-border/40 p-2.5 cursor-pointer hover:shadow-md hover:border-border/70 transition-all ${dragging === card.id ? "opacity-50" : ""}`}
                     style={{ borderLeft: `3px solid ${stage.color}` }}
                   >
                     <div className="flex items-start justify-between gap-1.5">

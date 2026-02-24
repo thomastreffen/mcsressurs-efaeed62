@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchActiveLeads } from "@/lib/lead-queries";
 import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -175,10 +176,11 @@ export default function OverviewPage() {
     const d30 = subDays(now, 30);
     const d90 = subDays(now, 90);
 
-    const [eventsRes, risksRes, leadsRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes] = await Promise.all([
+    const leadsRes = await fetchActiveLeads("id, status, company_name, estimated_value, probability, next_action_date, updated_at, created_at, expected_close_date");
+
+    const [eventsRes, risksRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes] = await Promise.all([
       supabase.from("events").select("id, title, status, customer, start_time, end_time, meeting_join_url, internal_number, created_at, event_technicians(technician_id, technicians(name))").is("deleted_at", null),
       supabase.from("job_risk_items").select("id, job_id, severity, status, category, created_at"),
-      supabase.from("leads").select("id, status, company_name, estimated_value, probability, next_action_date, updated_at, created_at, expected_close_date").is("deleted_at", null),
       supabase.from("offers").select("id, offer_number, status, total_inc_vat, sent_at, created_at, calculation_id, calculations(customer_name)").order("created_at", { ascending: false }),
       supabase.from("job_change_orders").select("id, job_id, status, amount_ex_vat"),
       supabase.from("technicians").select("id, name, user_id"),
@@ -188,7 +190,7 @@ export default function OverviewPage() {
 
     const events = eventsRes.data || [];
     const risks = risksRes.data || [];
-    const leads = leadsRes.data || [];
+    const leads = leadsRes.data;
     const offers = offersRes.data || [];
     const changeOrders = changeOrdersRes.data || [];
     const techs = techsRes.data || [];

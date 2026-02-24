@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
+import { fetchActiveLeads } from "@/lib/lead-queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PIPELINE_STAGES, LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status";
 import { ArrowRight } from "lucide-react";
@@ -92,13 +93,13 @@ export function SalesPulse() {
     const d7 = new Date(now.getTime() - 7 * 86400000).toISOString();
     const d5 = new Date(now.getTime() - 5 * 86400000).toISOString();
 
-    const [leadsRes, offersRes, calcsRes] = await Promise.all([
-      supabase.from("leads").select("id, status, estimated_value, probability, next_action_date, updated_at, created_at").is("deleted_at", null),
+    const leadsRes = await fetchActiveLeads("id, status, estimated_value, probability, next_action_date, updated_at, created_at");
+    const [offersRes, calcsRes] = await Promise.all([
       supabase.from("offers").select("id, status, created_at, total_inc_vat, lead_id").order("created_at", { ascending: false }),
       supabase.from("calculations").select("id, lead_id, status").is("deleted_at", null),
     ]);
 
-    const leads = leadsRes.data || [];
+    const leads = leadsRes.data;
     const offers = offersRes.data || [];
     const calcs = calcsRes.data || [];
 
