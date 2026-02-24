@@ -75,142 +75,139 @@ export default function SalesDashboard() {
   }, []);
 
   return (
-    <div className="space-y-2 max-w-7xl mx-auto">
+    <div className="space-y-6 max-w-7xl mx-auto">
       <SalesPulse />
 
       {/* ── Recent offers + leads ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 px-4 sm:px-5 pb-5">
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 px-4 sm:px-6 pb-6">
         {/* Siste tilbud */}
-        <div className="rounded-2xl bg-card border border-border/40 shadow-sm p-3.5 sm:p-4">
-          <div className="flex items-center justify-between mb-2.5">
-            <h4 className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Siste tilbud</h4>
-            <button
-              onClick={() => nav("/sales/offers")}
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium
-                         text-muted-foreground px-3 py-1.5 rounded-lg
-                         border border-border/30
-                         hover:bg-secondary/50 hover:text-foreground
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
-                         active:scale-[0.97]
-                         transition-all duration-150 cursor-pointer"
-            >
-              Se alle <ArrowRight className="h-3 w-3" />
-            </button>
-          </div>
-          {loading ? (
-            <div className="space-y-1.5 animate-pulse">
-              {[1, 2, 3].map(i => <div key={i} className="h-11 bg-muted/50 rounded-lg" />)}
-            </div>
-          ) : recentOffers.length === 0 ? (
-            <div className="flex flex-col items-center py-5 gap-2">
-              <p className="text-xs text-muted-foreground/60">Ingen tilbud ennå</p>
+        <div className="relative rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary to-info rounded-t-2xl" />
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Siste tilbud</h4>
               <button
                 onClick={() => nav("/sales/offers")}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
-                           px-4 py-2 rounded-lg border border-primary/20
-                           hover:bg-primary/10 active:scale-[0.97] transition-all duration-150 cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium
+                           text-muted-foreground px-3 py-1.5 rounded-xl
+                           border border-border/30
+                           hover:bg-secondary/50 hover:text-foreground
+                           active:scale-[0.97]
+                           transition-all duration-150 cursor-pointer"
               >
-                Opprett tilbud <ArrowRight className="h-3.5 w-3.5" />
+                Se alle <ArrowRight className="h-3 w-3" />
               </button>
             </div>
-          ) : (
-            <div className="space-y-0">
-              {recentOffers.map((offer) => (
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                {[1, 2, 3].map(i => <div key={i} className="h-12 bg-muted/40 rounded-xl" />)}
+              </div>
+            ) : recentOffers.length === 0 ? (
+              <div className="flex flex-col items-center py-8 gap-3">
+                <p className="text-sm text-muted-foreground/60">Ingen tilbud ennå</p>
                 <button
-                  key={offer.id}
-                  onClick={() => nav(`/sales/offers/${offer.id}`)}
-                  className="flex items-center gap-2.5 py-2.5 px-2 w-full text-left
-                             rounded-lg hover:bg-secondary/40 hover:translate-x-0.5
-                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
-                             active:scale-[0.99]
-                             transition-all duration-150 cursor-pointer group"
-                  aria-label={`Tilbud ${offer.offer_number}`}
+                  onClick={() => nav("/sales/offers")}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
+                             px-4 py-2.5 rounded-xl border border-primary/20
+                             hover:bg-primary/10 active:scale-[0.97] transition-all duration-150 cursor-pointer"
                 >
-                  <div className="flex-1 min-w-0">
-                    <p className="text-[13px] font-medium truncate font-mono group-hover:text-foreground">{offer.offer_number}</p>
-                    <p className="text-[10px] text-muted-foreground/60 truncate">{offer.customer}</p>
-                  </div>
-                  <span className="text-[11px] font-mono text-muted-foreground/70 shrink-0">
-                    kr {offer.total_inc_vat.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
-                  </span>
-                  <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className + " text-[9px] shrink-0"}>
-                    {OFFER_STATUS_CONFIG[offer.status]?.label}
-                  </Badge>
-                  <span className="text-[9px] text-muted-foreground/50 shrink-0 whitespace-nowrap hidden sm:inline">
-                    {formatDistanceToNow(new Date(offer.created_at), { addSuffix: true, locale: nb })}
-                  </span>
-                  <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-primary/50 transition-all shrink-0" />
+                  Opprett tilbud <ArrowRight className="h-3.5 w-3.5" />
                 </button>
-              ))}
-            </div>
-          )}
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {recentOffers.map((offer) => (
+                  <button
+                    key={offer.id}
+                    onClick={() => nav(`/sales/offers/${offer.id}`)}
+                    className="flex items-center gap-3 py-3 px-3 w-full text-left
+                               rounded-xl hover:bg-secondary/40
+                               active:scale-[0.99]
+                               transition-all duration-150 cursor-pointer group"
+                  >
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium truncate font-mono">{offer.offer_number}</p>
+                      <p className="text-[11px] text-muted-foreground/60 truncate">{offer.customer}</p>
+                    </div>
+                    <span className="text-xs font-mono text-muted-foreground/70 shrink-0">
+                      kr {offer.total_inc_vat.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}
+                    </span>
+                    <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className + " text-[9px] shrink-0"}>
+                      {OFFER_STATUS_CONFIG[offer.status]?.label}
+                    </Badge>
+                    <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-primary/50 transition-all shrink-0" />
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
         {/* Siste leads */}
-        <div className="rounded-2xl bg-card border border-border/40 shadow-sm p-3.5 sm:p-4">
-          <div className="flex items-center justify-between mb-2.5">
-            <h4 className="text-[11px] font-semibold text-foreground uppercase tracking-wider">Siste leads</h4>
-            <button
-              onClick={() => nav("/sales/leads")}
-              className="inline-flex items-center gap-1.5 text-[11px] font-medium
-                         text-muted-foreground px-3 py-1.5 rounded-lg
-                         border border-border/30
-                         hover:bg-secondary/50 hover:text-foreground
-                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
-                         active:scale-[0.97]
-                         transition-all duration-150 cursor-pointer"
-            >
-              Se alle <ArrowRight className="h-3 w-3" />
-            </button>
-          </div>
-          {loading ? (
-            <div className="space-y-1.5 animate-pulse">
-              {[1, 2, 3].map(i => <div key={i} className="h-11 bg-muted/50 rounded-lg" />)}
-            </div>
-          ) : recentLeads.length === 0 ? (
-            <div className="flex flex-col items-center py-5 gap-2">
-              <p className="text-xs text-muted-foreground/60">Ingen leads ennå</p>
+        <div className="relative rounded-2xl bg-card border border-border/40 shadow-sm overflow-hidden">
+          <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-success to-accent rounded-t-2xl" />
+          <div className="p-5">
+            <div className="flex items-center justify-between mb-4">
+              <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Siste leads</h4>
               <button
                 onClick={() => nav("/sales/leads")}
-                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
-                           px-4 py-2 rounded-lg border border-primary/20
-                           hover:bg-primary/10 active:scale-[0.97] transition-all duration-150 cursor-pointer"
+                className="inline-flex items-center gap-1.5 text-xs font-medium
+                           text-muted-foreground px-3 py-1.5 rounded-xl
+                           border border-border/30
+                           hover:bg-secondary/50 hover:text-foreground
+                           active:scale-[0.97]
+                           transition-all duration-150 cursor-pointer"
               >
-                Opprett første lead <ArrowRight className="h-3.5 w-3.5" />
+                Se alle <ArrowRight className="h-3 w-3" />
               </button>
             </div>
-          ) : (
-            <div className="space-y-0">
-              {recentLeads.map((lead) => {
-                const stageColor = PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)";
-                return (
-                  <button
-                    key={lead.id}
-                    onClick={() => nav(`/sales/leads/${lead.id}`)}
-                    className="flex items-center gap-2.5 py-2.5 px-2 w-full text-left
-                               rounded-lg hover:bg-secondary/40 hover:translate-x-0.5
-                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
-                               active:scale-[0.99]
-                               transition-all duration-150 cursor-pointer group"
-                    aria-label={`Lead: ${lead.company_name}`}
-                  >
-                    <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: stageColor }} />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-[13px] font-medium truncate group-hover:text-foreground">{lead.company_name}</p>
-                      {lead.ref_code && <p className="text-[9px] text-muted-foreground/40 font-mono">{lead.ref_code}</p>}
-                    </div>
-                    <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[9px] shrink-0"}>
-                      {LEAD_STATUS_CONFIG[lead.status]?.label}
-                    </Badge>
-                    <span className="text-[9px] text-muted-foreground/50 shrink-0 whitespace-nowrap">
-                      {formatDistanceToNow(new Date(lead.updated_at), { addSuffix: true, locale: nb })}
-                    </span>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-primary/50 transition-all shrink-0" />
-                  </button>
-                );
-              })}
-            </div>
-          )}
+            {loading ? (
+              <div className="space-y-2 animate-pulse">
+                {[1, 2, 3].map(i => <div key={i} className="h-12 bg-muted/40 rounded-xl" />)}
+              </div>
+            ) : recentLeads.length === 0 ? (
+              <div className="flex flex-col items-center py-8 gap-3">
+                <p className="text-sm text-muted-foreground/60">Ingen leads ennå</p>
+                <button
+                  onClick={() => nav("/sales/leads")}
+                  className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
+                             px-4 py-2.5 rounded-xl border border-primary/20
+                             hover:bg-primary/10 active:scale-[0.97] transition-all duration-150 cursor-pointer"
+                >
+                  Opprett første lead <ArrowRight className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="space-y-1">
+                {recentLeads.map((lead) => {
+                  const stageColor = PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)";
+                  return (
+                    <button
+                      key={lead.id}
+                      onClick={() => nav(`/sales/leads/${lead.id}`)}
+                      className="flex items-center gap-3 py-3 px-3 w-full text-left
+                                 rounded-xl hover:bg-secondary/40
+                                 active:scale-[0.99]
+                                 transition-all duration-150 cursor-pointer group"
+                    >
+                      <div className="h-2.5 w-2.5 rounded-full shrink-0" style={{ backgroundColor: stageColor }} />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{lead.company_name}</p>
+                        {lead.ref_code && <p className="text-[10px] text-muted-foreground/40 font-mono">{lead.ref_code}</p>}
+                      </div>
+                      <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[9px] shrink-0"}>
+                        {LEAD_STATUS_CONFIG[lead.status]?.label}
+                      </Badge>
+                      <span className="text-[10px] text-muted-foreground/50 shrink-0 whitespace-nowrap">
+                        {formatDistanceToNow(new Date(lead.updated_at), { addSuffix: true, locale: nb })}
+                      </span>
+                      <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-primary/50 transition-all shrink-0" />
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>

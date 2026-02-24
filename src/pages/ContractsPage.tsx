@@ -6,7 +6,6 @@ import { ContractRiskBadge } from "@/components/contracts/ContractRiskBadge";
 import { CreateContractDialog } from "@/components/contracts/CreateContractDialog";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Checkbox } from "@/components/ui/checkbox";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
@@ -46,7 +45,6 @@ export default function ContractsPage() {
       if (error) throw error;
       const items = data as unknown as ContractWithLinks[];
 
-      // Fetch linked job/lead names
       const jobIds = items.filter(c => c.job_id).map(c => c.job_id!);
       const leadIds = items.filter(c => c.lead_id).map(c => c.lead_id!);
 
@@ -90,27 +88,30 @@ export default function ContractsPage() {
   };
 
   return (
-    <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 lg:p-8 max-w-7xl mx-auto space-y-5">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-         <h1 className="text-xl font-bold tracking-tight">Kontrakter</h1>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight flex items-center gap-2">
+            <FileText className="h-6 w-6 text-primary" />
+            Kontrakter
+          </h1>
           <p className="text-sm text-muted-foreground/70">
             Oversikt over alle kontrakter med risikostatus og frister.
           </p>
         </div>
-        <Button onClick={() => setCreateOpen(true)} className="gap-2">
+        <Button onClick={() => setCreateOpen(true)} className="gap-2 rounded-xl">
           <Plus className="h-4 w-4" />
           Ny kontrakt
         </Button>
       </div>
 
-      <div className="flex flex-col sm:flex-row gap-3">
-        <div className="relative flex-1">
+      <div className="flex flex-col sm:flex-row gap-2 flex-wrap">
+        <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Søk tittel, motpart..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9" />
+          <Input placeholder="Søk tittel, motpart..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 rounded-xl" />
         </div>
         <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Status" /></SelectTrigger>
+          <SelectTrigger className="w-[140px] rounded-xl"><SelectValue placeholder="Status" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle statuser</SelectItem>
             <SelectItem value="draft">Utkast</SelectItem>
@@ -119,7 +120,7 @@ export default function ContractsPage() {
           </SelectContent>
         </Select>
         <Select value={riskFilter} onValueChange={setRiskFilter}>
-          <SelectTrigger className="w-[140px]"><SelectValue placeholder="Risiko" /></SelectTrigger>
+          <SelectTrigger className="w-[140px] rounded-xl"><SelectValue placeholder="Risiko" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle risikonivåer</SelectItem>
             <SelectItem value="green">Lav</SelectItem>
@@ -128,7 +129,7 @@ export default function ContractsPage() {
           </SelectContent>
         </Select>
         <Select value={linkFilter} onValueChange={setLinkFilter}>
-          <SelectTrigger className="w-[150px]"><SelectValue placeholder="Tilknytning" /></SelectTrigger>
+          <SelectTrigger className="w-[150px] rounded-xl"><SelectValue placeholder="Tilknytning" /></SelectTrigger>
           <SelectContent>
             <SelectItem value="all">Alle tilknytninger</SelectItem>
             <SelectItem value="job">Jobb</SelectItem>
@@ -140,34 +141,34 @@ export default function ContractsPage() {
 
       {isLoading ? (
         <div className="space-y-3">
-          {Array.from({ length: 5 }).map((_, i) => (<Skeleton key={i} className="h-14 w-full" />))}
+          {Array.from({ length: 5 }).map((_, i) => (<Skeleton key={i} className="h-14 w-full rounded-xl" />))}
         </div>
       ) : filtered.length === 0 ? (
-        <div className="text-center py-16 space-y-3">
-          <FileText className="h-10 w-10 text-muted-foreground mx-auto" />
-          <p className="text-muted-foreground">Ingen kontrakter funnet.</p>
+        <div className="text-center py-20 space-y-3 rounded-2xl border border-dashed border-border/40 bg-card/50">
+          <FileText className="h-10 w-10 text-muted-foreground/30 mx-auto" />
+          <p className="text-sm text-muted-foreground">Ingen kontrakter funnet.</p>
         </div>
       ) : (
-        <div className="border border-border/40 rounded-2xl overflow-hidden">
+        <div className="border border-border/40 rounded-2xl bg-card shadow-sm overflow-hidden">
           <Table>
             <TableHeader>
-              <TableRow>
-                <TableHead>Tittel</TableHead>
-                <TableHead className="hidden md:table-cell">Motpart</TableHead>
-                <TableHead>Knyttet til</TableHead>
-                <TableHead>Status</TableHead>
-                <TableHead>Risiko</TableHead>
-                <TableHead className="hidden lg:table-cell">Sluttdato</TableHead>
-                <TableHead className="hidden lg:table-cell">Dagbot</TableHead>
+              <TableRow className="border-b border-border/30">
+                <TableHead className="text-xs font-semibold uppercase tracking-wider">Tittel</TableHead>
+                <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Motpart</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider">Knyttet til</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider">Status</TableHead>
+                <TableHead className="text-xs font-semibold uppercase tracking-wider">Risiko</TableHead>
+                <TableHead className="hidden lg:table-cell text-xs font-semibold uppercase tracking-wider">Sluttdato</TableHead>
+                <TableHead className="hidden lg:table-cell text-xs font-semibold uppercase tracking-wider">Dagbot</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {filtered.map((c) => {
                 const link = getLinkInfo(c);
                 return (
-                  <TableRow key={c.id} className="cursor-pointer hover:bg-accent/50" onClick={() => navigate(`/contracts/${c.id}`)}>
+                  <TableRow key={c.id} className="cursor-pointer hover:bg-secondary/40 transition-colors" onClick={() => navigate(`/contracts/${c.id}`)}>
                     <TableCell className="font-medium">{c.title}</TableCell>
-                    <TableCell className="hidden md:table-cell text-muted-foreground">{c.counterparty_name || "—"}</TableCell>
+                    <TableCell className="hidden md:table-cell text-muted-foreground/70">{c.counterparty_name || "—"}</TableCell>
                     <TableCell>
                       {link.path ? (
                         <Link
@@ -182,12 +183,12 @@ export default function ContractsPage() {
                       )}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="outline" className="text-[10px]">{STATUS_LABELS[c.status] || c.status}</Badge>
+                      <Badge variant="outline" className="text-[10px] rounded-lg">{STATUS_LABELS[c.status] || c.status}</Badge>
                     </TableCell>
                     <TableCell>
                       <ContractRiskBadge riskLevel={c.risk_level} riskScore={c.risk_score || undefined} />
                     </TableCell>
-                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground">
+                    <TableCell className="hidden lg:table-cell text-sm text-muted-foreground/70">
                       {c.end_date ? format(new Date(c.end_date), "d. MMM yyyy", { locale: nb }) : "—"}
                     </TableCell>
                     <TableCell className="hidden lg:table-cell">
