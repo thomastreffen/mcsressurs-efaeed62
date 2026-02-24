@@ -1,22 +1,26 @@
 import { useState, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
+import { formatDistanceToNow } from "date-fns";
+import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { Badge } from "@/components/ui/badge";
-import { PIPELINE_STAGES, type PipelineStage } from "@/lib/lead-status";
-import { LEAD_STATUS_CONFIG, type LeadStatus } from "@/lib/lead-status";
-import { Loader2, DollarSign, TrendingUp } from "lucide-react";
+import { PIPELINE_STAGES, LEAD_STATUS_CONFIG, type PipelineStage, type LeadStatus } from "@/lib/lead-status";
+import { Loader2, DollarSign, TrendingUp, Clock } from "lucide-react";
 import { toast } from "sonner";
 
 interface PipelineCard {
   id: string;
-  type: "lead" | "calculation" | "offer";
+  leadId: string;
   title: string;
   subtitle: string;
   value: number;
   probability: number;
   stage: PipelineStage;
-  sourceId: string;
+  lastActivity: string | null;
+  hasCalc: boolean;
+  hasOffer: boolean;
+  refCode: string | null;
 }
 
 export default function PipelinePage() {
@@ -29,56 +33,53 @@ export default function PipelinePage() {
   useEffect(() => {
     (async () => {
       setLoading(true);
-      const [leadsRes, calcsRes, offersRes] = await Promise.all([
-        supabase.from("leads").select("*").not("status", "eq", "lost"),
-        supabase.from("calculations").select("*").not("status", "in", '("converted")'),
-        supabase.from("offers").select("*, calculations(customer_name, project_title)").not("status", "in", '("expired")'),
+
+      // Fetch all active leads as the single source of truth
+      const { data: leads } = await supabase
+        .from("leads")
+        .select("*")
+        .is("deleted_at", null)
+        .not("status", "eq", "lost");
+
+      const leadIds = (leads || []).map((l: any) => l.id);
+
+      // Fetch linked calculations and offers for context badges
+      const [calcsRes, offersRes, activityRes] = await Promise.all([
+        leadIds.length > 0
+          ? supabase.from("calculations").select("id, lead_id").in("lead_id", leadIds).is("deleted_at", null)
+          : Promise.resolve({ data: [] }),
+        leadIds.length > 0
+          ? supabase.from("offers").select("id, lead_id").in("lead_id", leadIds).is("deleted_at", null)
+          : Promise.resolve({ data: [] }),
+        leadIds.length > 0
+          ? supabase.from("activity_log").select("entity_id, created_at").eq("entity_type", "lead").in("entity_id", leadIds).order("created_at", { ascending: false })
+          : Promise.resolve({ data: [] }),
       ]);
 
-      const items: PipelineCard[] = [];
+      const calcLeadIds = new Set((calcsRes.data || []).map((c: any) => c.lead_id));
+      const offerLeadIds = new Set((offersRes.data || []).map((o: any) => o.lead_id));
 
-      for (const lead of (leadsRes.data || []) as any[]) {
-        if (lead.status === "won") continue;
-        const stage: PipelineStage = lead.status === "new" ? "new"
-          : lead.status === "contacted" ? "new"
-          : "qualified";
-        items.push({
-          id: `lead-${lead.id}`, type: "lead", title: lead.company_name,
-          subtitle: lead.contact_name || lead.email || "", value: Number(lead.estimated_value) || 0,
-          probability: Number(lead.probability) || 50,
-          stage, sourceId: lead.id,
-        });
-      }
-
-      const calcIdsWithOffers = new Set((offersRes.data || []).map((o: any) => o.calculation_id));
-      for (const calc of (calcsRes.data || []) as any[]) {
-        if (calcIdsWithOffers.has(calc.id)) continue;
-        if (calc.status === "draft" || calc.status === "generated") {
-          items.push({
-            id: `calc-${calc.id}`, type: "calculation", title: calc.project_title,
-            subtitle: calc.customer_name, value: Number(calc.total_price) || 0,
-            probability: 60,
-            stage: "calculation", sourceId: calc.id,
-          });
+      // Build latest activity map (first occurrence per lead = most recent)
+      const activityMap = new Map<string, string>();
+      for (const a of (activityRes.data || []) as any[]) {
+        if (!activityMap.has(a.entity_id)) {
+          activityMap.set(a.entity_id, a.created_at);
         }
       }
 
-      for (const offer of (offersRes.data || []) as any[]) {
-        const stage: PipelineStage = offer.status === "draft" ? "offer_sent"
-          : offer.status === "sent" ? "offer_sent"
-          : offer.status === "accepted" ? "won"
-          : offer.status === "rejected" ? "lost"
-          : "negotiation";
-        const prob = stage === "won" ? 100 : stage === "lost" ? 0 : stage === "negotiation" ? 75 : 50;
-        items.push({
-          id: `offer-${offer.id}`, type: "offer",
-          title: offer.calculations?.project_title || offer.offer_number,
-          subtitle: offer.calculations?.customer_name || "",
-          value: Number(offer.total_inc_vat) || 0,
-          probability: prob,
-          stage, sourceId: offer.id,
-        });
-      }
+      const items: PipelineCard[] = (leads || []).map((lead: any) => ({
+        id: lead.id,
+        leadId: lead.id,
+        title: lead.company_name,
+        subtitle: lead.contact_name || lead.email || "",
+        value: Number(lead.estimated_value) || 0,
+        probability: Number(lead.probability) || 50,
+        stage: lead.status as PipelineStage,
+        lastActivity: activityMap.get(lead.id) || lead.created_at,
+        hasCalc: calcLeadIds.has(lead.id),
+        hasOffer: offerLeadIds.has(lead.id),
+        refCode: lead.lead_ref_code || null,
+      }));
 
       setCards(items);
       setLoading(false);
@@ -93,36 +94,29 @@ export default function PipelinePage() {
     const card = cards.find((c) => c.id === dragging);
     if (!card || card.stage === targetStage) { setDragging(null); return; }
 
-    if (card.type === "lead") {
-      const statusMap: Partial<Record<PipelineStage, LeadStatus>> = {
-        new: "new", qualified: "qualified", won: "won", lost: "lost",
-      };
-      const newStatus = statusMap[targetStage];
-      if (newStatus) {
-        await supabase.from("leads").update({ status: newStatus }).eq("id", card.sourceId);
-        await supabase.from("activity_log").insert({
-          entity_type: "lead", entity_id: card.sourceId, action: "status_changed",
-          description: `Pipeline: ${LEAD_STATUS_CONFIG[newStatus].label}`, performed_by: user?.id,
-        });
-        setCards((prev) => prev.map((c) => c.id === dragging ? { ...c, stage: targetStage } : c));
-        toast.success("Lead flyttet");
-      }
-    }
+    await supabase.from("leads").update({ status: targetStage as LeadStatus }).eq("id", card.leadId);
+    await supabase.from("activity_log").insert({
+      entity_type: "lead", entity_id: card.leadId, action: "status_changed",
+      description: `Pipeline: ${LEAD_STATUS_CONFIG[targetStage].label}`, performed_by: user?.id,
+    });
+    setCards((prev) => prev.map((c) => c.id === dragging ? { ...c, stage: targetStage } : c));
+    toast.success(`Lead flyttet til ${LEAD_STATUS_CONFIG[targetStage].label}`);
     setDragging(null);
   };
 
   const handleCardClick = (card: PipelineCard) => {
-    if (card.type === "lead") return;
-    if (card.type === "calculation") navigate(`/sales/calculations/${card.sourceId}`);
-    else navigate(`/sales/offers`);
+    navigate(`/sales/leads/${card.leadId}`);
   };
 
+  // Exclude won/lost from active pipeline view
+  const activeStages = PIPELINE_STAGES.filter(s => s.key !== "won" && s.key !== "lost");
   const stageCards = (stage: PipelineStage) => cards.filter((c) => c.stage === stage);
   const stageValue = (stage: PipelineStage) => stageCards(stage).reduce((s, c) => s + c.value, 0);
   const stageWeightedValue = (stage: PipelineStage) => stageCards(stage).reduce((s, c) => s + c.value * (c.probability / 100), 0);
 
-  const totalPipeline = cards.reduce((s, c) => s + c.value, 0);
-  const totalWeighted = cards.reduce((s, c) => s + c.value * (c.probability / 100), 0);
+  const activeCards = cards.filter(c => c.stage !== "won" && c.stage !== "lost");
+  const totalPipeline = activeCards.reduce((s, c) => s + c.value, 0);
+  const totalWeighted = activeCards.reduce((s, c) => s + c.value * (c.probability / 100), 0);
 
   if (loading) return <div className="flex items-center justify-center p-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
 
@@ -132,7 +126,7 @@ export default function PipelinePage() {
         <div>
           <h1 className="text-xl sm:text-2xl font-bold">Salgspipeline</h1>
           <p className="text-sm text-muted-foreground">
-            {cards.length} aktive muligheter
+            {activeCards.length} aktive leads
           </p>
         </div>
         <div className="flex gap-4 text-sm">
@@ -148,7 +142,7 @@ export default function PipelinePage() {
       </div>
 
       <div className="flex gap-3 overflow-x-auto pb-4" style={{ minHeight: "70vh" }}>
-        {PIPELINE_STAGES.map((stage) => (
+        {activeStages.map((stage) => (
           <div
             key={stage.key}
             className={`flex-shrink-0 w-[260px] rounded-lg border bg-card flex flex-col ${dragging ? "ring-1 ring-primary/20" : ""}`}
@@ -185,9 +179,10 @@ export default function PipelinePage() {
                       <p className="text-sm font-medium truncate">{card.title}</p>
                       <p className="text-xs text-muted-foreground truncate">{card.subtitle}</p>
                     </div>
-                    <Badge variant="outline" className="text-[9px] shrink-0">
-                      {card.type === "lead" ? "Lead" : card.type === "calculation" ? "Kalkyle" : "Tilbud"}
-                    </Badge>
+                    <div className="flex gap-1 shrink-0">
+                      {card.hasCalc && <Badge variant="outline" className="text-[9px]">Kalkyle</Badge>}
+                      {card.hasOffer && <Badge variant="outline" className="text-[9px]">Tilbud</Badge>}
+                    </div>
                   </div>
                   {card.value > 0 && (
                     <div className="mt-2 flex items-center justify-between text-xs text-muted-foreground">
@@ -198,10 +193,19 @@ export default function PipelinePage() {
                       <span className="text-[10px] font-mono">{card.probability}%</span>
                     </div>
                   )}
+                  {card.lastActivity && (
+                    <div className="mt-1.5 flex items-center gap-1 text-[10px] text-muted-foreground/70">
+                      <Clock className="h-3 w-3" />
+                      <span>{formatDistanceToNow(new Date(card.lastActivity), { addSuffix: true, locale: nb })}</span>
+                    </div>
+                  )}
+                  {card.refCode && (
+                    <p className="mt-1 text-[9px] text-muted-foreground/50 font-mono">{card.refCode}</p>
+                  )}
                 </div>
               ))}
               {stageCards(stage.key).length === 0 && (
-                <p className="text-xs text-muted-foreground text-center py-4 opacity-60">Ingen elementer</p>
+                <p className="text-xs text-muted-foreground text-center py-4 opacity-60">Ingen leads</p>
               )}
             </div>
           </div>

@@ -54,6 +54,7 @@ interface Calculation {
   attachments: any[];
   created_at: string;
   updated_at: string;
+  lead_id: string | null;
 }
 
 interface Offer {
@@ -376,9 +377,16 @@ export default function CalculationDetail() {
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 pb-24 space-y-6">
       <div className="flex items-center justify-between">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
-          <ArrowLeft className="h-4 w-4" /> Tilbake
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
+            <ArrowLeft className="h-4 w-4" /> Tilbake
+          </Button>
+          {calc.lead_id && (
+            <Button variant="link" size="sm" onClick={() => navigate(`/sales/leads/${calc.lead_id}`)} className="text-xs text-muted-foreground gap-1 px-1">
+              → Vis lead i pipeline
+            </Button>
+          )}
+        </div>
         <div className="flex items-center gap-2">
           {lastSaved && <span className="text-xs text-muted-foreground">Sist lagret {format(lastSaved, "HH:mm")}</span>}
           {isAdmin && calc.status !== "converted" && (
