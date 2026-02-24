@@ -359,9 +359,9 @@ export function SalesPulse() {
 // ── Pipeline Flow ──
 function PipelineFlow({ statusCounts, nav }: { statusCounts: { key: LeadStatus; label: string; color: string; count: number }[]; nav: (p: string) => void }) {
   return (
-    <div className="rounded-lg bg-card shadow-sm p-3">
+    <div className="rounded-lg bg-card shadow-sm p-3.5">
       <button onClick={() => nav("/sales/pipeline")}
-        className="flex items-center justify-between w-full mb-2 group cursor-pointer">
+        className="flex items-center justify-between w-full mb-3 group cursor-pointer">
         <h4 className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider group-hover:text-primary group-hover:underline underline-offset-2 transition-colors">
           Pipeline Flow
         </h4>
@@ -370,31 +370,38 @@ function PipelineFlow({ statusCounts, nav }: { statusCounts: { key: LeadStatus; 
         </span>
       </button>
       {statusCounts.some(s => s.count > 0) ? (
-        <div className="flex items-end gap-1 h-24">
+        <div className="space-y-1.5">
+          {/* Horizontal funnel bars */}
           {statusCounts.map(s => {
             const maxVal = Math.max(...statusCounts.map(p => p.count), 1);
-            const h = (s.count / maxVal) * 100;
+            const widthPct = Math.max((s.count / maxVal) * 100, 6);
             return (
               <button key={s.key} onClick={(e) => { e.stopPropagation(); nav(`/sales/leads?status=${s.key}`); }}
-                className="flex-1 flex flex-col items-center gap-0 group/step cursor-pointer rounded py-0.5 hover:bg-secondary/50 active:scale-[0.98] transition-all duration-150"
+                className="flex items-center gap-2.5 w-full group/step cursor-pointer rounded-md px-1.5 py-1
+                           hover:bg-secondary/40 active:scale-[0.99] transition-all duration-150"
                 aria-label={`${s.label}: ${s.count}`}>
-                <span className="text-[9px] text-muted-foreground/50 font-mono group-hover/step:text-foreground transition-colors">
-                  {s.count > 0 ? s.count : ""}
-                </span>
-                <div className="w-full rounded-t transition-all duration-500 group-hover/step:opacity-90"
-                  style={{ height: `${Math.max(h, 4)}%`, backgroundColor: s.color, opacity: 0.5 }} />
-                <div className="flex items-center gap-0.5 mt-0.5">
-                  <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                  <span className="text-[7px] sm:text-[8px] text-muted-foreground/50 truncate max-w-[50px] group-hover/step:text-foreground transition-colors">
+                <div className="w-20 shrink-0 flex items-center gap-1.5">
+                  <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
+                  <span className="text-[11px] text-muted-foreground/70 truncate group-hover/step:text-foreground transition-colors">
                     {s.label}
                   </span>
                 </div>
+                <div className="flex-1 h-6 bg-secondary/30 rounded overflow-hidden">
+                  <div
+                    className="h-full rounded transition-all duration-700 ease-out group-hover/step:brightness-110"
+                    style={{ width: `${widthPct}%`, backgroundColor: s.color, opacity: 0.75 }}
+                  />
+                </div>
+                <span className="text-sm font-mono font-semibold text-foreground/80 w-8 text-right shrink-0 group-hover/step:text-foreground transition-colors">
+                  {s.count}
+                </span>
+                <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover/step:text-primary/40 transition-all shrink-0" />
               </button>
             );
           })}
         </div>
       ) : (
-        <div className="flex flex-col items-center py-4 gap-1.5">
+        <div className="flex flex-col items-center py-5 gap-1.5">
           <p className="text-[11px] text-muted-foreground/50">Ingen data i pipeline</p>
           <button onClick={() => nav("/sales/pipeline")}
             className="inline-flex items-center gap-1 text-[11px] font-medium text-primary px-3 py-1.5 rounded-lg border border-primary/20 hover:bg-primary/10 active:scale-[0.97] transition-all cursor-pointer">
