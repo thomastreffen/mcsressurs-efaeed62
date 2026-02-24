@@ -29,7 +29,7 @@ interface RecentLead {
 }
 
 export default function SalesDashboard() {
-  const navigate = useNavigate();
+  const nav = useNavigate();
   const [recentOffers, setRecentOffers] = useState<RecentOffer[]>([]);
   const [recentLeads, setRecentLeads] = useState<RecentLead[]>([]);
   const [loading, setLoading] = useState(true);
@@ -76,7 +76,6 @@ export default function SalesDashboard() {
 
   return (
     <div className="space-y-4 max-w-7xl mx-auto">
-      {/* ── Sales-Puls top section ── */}
       <SalesPulse />
 
       {/* ── Recent offers + leads ── */}
@@ -85,25 +84,48 @@ export default function SalesDashboard() {
         <div className="rounded-xl bg-card shadow-sm p-4 sm:p-5">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Siste tilbud</h4>
-            <button onClick={() => navigate("/sales/offers")} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={() => nav("/sales/offers")}
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium
+                         text-muted-foreground px-3 py-1.5 rounded-lg
+                         border border-border/30
+                         hover:bg-secondary/50 hover:text-foreground
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
+                         transition-all duration-150 cursor-pointer"
+            >
               Se alle <ArrowRight className="h-3 w-3" />
             </button>
           </div>
           {loading ? (
             <div className="space-y-2 animate-pulse">
-              {[1, 2, 3].map(i => <div key={i} className="h-10 bg-muted/50 rounded" />)}
+              {[1, 2, 3].map(i => <div key={i} className="h-11 bg-muted/50 rounded-lg" />)}
             </div>
           ) : recentOffers.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 text-center py-4">Ingen tilbud ennå</p>
+            <div className="flex flex-col items-center py-6 gap-2">
+              <p className="text-sm text-muted-foreground/70">Ingen tilbud ennå</p>
+              <button
+                onClick={() => nav("/sales/offers")}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
+                           px-4 py-2 rounded-lg border border-primary/20
+                           hover:bg-primary/10 transition-all duration-150 cursor-pointer"
+              >
+                Opprett tilbud <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {recentOffers.map((offer) => (
-                <div
+                <button
                   key={offer.id}
-                  className="flex items-center gap-2.5 py-2 px-1.5 rounded hover:bg-secondary/30 transition-colors"
+                  onClick={() => nav(`/sales/offers/${offer.id}`)}
+                  className="flex items-center gap-2.5 py-2.5 px-2 w-full text-left
+                             rounded-lg hover:bg-secondary/40
+                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
+                             transition-all duration-150 cursor-pointer group"
+                  aria-label={`Tilbud ${offer.offer_number}`}
                 >
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate font-mono">{offer.offer_number}</p>
+                    <p className="text-sm font-medium truncate font-mono group-hover:text-foreground/90">{offer.offer_number}</p>
                     <p className="text-[11px] text-muted-foreground/70 truncate">{offer.customer}</p>
                   </div>
                   <span className="text-xs font-mono text-muted-foreground shrink-0">
@@ -112,15 +134,8 @@ export default function SalesDashboard() {
                   <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className + " text-[9px] shrink-0"}>
                     {OFFER_STATUS_CONFIG[offer.status]?.label}
                   </Badge>
-                  {offer.lead_id && (
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/sales/leads/${offer.lead_id}`); }}
-                      className="text-[10px] text-primary/70 hover:text-primary shrink-0 whitespace-nowrap"
-                    >
-                      Vis lead →
-                    </button>
-                  )}
-                </div>
+                  <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors shrink-0" />
+                </button>
               ))}
             </div>
           )}
@@ -130,29 +145,51 @@ export default function SalesDashboard() {
         <div className="rounded-xl bg-card shadow-sm p-4 sm:p-5">
           <div className="flex items-center justify-between mb-3">
             <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider">Siste leads</h4>
-            <button onClick={() => navigate("/sales/leads")} className="flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors">
+            <button
+              onClick={() => nav("/sales/leads")}
+              className="inline-flex items-center gap-1.5 text-[11px] font-medium
+                         text-muted-foreground px-3 py-1.5 rounded-lg
+                         border border-border/30
+                         hover:bg-secondary/50 hover:text-foreground
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
+                         transition-all duration-150 cursor-pointer"
+            >
               Se alle <ArrowRight className="h-3 w-3" />
             </button>
           </div>
           {loading ? (
             <div className="space-y-2 animate-pulse">
-              {[1, 2, 3].map(i => <div key={i} className="h-10 bg-muted/50 rounded" />)}
+              {[1, 2, 3].map(i => <div key={i} className="h-11 bg-muted/50 rounded-lg" />)}
             </div>
           ) : recentLeads.length === 0 ? (
-            <p className="text-sm text-muted-foreground/70 text-center py-4">Ingen leads ennå</p>
+            <div className="flex flex-col items-center py-6 gap-2">
+              <p className="text-sm text-muted-foreground/70">Ingen leads ennå</p>
+              <button
+                onClick={() => nav("/sales/leads")}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
+                           px-4 py-2 rounded-lg border border-primary/20
+                           hover:bg-primary/10 transition-all duration-150 cursor-pointer"
+              >
+                Opprett første lead <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           ) : (
-            <div className="space-y-1">
+            <div className="space-y-0.5">
               {recentLeads.map((lead) => {
                 const stageColor = PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)";
                 return (
                   <button
                     key={lead.id}
-                    onClick={() => navigate(`/sales/leads/${lead.id}`)}
-                    className="flex items-center gap-2.5 py-2 px-1.5 w-full text-left rounded hover:bg-secondary/30 transition-colors"
+                    onClick={() => nav(`/sales/leads/${lead.id}`)}
+                    className="flex items-center gap-2.5 py-2.5 px-2 w-full text-left
+                               rounded-lg hover:bg-secondary/40
+                               focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
+                               transition-all duration-150 cursor-pointer group"
+                    aria-label={`Lead: ${lead.company_name}`}
                   >
                     <div className="h-2 w-2 rounded-full shrink-0" style={{ backgroundColor: stageColor }} />
                     <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{lead.company_name}</p>
+                      <p className="text-sm font-medium truncate group-hover:text-foreground/90">{lead.company_name}</p>
                       {lead.ref_code && <p className="text-[10px] text-muted-foreground/50 font-mono">{lead.ref_code}</p>}
                     </div>
                     <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[9px] shrink-0"}>
@@ -161,7 +198,7 @@ export default function SalesDashboard() {
                     <span className="text-[10px] text-muted-foreground/60 shrink-0 whitespace-nowrap">
                       {formatDistanceToNow(new Date(lead.updated_at), { addSuffix: true, locale: nb })}
                     </span>
-                    <ArrowRight className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                    <ArrowRight className="h-3 w-3 text-muted-foreground/0 group-hover:text-muted-foreground/50 transition-colors shrink-0" />
                   </button>
                 );
               })}

@@ -4,7 +4,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { fetchActiveLeads } from "@/lib/lead-queries";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { PIPELINE_STAGES, LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, type LeadStatus } from "@/lib/lead-status";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, TrendingUp, Target, Trophy, Zap, AlertCircle, Clock, FileText, Send } from "lucide-react";
 
 type StatusColor = "green" | "yellow" | "red";
 
@@ -17,10 +17,11 @@ interface SalesGauge {
   subLabel: string;
   size: number;
   emphasis?: boolean;
+  href: string;
+  icon: React.ReactNode;
 }
 
-// ── Donut gauge (positive-first: green baseline, soft red accent only) ──
-
+// ── Donut gauge ──
 function DonutGauge({ pct, status, size = 190, emphasis = false }: { pct: number; status: StatusColor; size?: number; emphasis?: boolean }) {
   const strokeWidth = emphasis ? 16 : 14;
   const r = (size - strokeWidth) / 2;
@@ -28,14 +29,12 @@ function DonutGauge({ pct, status, size = 190, emphasis = false }: { pct: number
   const clamped = Math.max(0, Math.min(1, pct / 100));
   const dashLen = clamped * circumference;
 
-  // Positive-first colors: green is warm, yellow is calm, red is a subtle accent
   const strokeColor = status === "green"
     ? emphasis ? "hsl(152, 55%, 40%)" : "hsl(152, 38%, 48%)"
     : status === "yellow"
       ? emphasis ? "hsl(38, 65%, 52%)" : "hsl(38, 50%, 56%)"
-      : emphasis ? "hsl(0, 55%, 55%)" : "hsl(0, 40%, 60%)"; // softer red, never aggressive
+      : emphasis ? "hsl(0, 55%, 55%)" : "hsl(0, 40%, 60%)";
 
-  // Zero = calm grey with subtle green tint, non-zero = neutral track
   const trackColor = pct <= 0 ? "hsl(152, 20%, 85%)" : "hsl(210, 8%, 91%)";
 
   return (
@@ -62,7 +61,7 @@ interface ActionItem {
   href: string;
 }
 
-// ── Pulse message (positive-first) ──
+// ── Pulse message ──
 function getPulseMessage(score: number): string {
   if (score >= 80) return "Bra trykk siste 14 dager";
   if (score >= 60) return "Jevn aktivitet. Fortsett slik";
@@ -70,16 +69,40 @@ function getPulseMessage(score: number): string {
   return "Lav aktivitet. Fokuser på møter og tilbud";
 }
 
-// ── Main component ──
+// ── Quick filter chips ──
+const QUICK_FILTERS = [
+  { label: "Inaktive >7d", href: "/sales/leads?filter=inactive_7d", icon: <Clock className="h-3 w-3" /> },
+  { label: "Kalkyle uten tilbud", href: "/sales/calculations?filter=ready_no_offer", icon: <FileText className="h-3 w-3" /> },
+  { label: "Tilbud uten oppfølging", href: "/sales/offers?filter=no_followup", icon: <Send className="h-3 w-3" /> },
+  { label: "Denne uken", href: "/sales/leads?sort=activity_desc&range=7d", icon: <TrendingUp className="h-3 w-3" /> },
+];
 
+// ── OK placeholder rows for empty action list ──
+const OK_ROWS = [
+  "Alle leads er fulgt opp",
+  "Ingen ventende kalkyler",
+  "Tilbud er under oppfølging",
+];
+
+// ── Main component ──
 export function SalesPulse() {
-  const navigate = useNavigate();
+  const nav = useNavigate();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
   const [gauges, setGauges] = useState<SalesGauge[]>([]);
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [statusCounts, setStatusCounts] = useState<{ key: LeadStatus; label: string; color: string; count: number }[]>([]);
-  const [pulseScore, setPulseScore] = useState(50);
+
+  // Extra data for contextual sub-labels
+  const [extraCtx, setExtraCtx] = useState({
+    activitiesLast14: 0,
+    pipelineValue: 0,
+    quarterlyTarget: 2_000_000,
+    wonCount: 0,
+    sentCount: 0,
+    offersLast30: 0,
+    offersPrev30: 0,
+  });
 
   useEffect(() => { fetchSalesData(); }, []);
 
@@ -103,7 +126,7 @@ export function SalesPulse() {
     const offers = offersRes.data || [];
     const calcs = calcsRes.data || [];
 
-    // ── Status counts for pipeline flow ──
+    // ── Status counts ──
     const counts = ALL_LEAD_STATUSES
       .filter(s => s !== "won" && s !== "lost")
       .map(s => {
@@ -147,7 +170,6 @@ export function SalesPulse() {
     if (meetingsLast14 === 0) score -= 10;
 
     score = Math.max(0, Math.min(100, score));
-    setPulseScore(score);
     const pulsStatus: StatusColor = score >= 70 ? "green" : score >= 50 ? "yellow" : "red";
 
     // ── 2. PIPELINE ──
@@ -172,49 +194,68 @@ export function SalesPulse() {
     const momentumStatus: StatusColor = momentumPct > 10 ? "green" : momentumPct >= -20 ? "yellow" : "red";
     const momentumGaugePct = Math.max(0, Math.min(100, 50 + momentumPct / 2));
 
+    const activitiesLast14 = meetingsLast14 + offersSent14;
+
+    setExtraCtx({
+      activitiesLast14,
+      pipelineValue,
+      quarterlyTarget,
+      wonCount: won90,
+      sentCount: sent90,
+      offersLast30,
+      offersPrev30,
+    });
+
     const mobileSize = 120;
     setGauges([
       {
         key: "salgspuls", label: "SALGSPULS",
         value: `${score}`, pct: score, status: pulsStatus,
-        subLabel: getPulseMessage(score),
+        subLabel: `${activitiesLast14} aktiviteter siste 14d`,
         size: isMobile ? mobileSize + 10 : 200, emphasis: true,
+        href: "/sales/leads?sort=activity_desc&range=14d",
+        icon: <Zap className="h-3.5 w-3.5" />,
       },
       {
         key: "pipeline", label: "PIPELINE",
         value: `${Math.round(pipelinePct)}%`, pct: Math.min(pipelinePct, 100), status: pipelineStatus,
-        subLabel: `Mål: ${(quarterlyTarget / 1_000_000).toFixed(1)} MNOK`,
+        subLabel: `kr ${(pipelineValue / 1000).toFixed(0)}k vektet mot ${(quarterlyTarget / 1_000_000).toFixed(1)}M`,
         size: isMobile ? mobileSize : 190,
+        href: "/sales/pipeline",
+        icon: <Target className="h-3.5 w-3.5" />,
       },
       {
         key: "vinnrate", label: "VINNRATE",
         value: `${winRate.toFixed(0)}%`, pct: Math.min(winRate, 100), status: winStatus,
-        subLabel: "Siste 90 dager",
+        subLabel: `${won90} vunnet av ${sent90} sendt (90d)`,
         size: isMobile ? mobileSize - 5 : 180,
+        href: "/sales/offers?filter=sent_last_90d",
+        icon: <Trophy className="h-3.5 w-3.5" />,
       },
       {
         key: "momentum", label: "MOMENTUM",
         value: `${momentumPct > 0 ? "+" : ""}${momentumPct.toFixed(0)}%`,
         pct: momentumGaugePct, status: momentumStatus,
-        subLabel: "Tilbud siste 30 dager",
+        subLabel: `${offersLast30} tilbud siste 30d vs ${offersPrev30} forrige`,
         size: isMobile ? mobileSize - 5 : 180,
+        href: "/sales/offers?filter=sent_last_30d",
+        icon: <TrendingUp className="h-3.5 w-3.5" />,
       },
     ]);
 
-    // ── Actions (Krever handling nå) ──
+    // ── Actions ──
     const actionItems: ActionItem[] = [];
     if (inactiveLeads > 0) actionItems.push({
       label: "Leads uten aktivitet > 7 dager", count: inactiveLeads,
       severity: inactiveLeads > 5 ? "high" : "medium",
-      href: "/sales/leads?status=all",
+      href: "/sales/leads?filter=inactive_7d",
     });
     if (offersWithoutFollowup > 0) actionItems.push({
       label: "Tilbud uten oppfølging > 5 dager", count: offersWithoutFollowup,
       severity: offersWithoutFollowup > 3 ? "high" : "medium",
-      href: "/sales/offers",
+      href: "/sales/offers?filter=no_followup",
     });
 
-    // Calcs done but no offer generated
     const leadsWithCalcNoOffer = leads.filter(l => {
       const hasCalc = calcs.some(c => (c as any).lead_id === l.id && (c as any).status === "completed");
       const hasOffer = offers.some(o => (o as any).lead_id === l.id);
@@ -222,13 +263,13 @@ export function SalesPulse() {
     }).length;
     if (leadsWithCalcNoOffer > 0) actionItems.push({
       label: "Kalkyle ferdig, tilbud ikke generert", count: leadsWithCalcNoOffer,
-      severity: "medium", href: "/sales/leads?status=all",
+      severity: "medium", href: "/sales/calculations?filter=ready_no_offer",
     });
 
     const rejectedLast30 = offers.filter(o => o.status === "rejected" && new Date(o.created_at) >= new Date(d30)).length;
     if (rejectedLast30 > 0) actionItems.push({
       label: "Avviste tilbud siste 30 dager", count: rejectedLast30,
-      severity: "medium", href: "/sales/offers",
+      severity: "medium", href: "/sales/offers?filter=rejected",
     });
 
     setActions(actionItems.slice(0, 5));
@@ -245,16 +286,26 @@ export function SalesPulse() {
 
   return (
     <div className="space-y-3">
-      {/* ── Sales-Puls gauges ── */}
+      {/* ── Gauge top-bar ── */}
       <div className="bg-secondary/30 border-b border-border/10 px-3.5 sm:px-5 py-3.5 sm:py-4">
         <h3 className="text-[10px] font-semibold text-muted-foreground/70 uppercase tracking-widest mb-3">
           Salgspuls
         </h3>
         <div className="flex items-end justify-center gap-2 sm:gap-4 max-w-5xl mx-auto">
           {gauges.map((g) => (
-            <div key={g.key} className="flex flex-col items-center text-center" style={{ minWidth: isMobile ? 80 : 120 }}>
-              <span className="text-[9px] font-medium text-muted-foreground/70 uppercase tracking-widest mb-1">
-                {g.label}
+            <button
+              key={g.key}
+              onClick={() => nav(g.href)}
+              className="flex flex-col items-center text-center group cursor-pointer rounded-xl px-2 py-2
+                         hover:bg-background/60 hover:shadow-sm
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30 focus-visible:ring-offset-1
+                         transition-all duration-150"
+              style={{ minWidth: isMobile ? 80 : 120 }}
+              aria-label={`${g.label} – ${g.value}`}
+            >
+              <span className="text-[9px] font-medium text-muted-foreground/70 uppercase tracking-widest mb-1
+                               group-hover:text-foreground transition-colors flex items-center gap-1">
+                {g.icon} {g.label}
               </span>
               <div className="relative" style={{ width: g.size, height: g.size }}>
                 <DonutGauge pct={g.pct} status={g.status} size={g.size} emphasis={g.emphasis} />
@@ -264,18 +315,54 @@ export function SalesPulse() {
                   </p>
                 </div>
               </div>
-              <p className="text-[10px] sm:text-[11px] text-muted-foreground/70 mt-0.5 max-w-[140px]">{g.subLabel}</p>
-            </div>
+              <p className="text-[10px] sm:text-[11px] text-muted-foreground/70 mt-0.5 max-w-[160px]
+                            group-hover:text-foreground/80 transition-colors">
+                {g.subLabel}
+              </p>
+              <span className="text-[9px] text-primary/0 group-hover:text-primary/70 transition-colors mt-0.5 flex items-center gap-0.5">
+                Vis detaljer <ArrowRight className="h-2.5 w-2.5" />
+              </span>
+            </button>
+          ))}
+        </div>
+
+        {/* ── Quick filter chips ── */}
+        <div className="flex items-center justify-center gap-2 mt-3 flex-wrap">
+          {QUICK_FILTERS.map((f) => (
+            <button
+              key={f.label}
+              onClick={() => nav(f.href)}
+              className="inline-flex items-center gap-1.5 text-[10px] sm:text-[11px] font-medium
+                         text-muted-foreground/80 px-3 py-1.5 rounded-full
+                         border border-border/40 bg-background/50
+                         hover:bg-primary/10 hover:text-primary hover:border-primary/30
+                         focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
+                         transition-all duration-150 cursor-pointer"
+            >
+              {f.icon} {f.label}
+            </button>
           ))}
         </div>
       </div>
 
       {/* ── Analyse section ── */}
       <div className="grid grid-cols-1 lg:grid-cols-5 gap-3 px-4 sm:px-5">
-        {/* Pipeline Flow – leads per status */}
+        {/* Pipeline Flow */}
         <div className="lg:col-span-3 rounded-xl bg-card shadow-sm p-4 sm:p-5">
-          <h4 className="text-xs font-semibold text-foreground mb-4 uppercase tracking-wider">Pipeline Flow</h4>
-          {statusCounts.length > 0 ? (
+          <button
+            onClick={() => nav("/sales/pipeline")}
+            className="flex items-center justify-between w-full mb-4 group cursor-pointer"
+            aria-label="Åpne pipeline"
+          >
+            <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider
+                           group-hover:text-primary transition-colors">
+              Pipeline Flow
+            </h4>
+            <span className="text-[10px] text-muted-foreground/50 group-hover:text-primary/70 transition-colors flex items-center gap-1">
+              Åpne pipeline <ArrowRight className="h-3 w-3" />
+            </span>
+          </button>
+          {statusCounts.length > 0 && statusCounts.some(s => s.count > 0) ? (
             <div className="flex items-end gap-1.5 h-32">
               {statusCounts.map((s) => {
                 const maxVal = Math.max(...statusCounts.map(p => p.count), 1);
@@ -283,14 +370,16 @@ export function SalesPulse() {
                 return (
                   <button
                     key={s.key}
-                    onClick={() => navigate(`/sales/leads?status=${s.key}`)}
-                    className="flex-1 flex flex-col items-center gap-1 group cursor-pointer"
+                    onClick={(e) => { e.stopPropagation(); nav(`/sales/leads?status=${s.key}`); }}
+                    className="flex-1 flex flex-col items-center gap-1 group/step cursor-pointer
+                               rounded-lg py-1 hover:bg-secondary/40 transition-all duration-150"
+                    aria-label={`${s.label}: ${s.count} leads`}
                   >
-                    <span className="text-[9px] text-muted-foreground/70 font-mono group-hover:text-foreground transition-colors">
+                    <span className="text-[9px] text-muted-foreground/70 font-mono group-hover/step:text-foreground transition-colors">
                       {s.count > 0 ? s.count : ""}
                     </span>
                     <div
-                      className="w-full rounded-t transition-all duration-500 group-hover:opacity-80"
+                      className="w-full rounded-t transition-all duration-500 group-hover/step:opacity-70"
                       style={{
                         height: `${Math.max(h, 4)}%`,
                         backgroundColor: "hsl(210, 8%, 84%)",
@@ -298,42 +387,91 @@ export function SalesPulse() {
                     />
                     <div className="flex items-center gap-1">
                       <div className="h-1.5 w-1.5 rounded-full shrink-0" style={{ backgroundColor: s.color }} />
-                      <span className="text-[8px] sm:text-[9px] text-muted-foreground/70 truncate max-w-[60px]">{s.label}</span>
+                      <span className="text-[8px] sm:text-[9px] text-muted-foreground/70 truncate max-w-[60px]
+                                       group-hover/step:text-foreground transition-colors">
+                        {s.label}
+                      </span>
                     </div>
+                    <span className="text-[8px] text-primary/0 group-hover/step:text-primary/60 transition-colors">
+                      Se leads →
+                    </span>
                   </button>
                 );
               })}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground text-center py-8">Ingen data</p>
+            <div className="flex flex-col items-center justify-center py-8 gap-2">
+              <p className="text-sm text-muted-foreground/70">Ingen data i pipeline</p>
+              <button
+                onClick={() => nav("/sales/pipeline")}
+                className="inline-flex items-center gap-1.5 text-xs font-medium text-primary
+                           px-4 py-2 rounded-lg border border-primary/20
+                           hover:bg-primary/10 transition-all duration-150 cursor-pointer"
+              >
+                Gå til pipeline <ArrowRight className="h-3.5 w-3.5" />
+              </button>
+            </div>
           )}
         </div>
 
         {/* Krever handling nå */}
         <div className="lg:col-span-2 rounded-xl bg-card shadow-sm p-4 sm:p-5">
-          <h4 className="text-xs font-semibold text-foreground mb-3 uppercase tracking-wider">Krever handling nå</h4>
+          <button
+            onClick={() => nav("/sales/leads?filter=needs_action")}
+            className="flex items-center justify-between w-full mb-3 group cursor-pointer"
+            aria-label="Vis alle handlinger"
+          >
+            <h4 className="text-xs font-semibold text-foreground uppercase tracking-wider
+                           group-hover:text-primary transition-colors flex items-center gap-1.5">
+              <AlertCircle className="h-3.5 w-3.5" /> Krever handling nå
+            </h4>
+            <span className="text-[10px] text-muted-foreground/50 group-hover:text-primary/70 transition-colors flex items-center gap-1">
+              Se alle <ArrowRight className="h-3 w-3" />
+            </span>
+          </button>
           {actions.length > 0 ? (
-            <div className="space-y-1.5">
+            <div className="space-y-0.5">
               {actions.map((a, i) => (
                 <button
                   key={i}
-                  onClick={() => navigate(a.href)}
-                  className="flex items-center gap-3 py-2 px-1 w-full text-left border-b border-border/10 last:border-0 hover:bg-secondary/30 rounded transition-colors"
+                  onClick={() => nav(a.href)}
+                  className="flex items-center gap-3 py-2.5 px-2 w-full text-left
+                             border-b border-border/10 last:border-0
+                             rounded-lg hover:bg-secondary/40
+                             focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/30
+                             transition-all duration-150 cursor-pointer group/action"
+                  aria-label={`${a.label}: ${a.count}`}
                 >
                   <div
-                    className="h-1.5 w-1.5 rounded-full shrink-0"
+                    className="h-2 w-2 rounded-full shrink-0"
                     style={{ backgroundColor: a.severity === "high" ? "hsl(0, 50%, 58%)" : "hsl(38, 60%, 52%)" }}
                   />
-                  <span className="text-sm text-foreground flex-1 truncate">{a.label}</span>
+                  <span className="text-sm text-foreground flex-1 truncate group-hover/action:text-foreground/90">
+                    {a.label}
+                  </span>
                   <span className={`text-xs font-mono font-medium px-1.5 py-0.5 rounded ${a.severity === "high" ? "text-destructive/80" : "text-muted-foreground"}`}>
                     {a.count}
                   </span>
-                  <ArrowRight className="h-3 w-3 text-muted-foreground/50" />
+                  <ArrowRight className="h-3 w-3 text-muted-foreground/30 group-hover/action:text-primary/60 transition-colors shrink-0" />
                 </button>
               ))}
             </div>
           ) : (
-            <p className="text-sm text-muted-foreground/70 text-center py-4">Alt ser bra ut 👍</p>
+            <div className="space-y-0.5">
+              {OK_ROWS.map((txt, i) => (
+                <div
+                  key={i}
+                  className="flex items-center gap-3 py-2.5 px-2 rounded-lg opacity-50"
+                >
+                  <div className="h-2 w-2 rounded-full shrink-0 bg-emerald-400/40" />
+                  <span className="text-sm text-muted-foreground/60 flex-1">{txt}</span>
+                  <span className="text-[10px] text-emerald-500/60">OK</span>
+                </div>
+              ))}
+              <p className="text-[11px] text-muted-foreground/50 text-center pt-2">
+                Systemet er i balanse. Ingen kritiske oppgaver.
+              </p>
+            </div>
           )}
         </div>
       </div>
