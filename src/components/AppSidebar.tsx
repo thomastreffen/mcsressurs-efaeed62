@@ -73,6 +73,41 @@ const adminNav = [
   { title: "Papirkurv", url: "/admin/trash", icon: Trash2, requireAdmin: true },
 ];
 
+function NavGroup({ label, items, isActive, collapsed }: {
+  label?: string;
+  items: { title: string; url: string; icon: React.ElementType }[];
+  isActive: (url: string) => boolean;
+  collapsed: boolean;
+}) {
+  return (
+    <SidebarGroup>
+      {label && <SidebarGroupLabel>{label}</SidebarGroupLabel>}
+      <SidebarGroupContent>
+        <SidebarMenu>
+          {items.map((item) => {
+            const active = isActive(item.url);
+            return (
+              <SidebarMenuItem key={item.url}>
+                <SidebarMenuButton
+                  asChild
+                  isActive={active}
+                  tooltip={item.title}
+                  className={active ? "border-l-[3px] border-l-accent rounded-l-none bg-sidebar-accent/60" : ""}
+                >
+                  <NavLink to={item.url} end={item.url === "/overview" || item.url === "/sales"}>
+                    <item.icon className="h-4 w-4" />
+                    <span>{item.title}</span>
+                  </NavLink>
+                </SidebarMenuButton>
+              </SidebarMenuItem>
+            );
+          })}
+        </SidebarMenu>
+      </SidebarGroupContent>
+    </SidebarGroup>
+  );
+}
+
 export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
@@ -82,128 +117,36 @@ export function AppSidebar() {
   const isActive = (url: string) =>
     url === "/overview" ? location.pathname === "/overview" : location.pathname.startsWith(url);
 
+  const filteredAdmin = adminNav.filter((item) => {
+    if ('requireSuperAdmin' in item && item.requireSuperAdmin) return isSuperAdmin;
+    if ('requireAdmin' in item && item.requireAdmin) return isAdmin;
+    return true;
+  });
+
+  const filteredFag = fagNav.filter((item) => !('requireAdmin' in item && item.requireAdmin) || isAdmin);
+
   return (
     <Sidebar collapsible="icon">
       <SidebarHeader className="p-4">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-white/15">
-            <Wrench className="h-4 w-4 text-white" />
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-white/15">
+            <Wrench className="h-4.5 w-4.5 text-white" />
           </div>
           {!collapsed && (
             <div>
-              <h1 className="text-sm font-semibold leading-tight text-white">MCS Service</h1>
-              <p className="text-[11px] text-white/60">Salg & Prosjekt</p>
+              <h1 className="text-sm font-bold leading-tight text-white tracking-tight">MCS Service</h1>
+              <p className="text-[10px] text-white/50 mt-0.5">Salg & Prosjekt</p>
             </div>
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent>
-        {/* Main */}
-        <SidebarGroup>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {mainNav.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
-                    <NavLink to={item.url} end={item.url === "/overview"}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Sales */}
-        {isAdmin && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Salg</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {salesNav.map((item) => (
-                  <SidebarMenuItem key={item.url}>
-                    <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
-                      <NavLink to={item.url} end={item.url === "/sales"}>
-                        <item.icon className="h-4 w-4" />
-                        <span>{item.title}</span>
-                      </NavLink>
-                    </SidebarMenuButton>
-                  </SidebarMenuItem>
-                ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
-
-        {/* Projects */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Prosjekter</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {projectNav.map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
-                    <NavLink to={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Fag */}
-        <SidebarGroup>
-          <SidebarGroupLabel>Fag & Forskrift</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {fagNav
-                .filter((item) => !item.requireAdmin || isAdmin)
-                .map((item) => (
-                <SidebarMenuItem key={item.url}>
-                  <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
-                    <NavLink to={item.url}>
-                      <item.icon className="h-4 w-4" />
-                      <span>{item.title}</span>
-                    </NavLink>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
-
-        {/* Admin */}
-        {isAdmin && (
-          <SidebarGroup>
-            <SidebarGroupLabel>Administrasjon</SidebarGroupLabel>
-            <SidebarGroupContent>
-              <SidebarMenu>
-                {adminNav
-                  .filter((item) => {
-                    if (item.requireSuperAdmin) return isSuperAdmin;
-                    if (item.requireAdmin) return isAdmin;
-                    return true;
-                  })
-                  .map((item) => (
-                    <SidebarMenuItem key={item.url}>
-                      <SidebarMenuButton asChild isActive={isActive(item.url)} tooltip={item.title} className={isActive(item.url) ? "border-l-[3px] border-l-orange-400 rounded-l-none" : ""}>
-                        <NavLink to={item.url}>
-                          <item.icon className="h-4 w-4" />
-                          <span>{item.title}</span>
-                        </NavLink>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
-              </SidebarMenu>
-            </SidebarGroupContent>
-          </SidebarGroup>
-        )}
+      <SidebarContent className="px-1">
+        <NavGroup items={mainNav} isActive={isActive} collapsed={collapsed} />
+        {isAdmin && <NavGroup label="Salg" items={salesNav} isActive={isActive} collapsed={collapsed} />}
+        <NavGroup label="Prosjekter" items={projectNav} isActive={isActive} collapsed={collapsed} />
+        <NavGroup label="Fag & Forskrift" items={filteredFag} isActive={isActive} collapsed={collapsed} />
+        {isAdmin && <NavGroup label="Administrasjon" items={filteredAdmin} isActive={isActive} collapsed={collapsed} />}
       </SidebarContent>
     </Sidebar>
   );
