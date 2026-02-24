@@ -123,6 +123,7 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
+  const [lastSyncTs, setLastSyncTs] = useState<string | null>(null);
 
   const fetchItems = useCallback(async () => {
     const { data } = await supabase
@@ -219,7 +220,14 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
         if (error) throw error;
       }
 
+      if (import.meta.env.DEV) {
+        const allSynced = [...flagSet.entries()].map(([key, val]) => ({ key, category: val.category, severity: val.severity }));
+        console.warn("[RiskSync] SYNC DONE", { count: allSynced.length });
+        console.table(allSynced);
+      }
+
       toast.success(`${toInsert.length} nye risikoer lagt til`);
+      setLastSyncTs(new Date().toLocaleTimeString());
       await fetchItems();
     } catch (e: any) {
       toast.error("Kunne ikke synkronisere risikoer", { description: e.message });
@@ -295,6 +303,14 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
 
   return (
     <div className="space-y-6">
+      {/* ── DEV badge ── */}
+      {import.meta.env.DEV && (
+        <div className="flex items-center gap-2 text-[10px] font-mono text-violet-500">
+          <Badge variant="outline" className="h-4 text-[9px] bg-violet-50 text-violet-600 border-violet-200 dark:bg-violet-950 dark:text-violet-300 dark:border-violet-800">DEV</Badge>
+          <span>Last sync: {lastSyncTs ?? "–"}</span>
+        </div>
+      )}
+
       {/* ── Header ── */}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-2">
@@ -307,7 +323,10 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
           </span>
         </div>
         {isAdmin && (
-          <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs" disabled={syncing} onClick={syncRisks}>
+          <Button variant="outline" size="sm" className="rounded-xl gap-1.5 text-xs" disabled={syncing} onClick={() => {
+            if (import.meta.env.DEV) console.warn("[RiskSync] BUTTON CLICK", { jobId, ts: Date.now() });
+            syncRisks();
+          }}>
             {syncing ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Oppdater risikoer
           </Button>
