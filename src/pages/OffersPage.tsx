@@ -19,6 +19,7 @@ import { Search, FileText, Loader2, ExternalLink, Plus } from "lucide-react";
 interface Offer {
   id: string;
   calculation_id: string;
+  lead_id: string | null;
   offer_number: string;
   version: number;
   status: OfferStatus;
@@ -125,13 +126,14 @@ export default function OffersPage() {
               <TableHead className="text-right">Eks. MVA</TableHead>
               <TableHead className="text-right">Inkl. MVA</TableHead>
               <TableHead>Dato</TableHead>
+              <TableHead className="hidden lg:table-cell">Lead</TableHead>
               <TableHead />
             </TableRow>
           </TableHeader>
           <TableBody>
             {filtered.length === 0 ? (
               <TableRow>
-                <TableCell colSpan={isAdmin ? 10 : 9} className="text-center text-muted-foreground py-8">
+                <TableCell colSpan={isAdmin ? 11 : 10} className="text-center text-muted-foreground py-8">
                   <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
                   Ingen tilbud funnet
                 </TableCell>
@@ -156,6 +158,15 @@ export default function OffersPage() {
                 <TableCell className="text-right font-mono text-sm">kr {Number(offer.total_ex_vat).toLocaleString("nb-NO")}</TableCell>
                 <TableCell className="text-right font-mono text-sm">kr {Number(offer.total_inc_vat).toLocaleString("nb-NO")}</TableCell>
                 <TableCell className="text-sm text-muted-foreground">{format(new Date(offer.created_at), "d. MMM yyyy", { locale: nb })}</TableCell>
+                <TableCell className="hidden lg:table-cell">
+                  {offer.lead_id ? (
+                    <Button variant="link" size="sm" className="text-xs p-0 h-auto" onClick={(e) => { e.stopPropagation(); navigate(`/sales/leads/${offer.lead_id}`); }}>
+                      Vis lead →
+                    </Button>
+                  ) : (
+                    <span className="text-xs text-muted-foreground">—</span>
+                  )}
+                </TableCell>
                 <TableCell>
                   {offer.generated_pdf_url && (
                     <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); window.open(offer.generated_pdf_url!, "_blank"); }}>

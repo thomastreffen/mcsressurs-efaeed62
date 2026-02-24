@@ -13,7 +13,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BulkDeleteBar } from "@/components/BulkDeleteBar";
-import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
+import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, PIPELINE_STAGES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
 import { Search, Plus, Loader2, Building2, AlertTriangle, Clock, User } from "lucide-react";
 import { toast } from "sonner";
 
@@ -176,7 +176,7 @@ export default function LeadsPage() {
                 )}
                 <TableHead>Firma</TableHead>
                 <TableHead className="hidden md:table-cell">Eier</TableHead>
-                <TableHead>Status</TableHead>
+                <TableHead>Pipeline</TableHead>
                 <TableHead className="hidden md:table-cell">Neste aksjon</TableHead>
                 <TableHead className="text-right">Est. verdi</TableHead>
                 <TableHead className="hidden md:table-cell">Opprettet</TableHead>
@@ -212,9 +212,15 @@ export default function LeadsPage() {
                       </span>
                     </TableCell>
                     <TableCell>
-                      <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
-                        {LEAD_STATUS_CONFIG[lead.status]?.label}
-                      </Badge>
+                      <div className="flex items-center gap-1.5">
+                        <div
+                          className="h-2 w-2 rounded-full shrink-0"
+                          style={{ backgroundColor: PIPELINE_STAGES.find(s => s.key === lead.status)?.color || "hsl(210, 10%, 60%)" }}
+                        />
+                        <Badge className={LEAD_STATUS_CONFIG[lead.status]?.className + " text-[10px]"}>
+                          {LEAD_STATUS_CONFIG[lead.status]?.label}
+                        </Badge>
+                      </div>
                     </TableCell>
                     <TableCell className="hidden md:table-cell">
                       {lead.next_action_date ? (

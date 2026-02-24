@@ -26,18 +26,16 @@ export const NEXT_ACTION_TYPES = [
   { key: "other", label: "Annet" },
 ] as const;
 
-export type PipelineStage = "new" | "contacted" | "befaring" | "qualified" | "calculation" | "tilbud_sendt" | "forhandling" | "negotiation" | "offer_sent" | "won" | "lost";
+// Pipeline stages map directly to lead statuses — single entity flow
+export type PipelineStage = LeadStatus;
 
 export const PIPELINE_STAGES: { key: PipelineStage; label: string; color: string }[] = [
   { key: "new", label: "Nye leads", color: "hsl(213, 60%, 42%)" },
   { key: "contacted", label: "Kontaktet", color: "hsl(40, 85%, 50%)" },
   { key: "befaring", label: "Befaring", color: "hsl(185, 60%, 40%)" },
   { key: "qualified", label: "Kvalifisert", color: "hsl(262, 55%, 55%)" },
-  { key: "calculation", label: "Kalkyle pågår", color: "hsl(45, 85%, 50%)" },
   { key: "tilbud_sendt", label: "Tilbud sendt", color: "hsl(210, 60%, 50%)" },
-  { key: "offer_sent", label: "Tilbud sendt (legacy)", color: "hsl(210, 60%, 50%)" },
   { key: "forhandling", label: "Forhandling", color: "hsl(28, 80%, 52%)" },
-  { key: "negotiation", label: "Forhandling (legacy)", color: "hsl(28, 80%, 52%)" },
   { key: "won", label: "Vunnet", color: "hsl(152, 60%, 42%)" },
   { key: "lost", label: "Tapt", color: "hsl(0, 72%, 51%)" },
 ];
