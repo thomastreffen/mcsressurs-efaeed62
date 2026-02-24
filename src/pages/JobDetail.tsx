@@ -681,7 +681,7 @@ export default function JobDetail() {
           <ProjectPulse jobId={id!} />
 
           {/* Job Summary Card */}
-          <div className="mt-4">
+          <div className="mt-6">
             <JobSummaryCard
               jobId={id!}
               customer={job.customer}
