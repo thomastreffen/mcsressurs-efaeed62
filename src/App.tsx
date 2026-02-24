@@ -2,7 +2,17 @@ import { Toaster } from "@/components/ui/toaster";
 import { Toaster as Sonner } from "@/components/ui/sonner";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { BrowserRouter, Routes, Route } from "react-router-dom";
+import { BrowserRouter, Routes, Route, Navigate, useParams } from "react-router-dom";
+
+// Redirect helpers for parameterized routes
+function RedirectJobToProject() {
+  const { id } = useParams();
+  return <Navigate to={`/projects/${id}`} replace />;
+}
+function RedirectContractToProject() {
+  const { id } = useParams();
+  return <Navigate to={`/projects/contracts/${id}`} replace />;
+}
 import { AuthProvider } from "@/hooks/useAuth";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { AppLayout } from "@/components/AppLayout";
@@ -67,12 +77,21 @@ const App = () => (
                 </ProtectedRoute>
               }
             >
-              <Route path="/" element={<KpiDashboard />} />
-              <Route path="/jobs" element={<JobsPage />} />
-              <Route path="/jobs/:id" element={<JobDetail />} />
-              <Route path="/resource-plan" element={<ResourcePlan />} />
-              <Route path="/contracts" element={<ContractsPage />} />
-              <Route path="/contracts/:id" element={<ContractDetail />} />
+              <Route path="/" element={<Navigate to="/overview" replace />} />
+              <Route path="/overview" element={<KpiDashboard />} />
+              <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
+              <Route path="/projects" element={<JobsPage />} />
+              <Route path="/projects/:id" element={<JobDetail />} />
+              <Route path="/projects/plan" element={<ResourcePlan />} />
+              <Route path="/projects/contracts" element={<ContractsPage />} />
+              <Route path="/projects/contracts/:id" element={<ContractDetail />} />
+              {/* Legacy redirects */}
+              <Route path="/jobs" element={<Navigate to="/projects" replace />} />
+              <Route path="/jobs/:id" element={<RedirectJobToProject />} />
+              <Route path="/resource-plan" element={<Navigate to="/projects/plan" replace />} />
+              <Route path="/contracts" element={<Navigate to="/projects/contracts" replace />} />
+              <Route path="/contracts/:id" element={<RedirectContractToProject />} />
+              <Route path="/sales/dashboard" element={<Navigate to="/sales" replace />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/fag" element={<RegulationPage />} />
 
@@ -143,9 +162,9 @@ const App = () => (
                 }
               />
 
-              {/* Legacy routes redirect */}
-              <Route path="/calculations" element={<CalculationsPage />} />
-              <Route path="/calculations/new" element={<NewCalculation />} />
+              {/* Legacy calculation routes redirect */}
+              <Route path="/calculations" element={<Navigate to="/sales/calculations" replace />} />
+              <Route path="/calculations/new" element={<Navigate to="/sales/calculations/new" replace />} />
               <Route path="/calculations/:id" element={<CalculationDetail />} />
 
               <Route

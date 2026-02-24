@@ -326,8 +326,8 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
       <PortfolioHealthGauges />
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
-        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-4 w-4 sm:h-5 sm:w-5" />} onClick={() => navigate("/jobs")} />
-        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} onClick={() => navigate("/jobs")} />
+        <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-4 w-4 sm:h-5 sm:w-5" />} onClick={() => navigate("/projects")} />
+        <KpiCard title="Usynkede jobber" value={data.dirtyJobs} icon={<Clock className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.dirtyJobs > 0 ? "warning" : "default"} onClick={() => navigate("/projects")} />
         <KpiCard title="Feilede synk" value={data.failedLinks} icon={<XCircle className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.failedLinks > 0 ? "error" : "default"} onClick={() => navigate("/admin/integration-health")} />
         <KpiCard title="Uten Microsoft" value={data.disconnectedTechs} icon={<Unplug className="h-4 w-4 sm:h-5 sm:w-5" />} variant={data.disconnectedTechs > 0 ? "warning" : "default"} onClick={() => navigate("/admin/integration-health")} />
       </div>
@@ -348,7 +348,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                 </ResponsiveContainer>
               </div>
             ) : (
-              <EmptyState icon={<BarChart3 />} message="Ingen planlagte timer denne uken" ctaLabel="Opprett ny jobb" onCta={() => navigate("/resource-plan")} />
+              <EmptyState icon={<BarChart3 />} message="Ingen planlagte timer denne uken" ctaLabel="Opprett ny jobb" onCta={() => navigate("/projects/plan")} />
             )}
           </SectionCard>
         </div>
@@ -382,7 +382,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                 </div>
               </div>
             ) : (
-              <EmptyState icon={<PieChart />} message="Ingen jobber registrert" ctaLabel="Opprett ny jobb" onCta={() => navigate("/resource-plan")} />
+              <EmptyState icon={<PieChart />} message="Ingen jobber registrert" ctaLabel="Opprett ny jobb" onCta={() => navigate("/projects/plan")} />
             )}
           </SectionCard>
         </div>
@@ -451,20 +451,20 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
               </div>
             </div>
             <div className="space-y-1">
-              <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/jobs")} />
+              <ActionItem label="Jobber uten plan" count={data.actionItems.unplannedJobs} variant="warning" onClick={() => navigate("/projects")} />
               <ActionItem label="Mangler Microsoft-token" count={data.actionItems.missingToken} variant="warning" onClick={() => navigate("/admin/integration-health")} />
               <ActionItem label="Outlook-event slettet" count={data.actionItems.itemNotFound} variant="error" onClick={() => navigate("/admin/integration-health")} />
-              <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/jobs")} />
+              <ActionItem label="Jobber uten Teams-møte" count={data.actionItems.jobsWithoutTeams} variant="default" onClick={() => navigate("/projects")} />
             </div>
           </div>
         </div>
 
-        <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/jobs")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
+        <SectionCard title="Siste jobber" subtitle="" icon={<CalendarDays className="h-4 w-4" />} action={<Button variant="ghost" size="sm" onClick={() => navigate("/projects")} className="gap-1 text-xs h-7">Vis alle <ArrowRight className="h-3 w-3" /></Button>}>
           <div className="space-y-1">
             {data.recentJobs.length > 0 ? data.recentJobs.map((job) => (
               <button
                 key={job.id}
-                onClick={() => navigate(`/jobs/${job.id}`)}
+                onClick={() => navigate(`/projects/${job.id}`)}
                 className="flex items-center gap-2 sm:gap-3 w-full rounded-xl p-2.5 sm:p-3 text-left hover:bg-secondary/50 active:bg-secondary/70 transition-colors focus-visible:ring-2 focus-visible:ring-ring min-h-[44px]"
               >
                 <div className="flex-1 min-w-0">
@@ -483,7 +483,7 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground shrink-0 hidden sm:block" />
               </button>
             )) : (
-              <EmptyState icon={<CalendarDays />} message="Ingen jobber ennå" ctaLabel="Opprett ny jobb" onCta={() => navigate("/resource-plan")} />
+              <EmptyState icon={<CalendarDays />} message="Ingen jobber ennå" ctaLabel="Opprett ny jobb" onCta={() => navigate("/projects/plan")} />
             )}
           </div>
         </SectionCard>

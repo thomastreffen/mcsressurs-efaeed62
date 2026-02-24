@@ -419,7 +419,7 @@ export default function JobDetail() {
       <div className="flex items-center justify-center p-20">
         <div className="text-center space-y-3">
           <p className="text-lg font-semibold">Jobb ikke funnet</p>
-          <Button variant="outline" onClick={() => navigate("/jobs")}>Tilbake til jobber</Button>
+          <Button variant="outline" onClick={() => navigate("/projects")}>Tilbake til prosjekter</Button>
         </div>
       </div>
     );
@@ -606,7 +606,7 @@ export default function JobDetail() {
                         onClick={async () => {
                           await supabase.from("events").update({ deleted_at: new Date().toISOString(), deleted_by: user?.id } as any).eq("id", job.id);
                           toast.success("Flyttet til papirkurv", { description: job.title });
-                          navigate("/jobs");
+                          navigate("/projects");
                         }}
                       >
                         <Trash2 className="h-3.5 w-3.5" /> Flytt til papirkurv

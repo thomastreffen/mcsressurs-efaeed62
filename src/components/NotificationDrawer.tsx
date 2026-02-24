@@ -58,7 +58,7 @@ export function NotificationDrawer({
       return;
     }
     if (notification.event_id) {
-      navigate(`/jobs/${notification.event_id}`);
+      navigate(`/projects/${notification.event_id}`);
       onOpenChange(false);
     }
   };

@@ -314,7 +314,7 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
 
     toast.success("Tillegg opprettet fra risiko");
     // Navigate to the change order tab
-    navigate(`/jobs/${jobId}?tab=change-orders&co=${data.id}`);
+    navigate(`/projects/${jobId}?tab=change-orders&co=${data.id}`);
   };
 
   /* ── Derived data ── */

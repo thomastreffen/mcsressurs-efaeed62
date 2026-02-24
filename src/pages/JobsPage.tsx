@@ -245,7 +245,7 @@ export default function JobsPage() {
                     <TableRow
                       key={job.id}
                       className={`cursor-pointer hover:bg-secondary/50 transition-colors ${highlightedId === job.id ? "bg-primary/5 ring-1 ring-primary/20" : ""}`}
-                      onClick={() => navigate(`/jobs/${job.id}`)}
+                      onClick={() => navigate(`/projects/${job.id}`)}
                     >
                       {isAdmin && (
                         <TableCell onClick={(e) => e.stopPropagation()}>

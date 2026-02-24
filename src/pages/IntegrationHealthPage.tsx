@@ -462,7 +462,7 @@ export default function IntegrationHealthPage() {
                                 variant="ghost"
                                 size="sm"
                                 className="h-7 text-xs gap-1"
-                                onClick={() => navigate(`/jobs/${link.job_id}`)}
+                                onClick={() => navigate(`/projects/${link.job_id}`)}
                               >
                                 <ExternalLink className="h-3 w-3" /> Åpne jobb
                               </Button>
@@ -583,7 +583,7 @@ export default function IntegrationHealthPage() {
                     variant="ghost"
                     size="sm"
                     className="h-7 text-xs gap-1 shrink-0"
-                    onClick={() => navigate(`/jobs/${entry.job_id}`)}
+                    onClick={() => navigate(`/projects/${entry.job_id}`)}
                   >
                     <ExternalLink className="h-3 w-3" /> Jobb
                   </Button>

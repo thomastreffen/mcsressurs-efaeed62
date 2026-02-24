@@ -99,7 +99,7 @@ export function MobileActionBar({
       } as any)
       .eq("id", job.id);
     toast.success("Flyttet til papirkurv", { description: job.title });
-    navigate("/jobs");
+    navigate("/projects");
   };
 
   const handleDuplicate = () => {

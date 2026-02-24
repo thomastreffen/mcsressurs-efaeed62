@@ -29,7 +29,7 @@ const quickActions = [
     label: "Ny jobb",
     description: "Opprett en ny jobbordre",
     icon: Briefcase,
-    path: "/jobs/new",
+    path: "/projects/new",
     permission: null,
   },
   {
@@ -81,20 +81,19 @@ export function MobileTabBar() {
     <>
       <nav className="fixed bottom-0 left-0 right-0 z-50 border-t border-border bg-card lg:hidden safe-area-bottom">
         <div className="flex items-stretch">
-          {/* Dashboard */}
           <TabButton
-            label="Dashboard"
+            label="Oversikt"
             icon={LayoutDashboard}
-            active={isActive("/")}
-            onClick={() => navigate("/")}
+            active={isActive("/overview")}
+            onClick={() => navigate("/overview")}
           />
 
-          {/* Jobber */}
+          {/* Prosjekter */}
           <TabButton
-            label="Jobber"
+            label="Prosjekter"
             icon={FolderKanban}
-            active={isActive("/jobs")}
-            onClick={() => navigate("/jobs")}
+            active={isActive("/projects")}
+            onClick={() => navigate("/projects")}
             dot={jobsDot}
           />
 
@@ -113,8 +112,8 @@ export function MobileTabBar() {
           <TabButton
             label="Plan"
             icon={CalendarDays}
-            active={isActive("/resource-plan")}
-            onClick={() => navigate("/resource-plan")}
+            active={isActive("/projects/plan")}
+            onClick={() => navigate("/projects/plan")}
           />
 
           {/* Varsler */}

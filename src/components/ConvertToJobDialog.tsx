@@ -79,7 +79,7 @@ export function ConvertToJobDialog({ open, onOpenChange, calculationId, offerId,
 
     toast.success("Konvertert til prosjekt");
     onOpenChange(false);
-    navigate(`/jobs/${event.id}`);
+    navigate(`/projects/${event.id}`);
     setCreating(false);
   };
 
