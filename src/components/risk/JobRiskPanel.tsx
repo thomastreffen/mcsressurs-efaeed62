@@ -6,6 +6,7 @@ import {
   getCategoryForFlag,
   getSeverityForFlag,
   isComplianceFlag,
+  isComplianceText,
   CATEGORY_LABELS,
   type RiskCategory,
 } from "@/lib/risk-categories";
@@ -156,10 +157,13 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
         for (const f of flags) {
           allRawKeys.push(f);
           if (!flagSet.has(f)) {
+            // isComplianceText detects Norwegian sentence-keys and forces LOW + documentation
+            const severity = getSeverityForFlag(f);
+            const category = getCategoryForFlag(f);
             flagSet.set(f, {
               source: a.analysis_type === "offer" ? "offer" : "contract",
-              category: getCategoryForFlag(f),
-              severity: getSeverityForFlag(f),
+              category,
+              severity,
               rawKey: f,
             });
           }
@@ -245,10 +249,11 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
   const resolvedItems = items.filter(i => i.status === "resolved" || i.status === "ignored");
 
   // Separate compliance (low/general) from project-critical
-  const complianceItems = openItems.filter(i => i.severity === "low");
-  const projectItems = openItems.filter(i => i.severity !== "low");
+  const complianceItems = openItems.filter(i => i.severity === "low" || i.category === "documentation");
+  const projectItems = openItems.filter(i => i.severity !== "low" && i.category !== "documentation");
 
-  const score = computeRiskScore(openItems);
+  // Score excludes compliance items
+  const score = computeRiskScore(projectItems);
   const level = riskLevel(score);
   const LevelIcon = level.icon;
 

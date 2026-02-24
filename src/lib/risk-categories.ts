@@ -19,7 +19,7 @@ const FLAG_CATEGORY: Record<string, RiskCategory> = {
   crane_rental_not_included: "economic",
   power_supply_not_included: "economic",
   late_payment_risk: "economic",
-  limitation_of_liability: "economic",
+  limitation_of_liability: "legal",
 
   liability_for_damages: "legal",
   liability_for_incomplete_information: "legal",
@@ -39,6 +39,8 @@ const FLAG_CATEGORY: Record<string, RiskCategory> = {
 };
 
 export function getCategoryForFlag(flag: string): RiskCategory {
+  // Check compliance text patterns first
+  if (isComplianceText(flag)) return "documentation";
   return FLAG_CATEGORY[flag] || "documentation";
 }
 
@@ -69,6 +71,8 @@ const MEDIUM_FLAGS = new Set([
   "storage_responsibility",
   "limitation_of_liability",
   "liability_limitations",
+  "liability_for_damages",
+  "liability_for_incomplete_information",
 ]);
 
 const LOW_FLAGS = new Set([
@@ -78,7 +82,31 @@ const LOW_FLAGS = new Set([
   "audit_cooperation",
 ]);
 
+/**
+ * Prefixes for Norwegian-language keys that indicate compliance/general
+ * contract requirements rather than project-critical risks.
+ */
+const COMPLIANCE_TEXT_PREFIXES = [
+  "Whistleblowing:",
+  "Nulltoleranse",
+  "Krav om",
+  "Etterlevelsesrisiko:",
+  "Manglende kjennskap",
+  "Ansvar for underleverandører",
+];
+
+/**
+ * Returns true when the flag looks like a Norwegian-language sentence key
+ * (no underscores) that matches a known compliance prefix.
+ */
+export function isComplianceText(flag: string): boolean {
+  if (flag.includes("_")) return false;
+  return COMPLIANCE_TEXT_PREFIXES.some((p) => flag.startsWith(p));
+}
+
 export function getSeverityForFlag(flag: string): RiskSeverity {
+  // Compliance text → always low
+  if (isComplianceText(flag)) return "low";
   if (HIGH_FLAGS.has(flag)) return "high";
   if (MEDIUM_FLAGS.has(flag)) return "medium";
   if (LOW_FLAGS.has(flag)) return "low";
@@ -87,5 +115,5 @@ export function getSeverityForFlag(flag: string): RiskSeverity {
 
 /** Returns true if flag is a compliance/general requirement rather than project-critical */
 export function isComplianceFlag(flag: string): boolean {
-  return LOW_FLAGS.has(flag);
+  return LOW_FLAGS.has(flag) || isComplianceText(flag);
 }
