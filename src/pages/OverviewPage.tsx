@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays } from "date-fns";
+import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
   Briefcase, CalendarDays, AlertTriangle, TrendingUp,
@@ -21,6 +21,13 @@ interface TodayMetrics {
   meetingsToday: number;
   overdueFollowups: number;
   criticalRisks: number;
+}
+
+interface TodayDeltas {
+  activeProjects: number | null;
+  meetingsToday: number | null;
+  overdueFollowups: number | null;
+  criticalRisks: number | null;
 }
 
 interface MiniGauge {
@@ -43,6 +50,13 @@ interface ActionItem {
   count: number;
   severity: "critical" | "warning" | "info";
   href: string;
+  urgency: "today" | "this_week" | "overdue";
+}
+
+interface TempoLine {
+  label: string;
+  value: number;
+  suffix?: string;
 }
 
 // ── Mini donut ──
@@ -86,6 +100,50 @@ function SectionHeader({ title, action }: { title: string; action?: React.ReactN
   );
 }
 
+// ── Delta badge ──
+
+function DeltaBadge({ delta }: { delta: number | null }) {
+  if (delta === null || delta === 0) return null;
+  const positive = delta > 0;
+  return (
+    <span className={`ml-1.5 text-[9px] font-mono font-medium rounded px-1 py-px ${
+      positive ? "text-success bg-success/10" : "text-destructive bg-destructive/10"
+    }`}>
+      {positive ? "+" : ""}{delta}
+    </span>
+  );
+}
+
+// ── Tempo line ──
+
+function TempoLineItem({ line }: { line: TempoLine }) {
+  const isPositive = line.value > 0;
+  const isNegative = line.value < 0;
+  const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
+  const colorClass = isPositive ? "text-success" : isNegative ? "text-destructive" : "text-muted-foreground";
+
+  return (
+    <div className="flex items-center justify-between py-1">
+      <span className="text-xs text-muted-foreground">{line.label}</span>
+      <span className={`text-xs font-mono font-medium ${colorClass}`}>
+        {arrow} {line.value === 0 ? "—" : `${Math.abs(line.value)}${line.suffix || ""}`}
+      </span>
+    </div>
+  );
+}
+
+// ── Urgency label ──
+
+function UrgencyLabel({ urgency }: { urgency: "today" | "this_week" | "overdue" }) {
+  const map = {
+    overdue: { text: "Forfalt", cls: "text-destructive bg-destructive/10" },
+    today: { text: "I dag", cls: "text-foreground bg-secondary" },
+    this_week: { text: "Denne uken", cls: "text-muted-foreground bg-secondary" },
+  };
+  const { text, cls } = map[urgency];
+  return <span className={`text-[9px] font-medium rounded px-1.5 py-px ${cls}`}>{text}</span>;
+}
+
 // ── Main ──
 
 export default function OverviewPage() {
@@ -95,8 +153,10 @@ export default function OverviewPage() {
   const [loading, setLoading] = useState(true);
 
   const [today, setToday] = useState<TodayMetrics>({ activeProjects: 0, meetingsToday: 0, overdueFollowups: 0, criticalRisks: 0 });
+  const [deltas, setDeltas] = useState<TodayDeltas>({ activeProjects: null, meetingsToday: null, overdueFollowups: null, criticalRisks: null });
   const [projectGauges, setProjectGauges] = useState<MiniGauge[]>([]);
   const [salesGauges, setSalesGauges] = useState<MiniGauge[]>([]);
+  const [tempoLines, setTempoLines] = useState<TempoLine[]>([]);
   const [weekItems, setWeekItems] = useState<{ resources: { name: string; hours: number }[]; milestones: WeekItem[]; closings: WeekItem[] }>({ resources: [], milestones: [], closings: [] });
   const [actions, setActions] = useState<ActionItem[]>([]);
 
@@ -107,16 +167,17 @@ export default function OverviewPage() {
     const now = new Date();
     const todayStart = startOfDay(now).toISOString();
     const todayEnd = new Date(startOfDay(now).getTime() + 86400000).toISOString();
+    const yesterdayStart = subDays(startOfDay(now), 1).toISOString();
     const weekStart = startOfWeek(now, { weekStartsOn: 1 });
     const weekEnd = endOfWeek(now, { weekStartsOn: 1 });
-    const d14 = new Date(Date.now() - 14 * 86400000);
-    const d90 = new Date(Date.now() - 90 * 86400000);
-    const d30 = new Date(Date.now() - 30 * 86400000);
-    const d7 = new Date(Date.now() - 7 * 86400000);
+    const d7 = subDays(now, 7);
+    const d14 = subDays(now, 14);
+    const d30 = subDays(now, 30);
+    const d90 = subDays(now, 90);
 
     const [eventsRes, risksRes, leadsRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes] = await Promise.all([
-      supabase.from("events").select("id, title, status, customer, start_time, end_time, meeting_join_url, internal_number, event_technicians(technician_id, technicians(name))").is("deleted_at", null),
-      supabase.from("job_risk_items").select("id, job_id, severity, status, category"),
+      supabase.from("events").select("id, title, status, customer, start_time, end_time, meeting_join_url, internal_number, created_at, event_technicians(technician_id, technicians(name))").is("deleted_at", null),
+      supabase.from("job_risk_items").select("id, job_id, severity, status, category, created_at"),
       supabase.from("leads").select("id, status, company_name, estimated_value, probability, next_action_date, updated_at, created_at, expected_close_date").is("deleted_at", null),
       supabase.from("offers").select("id, offer_number, status, total_inc_vat, sent_at, created_at, calculation_id, calculations(customer_name)").order("created_at", { ascending: false }),
       supabase.from("job_change_orders").select("id, job_id, status, amount_ex_vat"),
@@ -134,9 +195,8 @@ export default function OverviewPage() {
 
     const activeStatuses: JobStatus[] = ["requested", "approved", "scheduled", "in_progress", "time_change_proposed"];
 
-    // ── SECTION 1: TODAY ──
+    // ── SECTION 1: TODAY + DELTAS ──
     const activeProjects = events.filter((e: any) => activeStatuses.includes(e.status)).length;
-    const todayEvents = events.filter((e: any) => e.start_time >= todayStart && e.start_time < todayEnd && activeStatuses.includes(e.status));
     const meetingsToday = (calEventsRes.data || []).length;
     const openLeads = leads.filter(l => !["lost", "won"].includes(l.status));
     const overdueLeads = openLeads.filter(l => l.next_action_date && new Date(l.next_action_date) < now).length;
@@ -144,25 +204,34 @@ export default function OverviewPage() {
     const openRisks = risks.filter(r => r.status === "open");
     const criticalRisks = openRisks.filter(r => r.severity === "high").length;
 
-    setToday({
-      activeProjects,
-      meetingsToday,
-      overdueFollowups: overdueLeads + overdueOffers,
-      criticalRisks,
+    // Yesterday snapshot for deltas
+    const yesterdayActive = events.filter((e: any) => activeStatuses.includes(e.status) && new Date(e.created_at) < new Date(yesterdayStart)).length;
+    const yesterdayOverdueLeads = openLeads.filter(l => l.next_action_date && new Date(l.next_action_date) < new Date(yesterdayStart)).length;
+    const yesterdayOverdueOffers = offers.filter((o: any) => o.status === "sent" && o.sent_at && differenceInDays(new Date(yesterdayStart), new Date(o.sent_at)) > 5).length;
+    const yesterdayCritical = risks.filter(r => r.status === "open" && r.severity === "high" && new Date(r.created_at) < new Date(yesterdayStart)).length;
+
+    const activeDelta = activeProjects - yesterdayActive;
+    const overdueDelta = (overdueLeads + overdueOffers) - (yesterdayOverdueLeads + yesterdayOverdueOffers);
+    const critDelta = criticalRisks - yesterdayCritical;
+
+    setToday({ activeProjects, meetingsToday, overdueFollowups: overdueLeads + overdueOffers, criticalRisks });
+    setDeltas({
+      activeProjects: activeDelta !== 0 ? activeDelta : null,
+      meetingsToday: null,
+      overdueFollowups: overdueDelta !== 0 ? overdueDelta : null,
+      criticalRisks: critDelta !== 0 ? critDelta : null,
     });
 
     // ── SECTION 2: COMPANY HEALTH ──
-
-    // Project gauges
     const totalCO = changeOrders.length;
     const pendingCO = changeOrders.filter((c: any) => ["draft", "sent"].includes(c.status)).length;
     const pendingPct = totalCO > 0 ? Math.round((pendingCO / totalCO) * 100) : 0;
 
     const riskScore = openRisks.reduce((s, r) => s + (r.severity === "high" ? 2 : r.severity === "medium" ? 1 : 0), 0);
     const riskPct = Math.min(100, Math.round((riskScore / Math.max(1, 20)) * 100));
-    const riskStatus = riskScore >= 9 ? "red" : riskScore >= 4 ? "yellow" : "green";
+    const riskStatus: "green" | "yellow" | "red" = riskScore >= 9 ? "red" : riskScore >= 4 ? "yellow" : "green";
 
-    const cashflowPct = 0; // Placeholder – no invoice data yet
+    const cashflowPct = 0;
 
     setProjectGauges([
       { label: "Økonomi", pct: pendingPct, value: `${pendingPct}%`, status: pendingPct > 15 ? "red" : pendingPct > 8 ? "yellow" : "green", href: "/projects" },
@@ -171,9 +240,8 @@ export default function OverviewPage() {
     ]);
 
     // Sales gauges
-    // Salgspuls score
     let score = 50;
-    const meetings14 = (calEventsRes.data || []).length; // simplified
+    const meetings14 = (calEventsRes.data || []).length;
     const offersSent14 = offers.filter((o: any) => o.status !== "draft" && new Date(o.created_at) >= d14).length;
     score += Math.min(meetings14 * 5, 20);
     score += Math.min(offersSent14 * 5, 20);
@@ -181,25 +249,45 @@ export default function OverviewPage() {
     if (inactiveLeads > 5) score -= 5;
     if (meetings14 === 0) score -= 10;
     score = Math.max(0, Math.min(100, score));
-    const pulseStatus = score >= 70 ? "green" : score >= 50 ? "yellow" : "red";
+    const pulseStatus: "green" | "yellow" | "red" = score >= 70 ? "green" : score >= 50 ? "yellow" : "red";
 
-    // Pipeline
     const pipelineValue = openLeads.reduce((s, l) => s + (Number(l.estimated_value || 0) * (Number(l.probability || 50) / 100)), 0);
     const quarterTarget = 2_000_000;
     const pipelinePct = Math.min(100, Math.round((pipelineValue / quarterTarget) * 100));
-    const pipelineStatus = pipelinePct >= 100 ? "green" : pipelinePct >= 80 ? "yellow" : "red";
+    const pipelineStatus: "green" | "yellow" | "red" = pipelinePct >= 100 ? "green" : pipelinePct >= 80 ? "yellow" : "red";
 
-    // Vinnrate
     const recentOffers90 = offers.filter((o: any) => new Date(o.created_at) >= d90);
     const sent90 = recentOffers90.filter((o: any) => o.status !== "draft").length;
     const won90 = recentOffers90.filter((o: any) => o.status === "accepted").length;
     const winRate = sent90 > 0 ? Math.round((won90 / sent90) * 100) : 0;
-    const winStatus = winRate >= 35 ? "green" : winRate >= 20 ? "yellow" : "red";
+    const winStatus: "green" | "yellow" | "red" = winRate >= 35 ? "green" : winRate >= 20 ? "yellow" : "red";
 
     setSalesGauges([
       { label: "Salgspuls", pct: score, value: `${score}`, status: pulseStatus, href: "/sales" },
       { label: "Pipeline", pct: pipelinePct, value: `${pipelinePct}%`, status: pipelineStatus, href: "/sales" },
       { label: "Vinnrate", pct: winRate, value: `${winRate}%`, status: winStatus, href: "/sales" },
+    ]);
+
+    // ── TEMPO: BEVEGELSE SISTE 7 DAGER ──
+    const newProjects7d = events.filter((e: any) => new Date(e.created_at) >= d7 && activeStatuses.includes(e.status)).length;
+    const newLeads7d = leads.filter(l => new Date(l.created_at) >= d7).length;
+    const offersSent7d = offers.filter((o: any) => o.status !== "draft" && o.sent_at && new Date(o.sent_at) >= d7).length;
+
+    const highRisksNow = openRisks.filter(r => r.severity === "high").length;
+    const highRisks7dAgo = risks.filter(r => r.status === "open" && r.severity === "high" && new Date(r.created_at) < d7).length;
+    const highRiskDelta = highRisksNow - highRisks7dAgo;
+
+    const pipelineNow = pipelineValue;
+    const leadsOlderThan7d = leads.filter(l => !["lost", "won"].includes(l.status) && new Date(l.created_at) < d7);
+    const pipeline7dAgo = leadsOlderThan7d.reduce((s, l) => s + (Number(l.estimated_value || 0) * (Number(l.probability || 50) / 100)), 0);
+    const pipelineDeltaK = Math.round((pipelineNow - pipeline7dAgo) / 1000);
+
+    setTempoLines([
+      { label: "Nye prosjekter", value: newProjects7d },
+      { label: "Nye leads", value: newLeads7d },
+      { label: "Tilbud sendt", value: offersSent7d },
+      { label: "Endring HIGH-risiko", value: highRiskDelta },
+      { label: "Pipeline-endring", value: pipelineDeltaK, suffix: "k" },
     ]);
 
     // ── SECTION 3: THIS WEEK ──
@@ -222,7 +310,6 @@ export default function OverviewPage() {
       .sort((a, b) => b.hours - a.hours)
       .slice(0, 5);
 
-    // Closings this week
     const closings = openLeads
       .filter(l => l.expected_close_date && new Date(l.expected_close_date) >= weekStart && new Date(l.expected_close_date) <= weekEnd)
       .slice(0, 5)
@@ -235,27 +322,33 @@ export default function OverviewPage() {
 
     setWeekItems({ resources, milestones: [], closings });
 
-    // ── SECTION 4: ACTION REQUIRED ──
+    // ── SECTION 4: ACTION REQUIRED (with urgency) ──
     const actionList: ActionItem[] = [];
 
     const leadsInactive = openLeads.filter(l => new Date(l.updated_at) < d7).length;
-    if (leadsInactive > 0) actionList.push({ label: "Leads uten aktivitet > 7 dager", count: leadsInactive, severity: "warning", href: "/sales/leads" });
+    if (leadsInactive > 0) {
+      const hasOld = openLeads.some(l => new Date(l.updated_at) < d14);
+      actionList.push({ label: "Leads uten aktivitet > 7 dager", count: leadsInactive, severity: "warning", href: "/sales/leads", urgency: hasOld ? "overdue" : "this_week" });
+    }
 
-    if (criticalRisks > 0) actionList.push({ label: "Prosjekter med kritisk risiko", count: criticalRisks, severity: "critical", href: "/projects" });
+    if (criticalRisks > 0) actionList.push({ label: "Prosjekter med kritisk risiko", count: criticalRisks, severity: "critical", href: "/projects", urgency: "today" });
 
-    if (overdueOffers > 0) actionList.push({ label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers" });
+    if (overdueOffers > 0) {
+      const hasVeryOld = offers.some((o: any) => o.status === "sent" && o.sent_at && differenceInDays(now, new Date(o.sent_at)) > 10);
+      actionList.push({ label: "Tilbud uten oppfølging > 5 dager", count: overdueOffers, severity: "warning", href: "/sales/offers", urgency: hasVeryOld ? "overdue" : "this_week" });
+    }
 
-    const calcsReady = offers.filter((o: any) => o.status === "draft").length;
-    // Check for calculations ready but no offer
-    // Simplified: drafts count
     const requestedJobs = events.filter((e: any) => e.status === "requested").length;
-    if (requestedJobs > 0) actionList.push({ label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects" });
+    if (requestedJobs > 0) actionList.push({ label: "Prosjekter uten godkjent plan", count: requestedJobs, severity: "warning", href: "/projects", urgency: "this_week" });
 
-    if (overdueLeads > 0) actionList.push({ label: "Leads med forfalt oppfølging", count: overdueLeads, severity: "warning", href: "/sales/leads" });
+    if (overdueLeads > 0) {
+      const hasOverdue = openLeads.some(l => l.next_action_date && differenceInDays(now, new Date(l.next_action_date)) > 3);
+      actionList.push({ label: "Leads med forfalt oppfølging", count: overdueLeads, severity: "warning", href: "/sales/leads", urgency: hasOverdue ? "overdue" : "today" });
+    }
 
-    // Sort by severity
     const severityOrder = { critical: 0, warning: 1, info: 2 };
-    actionList.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity]);
+    const urgencyOrder = { overdue: 0, today: 1, this_week: 2 };
+    actionList.sort((a, b) => severityOrder[a.severity] - severityOrder[b.severity] || urgencyOrder[a.urgency] - urgencyOrder[b.urgency]);
 
     setActions(actionList);
     setLoading(false);
@@ -279,18 +372,21 @@ export default function OverviewPage() {
           icon={<Briefcase className="h-4 w-4" />}
           label="Aktive prosjekter"
           value={today.activeProjects}
+          delta={deltas.activeProjects}
           onClick={() => navigate("/projects")}
         />
         <TodayBlock
           icon={<CalendarDays className="h-4 w-4" />}
           label="Møter i dag"
           value={today.meetingsToday}
+          delta={deltas.meetingsToday}
           onClick={() => navigate("/sales/leads")}
         />
         <TodayBlock
           icon={<Clock className="h-4 w-4" />}
           label="Forfalte oppfølginger"
           value={today.overdueFollowups}
+          delta={deltas.overdueFollowups}
           status={today.overdueFollowups > 0 ? "warning" : undefined}
           onClick={() => navigate("/sales/leads")}
         />
@@ -298,6 +394,7 @@ export default function OverviewPage() {
           icon={<ShieldAlert className="h-4 w-4" />}
           label="Kritiske risikoer"
           value={today.criticalRisks}
+          delta={deltas.criticalRisks}
           status={today.criticalRisks > 0 ? "critical" : undefined}
           onClick={() => navigate("/projects")}
         />
@@ -305,7 +402,6 @@ export default function OverviewPage() {
 
       {/* ── SECTION 2: SELSKAPETS HELSE ── */}
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 lg:gap-6">
-        {/* Project health */}
         <div
           className="rounded-xl bg-card/60 border border-border/40 p-4 cursor-pointer hover:bg-card/80 transition-colors"
           onClick={() => navigate("/projects")}
@@ -329,7 +425,6 @@ export default function OverviewPage() {
           </div>
         </div>
 
-        {/* Sales health */}
         {isAdmin && (
           <div
             className="rounded-xl bg-card/60 border border-border/40 p-4 cursor-pointer hover:bg-card/80 transition-colors"
@@ -355,6 +450,18 @@ export default function OverviewPage() {
           </div>
         )}
       </div>
+
+      {/* ── TEMPO: BEVEGELSE SISTE 7 DAGER ── */}
+      {tempoLines.length > 0 && (
+        <div className="rounded-xl bg-card/60 border border-border/40 p-4">
+          <SectionHeader title="Bevegelse siste 7 dager" />
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-x-8 gap-y-0.5">
+            {tempoLines.map(line => (
+              <TempoLineItem key={line.label} line={line} />
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── SECTION 3: DENNE UKEN ── */}
       <div>
@@ -388,7 +495,7 @@ export default function OverviewPage() {
             )}
           </div>
 
-          {/* Milestones */}
+          {/* Active projects */}
           <div className="rounded-xl bg-card/60 border border-border/40 p-4">
             <div className="flex items-center justify-between mb-3">
               <span className="text-xs font-medium text-muted-foreground">Prosjekter i arbeid</span>
@@ -445,6 +552,7 @@ export default function OverviewPage() {
                   a.severity === "critical" ? "bg-destructive" : a.severity === "warning" ? "bg-accent" : "bg-muted-foreground"
                 }`} />
                 <span className="text-sm text-foreground flex-1">{a.label}</span>
+                <UrgencyLabel urgency={a.urgency} />
                 <Badge variant="secondary" className="text-[10px] font-mono px-1.5 py-0">
                   {a.count}
                 </Badge>
@@ -460,10 +568,11 @@ export default function OverviewPage() {
 
 // ── Today block ──
 
-function TodayBlock({ icon, label, value, status, onClick }: {
+function TodayBlock({ icon, label, value, delta, status, onClick }: {
   icon: React.ReactNode;
   label: string;
   value: number;
+  delta?: number | null;
   status?: "warning" | "critical";
   onClick: () => void;
 }) {
@@ -478,7 +587,10 @@ function TodayBlock({ icon, label, value, status, onClick }: {
         {icon}
       </div>
       <div className="min-w-0">
-        <p className="text-lg font-bold font-mono text-foreground leading-none">{value}</p>
+        <div className="flex items-baseline">
+          <p className="text-lg font-bold font-mono text-foreground leading-none">{value}</p>
+          <DeltaBadge delta={delta ?? null} />
+        </div>
         <p className="text-[10px] text-muted-foreground truncate mt-0.5">{label}</p>
       </div>
       {status && (
