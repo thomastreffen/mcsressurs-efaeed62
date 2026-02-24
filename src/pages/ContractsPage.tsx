@@ -93,8 +93,8 @@ export default function ContractsPage() {
     <div className="p-4 sm:p-6 max-w-7xl mx-auto space-y-6">
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-xl font-bold tracking-tight">Kontrakter</h1>
-          <p className="text-sm text-muted-foreground">
+         <h1 className="text-xl font-bold tracking-tight">Kontrakter</h1>
+          <p className="text-sm text-muted-foreground/70">
             Oversikt over alle kontrakter med risikostatus og frister.
           </p>
         </div>
@@ -148,7 +148,7 @@ export default function ContractsPage() {
           <p className="text-muted-foreground">Ingen kontrakter funnet.</p>
         </div>
       ) : (
-        <div className="border rounded-xl overflow-hidden">
+        <div className="border border-border/40 rounded-2xl overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>

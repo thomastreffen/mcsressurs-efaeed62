@@ -359,7 +359,7 @@ export function SalesPulse() {
 // ── Pipeline Flow ──
 function PipelineFlow({ statusCounts, nav }: { statusCounts: { key: LeadStatus; label: string; color: string; count: number }[]; nav: (p: string) => void }) {
   return (
-    <div className="rounded-lg bg-card shadow-sm p-3.5">
+    <div className="rounded-2xl bg-card border border-border/40 shadow-sm p-3.5">
       <button onClick={() => nav("/sales/pipeline")}
         className="flex items-center justify-between w-full mb-3 group cursor-pointer">
         <h4 className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider group-hover:text-primary group-hover:underline underline-offset-2 transition-colors">
@@ -416,7 +416,7 @@ function PipelineFlow({ statusCounts, nav }: { statusCounts: { key: LeadStatus; 
 // ── Actions Panel ──
 function ActionsPanel({ actions, nav }: { actions: ActionItem[]; nav: (p: string) => void }) {
   return (
-    <div className="rounded-lg bg-card shadow-sm p-3">
+    <div className="rounded-2xl bg-card border border-border/40 shadow-sm p-3">
       <button onClick={() => nav("/sales/leads?filter=needs_action")}
         className="flex items-center justify-between w-full mb-2 group cursor-pointer">
         <h4 className="text-[10px] font-semibold text-foreground/80 uppercase tracking-wider group-hover:text-primary group-hover:underline underline-offset-2 transition-colors flex items-center gap-1">
@@ -447,14 +447,14 @@ function ActionsPanel({ actions, nav }: { actions: ActionItem[]; nav: (p: string
       ) : (
         <div>
           <div className="flex items-center gap-2 py-1.5 px-1.5 mb-0.5">
-            <CheckCircle2 className="h-3.5 w-3.5 text-emerald-500/50" />
+             <CheckCircle2 className="h-3.5 w-3.5 text-success/50" />
             <span className="text-[12px] text-muted-foreground/60">Ingen kritiske oppgaver. God kontroll.</span>
           </div>
           {OK_ROWS.map((txt, i) => (
             <div key={i} className="flex items-center gap-2 py-1.5 px-1.5 opacity-35">
-              <div className="h-1.5 w-1.5 rounded-full shrink-0 bg-emerald-400/40" />
+              <div className="h-1.5 w-1.5 rounded-full shrink-0 bg-success/40" />
               <span className="text-[12px] text-muted-foreground/40 flex-1">{txt}</span>
-              <span className="text-[9px] text-emerald-500/40 font-mono">0</span>
+              <span className="text-[9px] text-success/40 font-mono">0</span>
             </div>
           ))}
         </div>

@@ -40,7 +40,7 @@ export function TopBar({ onNewJob, onToggleSidebar, showMenuButton }: TopBarProp
 
   return (
     <>
-      <header className="flex items-center justify-between border-b bg-card px-4 py-3 sm:px-6 sticky top-0 z-30">
+      <header className="flex items-center justify-between border-b border-border/40 bg-card/80 backdrop-blur-xl px-4 py-3 sm:px-6 sticky top-0 z-30">
         <div className="flex items-center gap-2 sm:gap-3">
           {showMenuButton && (
             <Button variant="ghost" size="icon" onClick={onToggleSidebar} className="lg:hidden">
