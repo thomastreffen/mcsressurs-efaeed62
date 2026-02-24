@@ -57,13 +57,13 @@ function statusToHsl(s: StatusColor): string {
 // ── Half-circle gauge (SVG) with gradient ──
 
 function HalfGauge({ pct, status, size = 200 }: { pct: number; status: StatusColor; size?: number }) {
-  const strokeWidth = 16;
+  const strokeWidth = 18;
   const r = (size - strokeWidth) / 2;
   const cx = size / 2;
   const cy = size / 2;
   const circumference = Math.PI * r;
   const clamped = Math.max(0, Math.min(1, pct / 100));
-  const dashLen = clamped * circumference;
+  const dashLen = Math.max(clamped, 0.005) * circumference; // min visible arc when 0%
   const gradientId = `gauge-grad-${status}-${size}`;
 
   return (
@@ -87,10 +87,10 @@ function HalfGauge({ pct, status, size = 200 }: { pct: number; status: StatusCol
       <path
         d={`M ${strokeWidth / 2} ${cy} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
         fill="none"
-        stroke={`url(#${gradientId})`}
+        stroke={pct <= 0 ? "hsl(152, 60%, 38%)" : `url(#${gradientId})`}
         strokeWidth={strokeWidth}
         strokeLinecap="round"
-        strokeDasharray={`${dashLen} ${circumference}`}
+        strokeDasharray={pct <= 0 ? `${circumference} 0` : `${dashLen} ${circumference}`}
         className="transition-all duration-700 ease-out"
       />
     </svg>
@@ -377,11 +377,11 @@ export function PortfolioHealthGauges() {
   return (
     <div className="space-y-4">
       {/* ── Gauges container ── */}
-      <div className="rounded-3xl bg-secondary/40 shadow-sm p-6 sm:p-10">
+      <div className="rounded-3xl bg-secondary/40 shadow-sm shadow-black/5 ring-1 ring-border/10 p-5 sm:p-8">
         <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-6">
           Porteføljehelse
         </h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 max-w-5xl mx-auto">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 sm:gap-4 max-w-5xl mx-auto">
           {gauges.map((g) => (
             <div key={g.label} className="flex flex-col items-center text-center">
               <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
@@ -393,7 +393,7 @@ export function PortfolioHealthGauges() {
                   className="absolute left-1/2 -translate-x-1/2"
                   style={{ bottom: isMobile ? 0 : 4 }}
                 >
-                  <p className="text-2xl sm:text-4xl font-semibold text-foreground font-mono leading-none">
+                  <p className="text-3xl sm:text-5xl font-semibold text-foreground font-mono leading-none">
                     {g.mainLabel}
                   </p>
                 </div>
@@ -404,7 +404,7 @@ export function PortfolioHealthGauges() {
         </div>
 
         {/* ── Inline health summary ── */}
-        <div className="flex items-center justify-center gap-6 sm:gap-10 mt-6 pt-5 border-t border-border/40">
+        <div className="flex items-center justify-center gap-8 sm:gap-14 mt-6 pt-5 border-t border-border/40">
           <HealthStat label="Rød" count={counts.red.length} value={counts.red.reduce((s, p) => s + p.totalNow, 0)} color="destructive" active={filter === "red"} onClick={() => setFilter(filter === "red" ? null : "red")} />
           <div className="h-8 w-px bg-border/40" />
           <HealthStat label="Gul" count={counts.yellow.length} value={counts.yellow.reduce((s, p) => s + p.totalNow, 0)} color="accent" active={filter === "yellow"} onClick={() => setFilter(filter === "yellow" ? null : "yellow")} />
@@ -516,13 +516,14 @@ function HealthStat({ label, count, value, color, active, onClick }: {
   onClick: () => void;
 }) {
   const dotClass = color === "destructive" ? "bg-destructive" : color === "accent" ? "bg-accent" : "bg-success";
+  const textClass = color === "destructive" ? "text-destructive" : "text-foreground";
   const activeClass = active ? "opacity-100 scale-105" : "opacity-80 hover:opacity-100";
 
   return (
     <button onClick={onClick} className={`flex flex-col items-center gap-0.5 transition-all ${activeClass}`}>
       <div className="flex items-center gap-1.5">
-        <div className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
-        <span className="text-2xl sm:text-3xl font-bold text-foreground leading-none">{count}</span>
+        <div className={`h-3 w-3 rounded-full ${dotClass}`} />
+        <span className={`text-xl sm:text-2xl font-bold leading-none ${textClass}`}>{count}</span>
       </div>
       <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{label}</span>
       <span className="text-[10px] text-muted-foreground font-mono">NOK {fmtNOK(value)}</span>
