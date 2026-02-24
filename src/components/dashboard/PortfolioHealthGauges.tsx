@@ -54,33 +54,41 @@ function statusToHsl(s: StatusColor): string {
   return "hsl(0, 72%, 51%)";
 }
 
-// ── Half-circle gauge (SVG) ──
+// ── Half-circle gauge (SVG) with gradient ──
 
-function HalfGauge({ pct, status, size = 140 }: { pct: number; status: StatusColor; size?: number }) {
-  const r = (size - 16) / 2;
+function HalfGauge({ pct, status, size = 200 }: { pct: number; status: StatusColor; size?: number }) {
+  const strokeWidth = 16;
+  const r = (size - strokeWidth) / 2;
   const cx = size / 2;
-  const cy = size / 2 + 4;
+  const cy = size / 2;
   const circumference = Math.PI * r;
   const clamped = Math.max(0, Math.min(1, pct / 100));
   const dashLen = clamped * circumference;
-  const color = statusToHsl(status);
+  const gradientId = `gauge-grad-${status}-${size}`;
 
   return (
-    <svg width={size} height={size / 2 + 16} viewBox={`0 0 ${size} ${size / 2 + 16}`} className="block mx-auto">
+    <svg width={size} height={size / 2 + strokeWidth / 2 + 2} viewBox={`0 0 ${size} ${size / 2 + strokeWidth / 2 + 2}`} className="block mx-auto">
+      <defs>
+        <linearGradient id={gradientId} x1="0%" y1="0%" x2="100%" y2="0%">
+          <stop offset="0%" stopColor="hsl(152, 60%, 38%)" />
+          <stop offset="50%" stopColor="hsl(28, 80%, 52%)" />
+          <stop offset="100%" stopColor="hsl(0, 72%, 51%)" />
+        </linearGradient>
+      </defs>
       {/* Track */}
       <path
-        d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+        d={`M ${strokeWidth / 2} ${cy} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
         fill="none"
         stroke="hsl(210, 15%, 93%)"
-        strokeWidth={6}
+        strokeWidth={strokeWidth}
         strokeLinecap="round"
       />
       {/* Value arc */}
       <path
-        d={`M ${cx - r} ${cy} A ${r} ${r} 0 0 1 ${cx + r} ${cy}`}
+        d={`M ${strokeWidth / 2} ${cy} A ${r} ${r} 0 0 1 ${size - strokeWidth / 2} ${cy}`}
         fill="none"
-        stroke={color}
-        strokeWidth={6}
+        stroke={`url(#${gradientId})`}
+        strokeWidth={strokeWidth}
         strokeLinecap="round"
         strokeDasharray={`${dashLen} ${circumference}`}
         className="transition-all duration-700 ease-out"
@@ -351,7 +359,7 @@ export function PortfolioHealthGauges() {
   }, [projects, filter]);
 
   const totalJobs = statusCounts.reduce((s, d) => s + d.value, 0);
-  const gaugeSize = isMobile ? 110 : 140;
+  const gaugeSize = isMobile ? 150 : 200;
 
   if (loading) {
     return (
@@ -367,61 +375,42 @@ export function PortfolioHealthGauges() {
   }
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       {/* ── Gauges container ── */}
-      <div className="rounded-3xl bg-card shadow-sm p-5 sm:p-8">
-        <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-5">
+      <div className="rounded-3xl bg-secondary/40 shadow-sm p-6 sm:p-10">
+        <h3 className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-6">
           Porteføljehelse
         </h3>
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-6 sm:gap-8 max-w-4xl mx-auto">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6 max-w-5xl mx-auto">
           {gauges.map((g) => (
             <div key={g.label} className="flex flex-col items-center text-center">
-              <div className="relative">
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mb-1">
+                {g.icon} {g.label}
+              </span>
+              <div className="relative w-full" style={{ maxWidth: gaugeSize }}>
                 <HalfGauge pct={g.pct} status={g.status} size={gaugeSize} />
                 <div
                   className="absolute left-1/2 -translate-x-1/2"
-                  style={{ bottom: isMobile ? 2 : 6 }}
+                  style={{ bottom: isMobile ? 0 : 4 }}
                 >
-                  <p className="text-xl sm:text-2xl font-bold text-foreground font-mono leading-none">
+                  <p className="text-2xl sm:text-4xl font-semibold text-foreground font-mono leading-none">
                     {g.mainLabel}
                   </p>
                 </div>
               </div>
-              <span className="flex items-center gap-1 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest mt-1">
-                {g.icon} {g.label}
-              </span>
-              <p className="text-[11px] text-muted-foreground mt-0.5">{g.subLabel}</p>
+              <p className="text-xs text-muted-foreground -mt-1">{g.subLabel}</p>
             </div>
           ))}
         </div>
-      </div>
 
-      {/* ── Red / Yellow / Green cards ── */}
-      <div className="grid grid-cols-3 gap-3">
-        <HealthCountCard
-          label="Røde prosjekter"
-          count={counts.red.length}
-          totalValue={counts.red.reduce((s, p) => s + p.totalNow, 0)}
-          color="destructive"
-          active={filter === "red"}
-          onClick={() => setFilter(filter === "red" ? null : "red")}
-        />
-        <HealthCountCard
-          label="Gule prosjekter"
-          count={counts.yellow.length}
-          totalValue={counts.yellow.reduce((s, p) => s + p.totalNow, 0)}
-          color="accent"
-          active={filter === "yellow"}
-          onClick={() => setFilter(filter === "yellow" ? null : "yellow")}
-        />
-        <HealthCountCard
-          label="Grønne prosjekter"
-          count={counts.green.length}
-          totalValue={counts.green.reduce((s, p) => s + p.totalNow, 0)}
-          color="success"
-          active={filter === "green"}
-          onClick={() => setFilter(filter === "green" ? null : "green")}
-        />
+        {/* ── Inline health summary ── */}
+        <div className="flex items-center justify-center gap-6 sm:gap-10 mt-6 pt-5 border-t border-border/40">
+          <HealthStat label="Rød" count={counts.red.length} value={counts.red.reduce((s, p) => s + p.totalNow, 0)} color="destructive" active={filter === "red"} onClick={() => setFilter(filter === "red" ? null : "red")} />
+          <div className="h-8 w-px bg-border/40" />
+          <HealthStat label="Gul" count={counts.yellow.length} value={counts.yellow.reduce((s, p) => s + p.totalNow, 0)} color="accent" active={filter === "yellow"} onClick={() => setFilter(filter === "yellow" ? null : "yellow")} />
+          <div className="h-8 w-px bg-border/40" />
+          <HealthStat label="Grønn" count={counts.green.length} value={counts.green.reduce((s, p) => s + p.totalNow, 0)} color="success" active={filter === "green"} onClick={() => setFilter(filter === "green" ? null : "green")} />
+        </div>
       </div>
 
       {/* ── Filtered project list ── */}
@@ -516,32 +505,27 @@ export function PortfolioHealthGauges() {
   );
 }
 
-// ── Health count card ──
+// ── Compact inline health stat ──
 
-function HealthCountCard({ label, count, totalValue, color, active, onClick }: {
+function HealthStat({ label, count, value, color, active, onClick }: {
   label: string;
   count: number;
-  totalValue: number;
+  value: number;
   color: "destructive" | "accent" | "success";
   active: boolean;
   onClick: () => void;
 }) {
-  const borderClass = active
-    ? color === "destructive" ? "ring-2 ring-destructive/40" : color === "accent" ? "ring-2 ring-accent/40" : "ring-2 ring-success/40"
-    : "";
   const dotClass = color === "destructive" ? "bg-destructive" : color === "accent" ? "bg-accent" : "bg-success";
+  const activeClass = active ? "opacity-100 scale-105" : "opacity-80 hover:opacity-100";
 
   return (
-    <button
-      onClick={onClick}
-      className={`rounded-2xl bg-card shadow-sm p-4 text-left hover:shadow-md transition-all cursor-pointer ${borderClass}`}
-    >
-      <div className="flex items-center gap-2 mb-2">
+    <button onClick={onClick} className={`flex flex-col items-center gap-0.5 transition-all ${activeClass}`}>
+      <div className="flex items-center gap-1.5">
         <div className={`h-2.5 w-2.5 rounded-full ${dotClass}`} />
-        <span className="text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">{label}</span>
+        <span className="text-2xl sm:text-3xl font-bold text-foreground leading-none">{count}</span>
       </div>
-      <p className="text-2xl sm:text-3xl font-bold text-foreground leading-none">{count}</p>
-      <p className="text-[11px] text-muted-foreground mt-1">NOK {fmtNOK(totalValue)}</p>
+      <span className="text-[10px] text-muted-foreground uppercase tracking-wider font-medium">{label}</span>
+      <span className="text-[10px] text-muted-foreground font-mono">NOK {fmtNOK(value)}</span>
     </button>
   );
 }
