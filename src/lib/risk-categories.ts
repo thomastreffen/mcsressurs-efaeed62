@@ -39,7 +39,6 @@ const FLAG_CATEGORY: Record<string, RiskCategory> = {
 };
 
 export function getCategoryForFlag(flag: string): RiskCategory {
-  // Check compliance text patterns first
   if (isComplianceText(flag)) return "documentation";
   return FLAG_CATEGORY[flag] || "documentation";
 }
@@ -105,7 +104,6 @@ export function isComplianceText(flag: string): boolean {
 }
 
 export function getSeverityForFlag(flag: string): RiskSeverity {
-  // Compliance text → always low
   if (isComplianceText(flag)) return "low";
   if (HIGH_FLAGS.has(flag)) return "high";
   if (MEDIUM_FLAGS.has(flag)) return "medium";
@@ -116,4 +114,50 @@ export function getSeverityForFlag(flag: string): RiskSeverity {
 /** Returns true if flag is a compliance/general requirement rather than project-critical */
 export function isComplianceFlag(flag: string): boolean {
   return LOW_FLAGS.has(flag) || isComplianceText(flag);
+}
+
+/* ── Change order template mapping ── */
+
+export interface ChangeOrderTemplate {
+  title: string;
+  description: string;
+  reasonType: string;
+}
+
+const CHANGE_ORDER_TEMPLATES: Record<string, ChangeOrderTemplate> = {
+  rigging_cost_not_included: {
+    title: "Riggkostnad ikke inkludert",
+    description: "Rigg og nedrigg er ikke inkludert i opprinnelig tilbud/kontrakt. Tillegg for riggkostnader.",
+    reasonType: "scope_change",
+  },
+  power_supply_not_included: {
+    title: "Byggestrøm ikke inkludert",
+    description: "Byggestrøm / provisorisk strøm er ikke inkludert i opprinnelig tilbud/kontrakt.",
+    reasonType: "scope_change",
+  },
+  crane_rental_not_included: {
+    title: "Krankostnad ikke inkludert",
+    description: "Kranleie er ikke inkludert i opprinnelig tilbud/kontrakt. Tillegg for krankostnader.",
+    reasonType: "scope_change",
+  },
+  storage_risk: {
+    title: "Lagring og mellomlagring",
+    description: "Risiko knyttet til lagring av materiell og utstyr på byggeplass. Tillegg for lagringskostnader.",
+    reasonType: "unforeseen",
+  },
+  price_consequences_for_deviations: {
+    title: "Priskonsekvens ved avvik",
+    description: "Avvik fra opprinnelig omfang medfører priskonsekvenser iht. kontraktsvilkår.",
+    reasonType: "scope_change",
+  },
+};
+
+const CHANGE_ORDER_ELIGIBLE = new Set(Object.keys(CHANGE_ORDER_TEMPLATES));
+
+export function canGenerateChangeOrder(flag: string): boolean {
+  return CHANGE_ORDER_ELIGIBLE.has(flag);
+}
+
+export function getChangeOrderTemplate(flag: string): ChangeOrderTemplate | null {
+  return CHANGE_ORDER_TEMPLATES[flag] || null;
 }

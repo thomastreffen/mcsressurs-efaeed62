@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
 import { getRiskFlagLabel } from "@/lib/risk-flag-labels";
@@ -7,6 +8,8 @@ import {
   getSeverityForFlag,
   isComplianceFlag,
   isComplianceText,
+  canGenerateChangeOrder,
+  getChangeOrderTemplate,
   CATEGORY_LABELS,
   type RiskCategory,
 } from "@/lib/risk-categories";
@@ -26,6 +29,7 @@ import {
   ChevronRight,
   AlertTriangle,
   FileCheck,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -38,6 +42,7 @@ interface RiskItem {
   severity: string;
   status: string;
   raw_key?: string;
+  linked_change_order_id?: string;
 }
 
 interface JobRiskPanelProps {
@@ -77,12 +82,16 @@ const SEVERITY_COLORS: Record<string, string> = {
 };
 
 /* ── Render a single risk row ── */
-function RiskRow({ item, isAdmin, onResolve, onIgnore }: {
+function RiskRow({ item, isAdmin, onResolve, onIgnore, onCreateChangeOrder, resolvedViaChangeOrder }: {
   item: RiskItem;
   isAdmin: boolean;
   onResolve: () => void;
   onIgnore: () => void;
+  onCreateChangeOrder?: () => void;
+  resolvedViaChangeOrder?: boolean;
 }) {
+  const showCOButton = isAdmin && item.raw_key && canGenerateChangeOrder(item.raw_key) && item.status === "open";
+
   return (
     <div className="px-4 py-3 flex items-start justify-between gap-3">
       <div className="min-w-0 flex-1">
@@ -102,29 +111,44 @@ function RiskRow({ item, isAdmin, onResolve, onIgnore }: {
           {item.status === "acknowledged" && (
             <Badge variant="secondary" className="text-[9px] h-4">Tatt til etterretning</Badge>
           )}
+          {resolvedViaChangeOrder && (
+            <Badge className="text-[9px] h-4 bg-success/15 text-success border-success/30">
+              Løst via tillegg
+            </Badge>
+          )}
         </div>
       </div>
-      {isAdmin && (
-        <div className="flex items-center gap-1 shrink-0">
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="Marker som avklart" onClick={onResolve}>
-            <Check className="h-3.5 w-3.5 text-success" />
+      <div className="flex items-center gap-1 shrink-0">
+        {showCOButton && onCreateChangeOrder && (
+          <Button variant="outline" size="sm" className="h-7 rounded-lg gap-1 text-[10px] px-2" title="Opprett tillegg fra risiko" onClick={onCreateChangeOrder}>
+            <Plus className="h-3 w-3" />
+            Opprett tillegg
           </Button>
-          <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="Ignorer" onClick={onIgnore}>
-            <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
-          </Button>
-        </div>
-      )}
+        )}
+        {isAdmin && item.status !== "resolved" && item.status !== "ignored" && (
+          <>
+            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="Marker som avklart" onClick={onResolve}>
+              <Check className="h-3.5 w-3.5 text-success" />
+            </Button>
+            <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" title="Ignorer" onClick={onIgnore}>
+              <EyeOff className="h-3.5 w-3.5 text-muted-foreground" />
+            </Button>
+          </>
+        )}
+      </div>
     </div>
   );
 }
 
 export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
+  const navigate = useNavigate();
   const [items, setItems] = useState<RiskItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
   const [expandedCats, setExpandedCats] = useState<Set<string>>(new Set());
   const [lastSyncTs, setLastSyncTs] = useState<string | null>(null);
+  const [linkedCOMap, setLinkedCOMap] = useState<Record<string, string>>({});
 
   const fetchItems = useCallback(async () => {
     const { data } = await supabase
@@ -244,6 +268,55 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
     setItems(prev => prev.map(i => i.id === itemId ? { ...i, status: newStatus } : i));
   };
 
+  /* ── Fetch linked change orders ── */
+  useEffect(() => {
+    const fetchLinkedCOs = async () => {
+      const { data } = await supabase
+        .from("job_change_orders")
+        .select("id, linked_risk_id, status")
+        .eq("job_id", jobId)
+        .not("linked_risk_id", "is", null);
+      if (data) {
+        const map: Record<string, string> = {};
+        for (const co of data) {
+          if (co.linked_risk_id) map[co.linked_risk_id] = co.status;
+        }
+        setLinkedCOMap(map);
+      }
+    };
+    fetchLinkedCOs();
+  }, [jobId, items]);
+
+  /* ── Create change order from risk ── */
+  const createChangeOrderFromRisk = async (riskItem: RiskItem) => {
+    if (!user || !riskItem.raw_key) return;
+    const template = getChangeOrderTemplate(riskItem.raw_key);
+    if (!template) return;
+
+    const { data, error } = await supabase
+      .from("job_change_orders")
+      .insert({
+        job_id: jobId,
+        title: template.title,
+        description: template.description,
+        reason_type: template.reasonType,
+        status: "draft",
+        created_by: user.id,
+        linked_risk_id: riskItem.id,
+      } as any)
+      .select("id")
+      .single();
+
+    if (error) {
+      toast.error("Kunne ikke opprette tillegg", { description: error.message });
+      return;
+    }
+
+    toast.success("Tillegg opprettet fra risiko");
+    // Navigate to the change order tab
+    navigate(`/jobs/${jobId}?tab=change-orders&co=${data.id}`);
+  };
+
   /* ── Derived data ── */
   const openItems = items.filter(i => i.status === "open" || i.status === "acknowledged");
   const resolvedItems = items.filter(i => i.status === "resolved" || i.status === "ignored");
@@ -361,12 +434,14 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
           </div>
           <div className="divide-y divide-border/40">
             {topCritical.map(item => (
-              <RiskRow
+                <RiskRow
                 key={item.id}
                 item={item}
                 isAdmin={isAdmin}
                 onResolve={() => updateStatus(item.id, "resolved")}
                 onIgnore={() => updateStatus(item.id, "ignored")}
+                onCreateChangeOrder={() => createChangeOrderFromRisk(item)}
+                resolvedViaChangeOrder={linkedCOMap[item.id] === "approved" || linkedCOMap[item.id] === "invoiced"}
               />
             ))}
           </div>
@@ -398,6 +473,8 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
                     isAdmin={isAdmin}
                     onResolve={() => updateStatus(item.id, "resolved")}
                     onIgnore={() => updateStatus(item.id, "ignored")}
+                    onCreateChangeOrder={() => createChangeOrderFromRisk(item)}
+                    resolvedViaChangeOrder={linkedCOMap[item.id] === "approved" || linkedCOMap[item.id] === "invoiced"}
                   />
                 ))}
               </div>
@@ -429,6 +506,8 @@ export function JobRiskPanel({ jobId, companyId }: JobRiskPanelProps) {
                   isAdmin={isAdmin}
                   onResolve={() => updateStatus(item.id, "resolved")}
                   onIgnore={() => updateStatus(item.id, "ignored")}
+                  onCreateChangeOrder={() => createChangeOrderFromRisk(item)}
+                  resolvedViaChangeOrder={linkedCOMap[item.id] === "approved" || linkedCOMap[item.id] === "invoiced"}
                 />
               ))}
             </div>

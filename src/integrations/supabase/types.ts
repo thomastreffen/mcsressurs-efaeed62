@@ -1399,6 +1399,7 @@ export type Database = {
           description: string
           id: string
           job_id: string
+          linked_risk_id: string | null
           margin_amount: number | null
           reason_type: string
           responded_at: string | null
@@ -1430,6 +1431,7 @@ export type Database = {
           description: string
           id?: string
           job_id: string
+          linked_risk_id?: string | null
           margin_amount?: number | null
           reason_type?: string
           responded_at?: string | null
@@ -1461,6 +1463,7 @@ export type Database = {
           description?: string
           id?: string
           job_id?: string
+          linked_risk_id?: string | null
           margin_amount?: number | null
           reason_type?: string
           responded_at?: string | null
@@ -1478,6 +1481,13 @@ export type Database = {
             columns: ["job_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_change_orders_linked_risk_id_fkey"
+            columns: ["linked_risk_id"]
+            isOneToOne: false
+            referencedRelation: "job_risk_items"
             referencedColumns: ["id"]
           },
         ]
