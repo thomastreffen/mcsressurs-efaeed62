@@ -30,12 +30,6 @@ const BORDER_LEFT: Record<StatusColor, string> = {
   red: "border-l-destructive/50",
 };
 
-const DOT_BG: Record<StatusColor, string> = {
-  green: "bg-success",
-  yellow: "bg-[hsl(var(--accent))]",
-  red: "bg-destructive",
-};
-
 function fmtNOK(n: number): string {
   if (Math.abs(n) >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
   if (Math.abs(n) >= 1_000) return `${Math.round(n / 1_000)}k`;
@@ -127,7 +121,7 @@ export function ProjectPulse({ jobId }: PulseProps) {
         status: econStatus,
         mainValue: baseValue > 0 ? `${currency} ${fmtNOK(totalNow)}` : "—",
         mainLabel: "Total nå",
-        secondary: pendingSum > 0 ? `Avventer: ${currency} ${fmtNOK(pendingSum)}` : "Ingen avventende",
+        secondary: `${fmtPct(pendingPct)} eksponering` + (pendingSum > 0 ? ` · ${currency} ${fmtNOK(pendingSum)} avventer` : ""),
         warning: econStatus !== "green" ? `Avventende ${fmtPct(pendingPct)}` : undefined,
       },
       {
@@ -136,14 +130,14 @@ export function ProjectPulse({ jobId }: PulseProps) {
         status: riskStatus,
         mainValue: String(riskScore),
         mainLabel: "Poeng",
-        secondary: `${highOpen} HIGH · ${projectRisks.length} åpne`,
-        warning: riskStatus !== "green" ? `${highOpen} HIGH åpne` : undefined,
+        secondary: highOpen > 0 ? `${highOpen} HIGH · ${projectRisks.length} åpne` : `${projectRisks.length} åpne`,
+        warning: riskStatus !== "green" ? (highOpen > 0 ? `${highOpen} HIGH åpne` : `Score ${riskScore}`) : undefined,
       },
       {
         title: "Tillegg",
         icon: <FilePlus2 className="h-3.5 w-3.5" />,
         status: tilleggStatus,
-        mainValue: identified > 0 ? `${sentApproved}/${identified}` : "—",
+        mainValue: identified > 0 ? `${sentApproved}/${identified} (${fmtPct(ratio)})` : "—",
         mainLabel: "Sendt / identifisert",
         secondary: draftCount > 0 ? `${draftCount} utkast` : "Ingen utkast",
         warning: tilleggStatus !== "green" ? "Lav sendt-rate" : undefined,
@@ -152,9 +146,9 @@ export function ProjectPulse({ jobId }: PulseProps) {
         title: "Cashflow",
         icon: <Wallet className="h-3.5 w-3.5" />,
         status: cashStatus,
-        mainValue: totalNow > 0 ? `${currency} ${fmtNOK(outstanding)}` : "—",
-        mainLabel: "Utestående",
-        secondary: paymentTerms || "—",
+        mainValue: `${fmtPct(outPct)} eksponering`,
+        mainLabel: "Likviditet",
+        secondary: totalNow > 0 ? `${currency} ${fmtNOK(outstanding)} utestående` : "—",
         warning: cashStatus !== "green"
           ? (outPct > 0.35 ? `Utestående > 35 %` : hasLateRisk ? "Betalingsrisiko" : `Utestående ${fmtPct(outPct)}`)
           : undefined,
@@ -167,39 +161,40 @@ export function ProjectPulse({ jobId }: PulseProps) {
   if (!cards) return null;
 
   return (
-    <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-      {cards.map((card) => (
-        <div
-          key={card.title}
-          className={`
-            rounded-2xl bg-muted/30 shadow-sm border-l-[3px] ${BORDER_LEFT[card.status]}
-            px-4 py-3.5 flex flex-col min-h-[112px]
-          `}
-        >
-          {/* Header row */}
-          <div className="flex items-center justify-between mb-2">
-            <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
-              {card.icon}
-              {card.title}
-            </span>
-            <span className={`h-2 w-2 rounded-full ${DOT_BG[card.status]} shrink-0`} />
+    <div className="rounded-3xl bg-card shadow-sm p-5">
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        {cards.map((card) => (
+          <div
+            key={card.title}
+            className={`
+              rounded-2xl bg-muted/30 border-l-[3px] ${BORDER_LEFT[card.status]}
+              px-4 py-3.5 flex flex-col min-h-[112px]
+            `}
+          >
+            {/* Header row */}
+            <div className="flex items-center gap-1.5 mb-2">
+              <span className="flex items-center gap-1.5 text-[10px] font-semibold text-muted-foreground uppercase tracking-widest">
+                {card.icon}
+                {card.title}
+              </span>
+            </div>
+
+            {/* Main value */}
+            <p className="text-[28px] leading-8 font-semibold text-foreground font-mono tracking-tight truncate">
+              {card.mainValue}
+            </p>
+            <p className="text-[11px] text-muted-foreground mt-0.5">{card.mainLabel}</p>
+
+            {/* Secondary */}
+            <p className="text-xs text-muted-foreground mt-auto pt-2 truncate">{card.secondary}</p>
+
+            {/* Warning line – only when not green */}
+            {card.warning && (
+              <p className="text-[10px] font-medium text-destructive mt-1 truncate">{card.warning}</p>
+            )}
           </div>
-
-          {/* Main value – visually dominant */}
-          <p className="text-[28px] leading-8 font-semibold text-foreground font-mono tracking-tight truncate">
-            {card.mainValue}
-          </p>
-          <p className="text-[11px] text-muted-foreground mt-0.5">{card.mainLabel}</p>
-
-          {/* Secondary */}
-          <p className="text-xs text-muted-foreground mt-auto pt-2 truncate">{card.secondary}</p>
-
-          {/* Warning line – only when not green */}
-          {card.warning && (
-            <p className="text-[10px] font-medium text-destructive mt-1 truncate">{card.warning}</p>
-          )}
-        </div>
-      ))}
+        ))}
+      </div>
     </div>
   );
 }
