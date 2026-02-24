@@ -18,6 +18,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { PieChart as RPieChart, Pie, Cell, ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Tooltip } from "recharts";
 import { RegulationDashboardWidget } from "@/components/regulation/RegulationDashboardWidget";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
+import { PortfolioHealthGauges } from "@/components/dashboard/PortfolioHealthGauges";
 import { useIsMobile } from "@/hooks/use-mobile";
 
 // ── Types ──
@@ -321,6 +322,8 @@ function OpsDashboard({ data, navigate }: { data: OpsData; navigate: (path: stri
 
   return (
     <div className="space-y-5 sm:space-y-8 md:space-y-10">
+      {/* Portfolio Health Gauges */}
+      <PortfolioHealthGauges />
       {/* KPI row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-5">
         <KpiCard title="Jobber i dag" value={data.jobsToday} icon={<CalendarDays className="h-4 w-4 sm:h-5 sm:w-5" />} onClick={() => navigate("/jobs")} />
