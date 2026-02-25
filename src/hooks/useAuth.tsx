@@ -118,16 +118,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
    * 2. Clear state
    * 3. Redirect to Microsoft logout to clear SSO session
    */
-  const signOut = useCallback(() => {
+  const signOut = useCallback(async () => {
     console.log("[Auth] Signing out...");
-    // Fire-and-forget local signout
-    supabase.auth.signOut({ scope: "local" }).catch((err) =>
-      console.error("[Auth] signOut error:", err)
-    );
     // Clear state immediately
     setUser(null);
     setSession(null);
-    // Redirect to Microsoft logout
+    // Global signout revokes server-side session too
+    try {
+      await supabase.auth.signOut({ scope: "global" });
+    } catch (err) {
+      console.error("[Auth] signOut error:", err);
+    }
+    // Clear any remaining Supabase keys from localStorage as safety net
+    Object.keys(localStorage).forEach((key) => {
+      if (key.startsWith("sb-")) localStorage.removeItem(key);
+    });
+    // Redirect to Microsoft logout to clear SSO session
     const postLogoutRedirect = encodeURIComponent(`${window.location.origin}/login`);
     window.location.href = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/logout?post_logout_redirect_uri=${postLogoutRedirect}`;
   }, []);
