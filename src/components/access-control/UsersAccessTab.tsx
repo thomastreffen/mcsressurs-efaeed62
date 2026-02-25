@@ -108,8 +108,9 @@ export function UsersAccessTab() {
     setDialogOpen(true);
   };
 
-  const toggleRole = (roleId: string) => {
-    setSelectedRoles((prev) => prev.includes(roleId) ? prev.filter((r) => r !== roleId) : [...prev, roleId]);
+  const selectRole = (roleId: string) => {
+    // Mutually exclusive: only one role at a time
+    setSelectedRoles((prev) => prev.includes(roleId) ? [] : [roleId]);
   };
 
   const toggleMembership = (companyId: string, deptId: string | null) => {
