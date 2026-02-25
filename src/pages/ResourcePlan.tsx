@@ -12,6 +12,7 @@ import { Plus, CalendarDays } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/useAuth";
 import { useTechnicians } from "@/hooks/useTechnicians";
+import { useExternalBusy } from "@/hooks/useExternalBusy";
 import type { CalendarEvent } from "@/hooks/useCalendarEvents";
 
 export default function ResourcePlan() {
@@ -20,6 +21,7 @@ export default function ResourcePlan() {
   const { isAdmin } = useAuth();
   const { technicians } = useTechnicians();
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
+  const { getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
   const [createOpen, setCreateOpen] = useState(false);
 
   const handleJobClick = (job: CalendarEvent) => {
@@ -90,7 +92,12 @@ export default function ResourcePlan() {
           </div>
         </div>
 
-        <WeekCalendar technicianId={selectedTechId} onJobClick={handleJobClick} />
+        <WeekCalendar
+          technicianId={selectedTechId}
+          onJobClick={handleJobClick}
+          getBusySlotsForDay={getBusySlotsForDay}
+          getExternalBusyMinutesForDay={getExternalBusyMinutesForDay}
+        />
       </div>
 
       <CreateJobDialog

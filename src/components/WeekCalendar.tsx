@@ -1,16 +1,19 @@
 import { useMemo, useCallback, memo } from "react";
-import { addDays, format, startOfWeek, isSameDay } from "date-fns";
+import { addDays, format, startOfWeek, isSameDay, differenceInMinutes } from "date-fns";
 import { nb } from "date-fns/locale";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import { JOB_STATUS_CONFIG, type JobStatus } from "@/lib/job-status";
 import { cn } from "@/lib/utils";
 import { JobStatusBadge } from "./JobStatusBadge";
-import { AlertTriangle } from "lucide-react";
+import { AlertTriangle, Lock } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
+import type { ExternalBusySlot } from "@/hooks/useExternalBusy";
 
 interface WeekCalendarProps {
   technicianId: string | null;
   onJobClick?: (job: CalendarEvent) => void;
+  getBusySlotsForDay?: (date: Date) => ExternalBusySlot[];
+  getExternalBusyMinutesForDay?: (date: Date) => number;
 }
 
 function formatHours(minutes: number): string {
@@ -67,7 +70,21 @@ const CalendarCard = memo(function CalendarCard({
   );
 });
 
-export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
+const BusyBlock = memo(function BusyBlock({ slot }: { slot: ExternalBusySlot }) {
+  return (
+    <div className="w-full rounded-md border-l-[3px] border-l-muted-foreground/40 p-2 bg-muted/80">
+      <div className="flex items-center gap-1">
+        <Lock className="h-3 w-3 shrink-0 text-muted-foreground" />
+        <p className="text-xs font-medium text-muted-foreground leading-tight">Opptatt</p>
+      </div>
+      <p className="mt-0.5 text-[10px] text-muted-foreground/70">
+        {format(slot.start, "HH:mm")} – {format(slot.end, "HH:mm")}
+      </p>
+    </div>
+  );
+});
+
+export function WeekCalendar({ technicianId, onJobClick, getBusySlotsForDay, getExternalBusyMinutesForDay }: WeekCalendarProps) {
   const { getJobsForDay, getBookedMinutesForDay, loading } = useCalendarEvents(technicianId);
   const isMobile = useIsMobile();
   const weekStart = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
@@ -104,8 +121,10 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
         const isToday = isSameDay(day, today);
         const isWeekend = day.getDay() === 0 || day.getDay() === 6;
         const bookedMinutes = getBookedMinutesForDay(day);
-        const utilizationPct = Math.min(100, Math.round((bookedMinutes / WORK_DAY_MINUTES) * 100));
-
+        const externalMinutes = getExternalBusyMinutesForDay?.(day) ?? 0;
+        const totalMinutes = bookedMinutes + externalMinutes;
+        const utilizationPct = Math.min(100, Math.round((totalMinutes / WORK_DAY_MINUTES) * 100));
+        const dayBusySlots = getBusySlotsForDay?.(day) ?? [];
         return (
           <div
             key={day.toISOString()}
@@ -128,10 +147,10 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
               </p>
             </div>
 
-            {!isWeekend && bookedMinutes > 0 && (
+            {!isWeekend && totalMinutes > 0 && (
               <div className="px-2 pt-1.5 pb-0.5">
                 <div className="flex items-center justify-between text-[10px] text-muted-foreground mb-0.5">
-                  <span>{formatHours(bookedMinutes)} / 8t</span>
+                  <span>{formatHours(totalMinutes)} / 8t</span>
                   <span>{utilizationPct}%</span>
                 </div>
                 <div className="h-1 rounded-full bg-muted overflow-hidden">
@@ -149,6 +168,9 @@ export function WeekCalendar({ technicianId, onJobClick }: WeekCalendarProps) {
             )}
 
             <div className="flex-1 p-1.5 space-y-1">
+              {dayBusySlots.map((slot, i) => (
+                <BusyBlock key={`busy-${i}`} slot={slot} />
+              ))}
               {dayJobs.map((job) => (
                 <CalendarCard
                   key={job.id}
