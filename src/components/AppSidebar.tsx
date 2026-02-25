@@ -21,6 +21,7 @@ import {
   DatabaseZap,
   FileSignature,
   Timer,
+  HardHat,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -62,6 +63,7 @@ const fagNav = [
 
 const adminNav = [
   { title: "Firma", url: "/admin/company", icon: Building, requireSuperAdmin: true },
+  { title: "Ansatte", url: "/admin/ansatte", icon: HardHat, requireAdmin: true },
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
   { title: "Tilgangsstyring", url: "/admin/access", icon: ShieldCheck, requireSuperAdmin: true },
   { title: "Integrasjonshelse", url: "/admin/integration-health", icon: HeartPulse, requireAdmin: true },
