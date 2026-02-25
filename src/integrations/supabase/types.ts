@@ -2298,9 +2298,16 @@ export type Database = {
       }
       user_documents: {
         Row: {
+          ai_processed_at: string | null
           category: string
+          confidence_json: Json | null
+          confirmed_at: string | null
+          confirmed_by: string | null
+          confirmed_fields_json: Json | null
           created_at: string
+          doc_type: string
           expires_at: string | null
+          extracted_fields_json: Json | null
           file_name: string
           file_path: string
           id: string
@@ -2308,9 +2315,16 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          ai_processed_at?: string | null
           category?: string
+          confidence_json?: Json | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_fields_json?: Json | null
           created_at?: string
+          doc_type?: string
           expires_at?: string | null
+          extracted_fields_json?: Json | null
           file_name: string
           file_path: string
           id?: string
@@ -2318,9 +2332,16 @@ export type Database = {
           user_id: string
         }
         Update: {
+          ai_processed_at?: string | null
           category?: string
+          confidence_json?: Json | null
+          confirmed_at?: string | null
+          confirmed_by?: string | null
+          confirmed_fields_json?: Json | null
           created_at?: string
+          doc_type?: string
           expires_at?: string | null
+          extracted_fields_json?: Json | null
           file_name?: string
           file_path?: string
           id?: string

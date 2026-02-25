@@ -71,3 +71,6 @@ verify_jwt = false
 
 [functions.approve-change-order]
 verify_jwt = false
+
+[functions.extract-user-document]
+verify_jwt = false
