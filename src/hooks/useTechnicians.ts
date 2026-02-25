@@ -19,6 +19,8 @@ export function useTechnicians() {
     supabase
       .from("technicians")
       .select("id, name, email, color")
+      .eq("is_plannable_resource", true)
+      .is("archived_at", null)
       .order("name")
       .then(({ data }) => {
         const result = data || [];
