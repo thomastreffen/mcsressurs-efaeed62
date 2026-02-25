@@ -137,17 +137,22 @@ export function UsersAccessTab() {
     try {
       const uid = selectedUser.id;
 
-      await supabase.from("user_role_assignments").delete().eq("user_id", uid);
+      const { error: delRoles } = await supabase.from("user_role_assignments").delete().eq("user_id", uid);
+      if (delRoles) throw new Error(`Rolle-sletting feilet: ${delRoles.message}`);
       if (selectedRoles.length > 0) {
-        await supabase.from("user_role_assignments").insert(selectedRoles.map((rid) => ({ user_id: uid, role_id: rid })));
+        const { error: insRoles } = await supabase.from("user_role_assignments").insert(selectedRoles.map((rid) => ({ user_id: uid, role_id: rid })));
+        if (insRoles) throw new Error(`Rolle-tildeling feilet: ${insRoles.message}`);
       }
 
-      await supabase.from("user_memberships").delete().eq("user_id", uid);
+      const { error: delMem } = await supabase.from("user_memberships").delete().eq("user_id", uid);
+      if (delMem) throw new Error(`Medlemskap-sletting feilet: ${delMem.message}`);
       if (selectedMemberships.length > 0) {
-        await supabase.from("user_memberships").insert(selectedMemberships.map((m) => ({ user_id: uid, company_id: m.company_id, department_id: m.department_id })));
+        const { error: insMem } = await supabase.from("user_memberships").insert(selectedMemberships.map((m) => ({ user_id: uid, company_id: m.company_id, department_id: m.department_id })));
+        if (insMem) throw new Error(`Medlemskap-tildeling feilet: ${insMem.message}`);
       }
 
-      await supabase.from("user_permission_overrides").delete().eq("user_id", uid);
+      const { error: delOv } = await supabase.from("user_permission_overrides").delete().eq("user_id", uid);
+      if (delOv) throw new Error(`Overstyring-sletting feilet: ${delOv.message}`);
       const ovRows = Object.entries(overrides).map(([key, val]) => ({
         user_id: uid, permission_key: key, allowed: val === "allow",
       }));
@@ -156,14 +161,16 @@ export function UsersAccessTab() {
         ovRows.push({ user_id: uid, permission_key: scopeOverride, allowed: true });
       }
       if (ovRows.length > 0) {
-        await supabase.from("user_permission_overrides").insert(ovRows);
+        const { error: insOv } = await supabase.from("user_permission_overrides").insert(ovRows);
+        if (insOv) throw new Error(`Overstyring-lagring feilet: ${insOv.message}`);
       }
 
       toast.success("Bruker oppdatert");
       setDialogOpen(false);
       fetchAll();
     } catch (err: any) {
-      toast.error("Feil", { description: err.message });
+      console.error("[UsersAccessTab] Save error:", err);
+      toast.error("Feil ved lagring", { description: err.message });
     } finally {
       setSaving(false);
     }
