@@ -9,6 +9,11 @@ import { AlertTriangle, Lock, MapPin } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { ExternalBusySlot } from "@/hooks/useExternalBusy";
 
+interface TechLookup {
+  name: string;
+  color: string | null;
+}
+
 interface WeekCalendarProps {
   technicianId: string | null;
   referenceDate?: Date;
@@ -16,6 +21,7 @@ interface WeekCalendarProps {
   onDayClick?: (date: Date) => void;
   getBusySlotsForDay?: (date: Date) => ExternalBusySlot[];
   getExternalBusyMinutesForDay?: (date: Date) => number;
+  technicianMap?: Map<string, TechLookup>;
 }
 
 function formatHours(minutes: number): string {
@@ -105,12 +111,23 @@ const CalendarCard = memo(function CalendarCard({
   );
 });
 
-const BusyBlock = memo(function BusyBlock({ slot }: { slot: ExternalBusySlot }) {
+const BusyBlock = memo(function BusyBlock({ slot, tech }: { slot: ExternalBusySlot; tech?: TechLookup }) {
+  const color = tech?.color || "#94a3b8";
   return (
-    <div className="w-full rounded-lg border border-dashed border-muted-foreground/30 p-2 bg-muted/60 backdrop-blur-sm">
+    <div
+      className="w-full rounded-lg border-l-[3px] border border-dashed p-2 backdrop-blur-sm"
+      style={{
+        borderLeftColor: color,
+        borderLeftStyle: "solid",
+        backgroundColor: `${color}0a`,
+        borderColor: `${color}30`,
+      }}
+    >
       <div className="flex items-center gap-1.5">
-        <Lock className="h-3 w-3 shrink-0 text-muted-foreground/60" />
-        <p className="text-[11px] font-medium text-muted-foreground">Opptatt (ekstern)</p>
+        <Lock className="h-3 w-3 shrink-0" style={{ color: `${color}99` }} />
+        <p className="text-[11px] font-medium text-muted-foreground">
+          {tech?.name ? `${tech.name.split(" ")[0]} – opptatt` : "Opptatt (ekstern)"}
+        </p>
       </div>
       <p className="mt-0.5 text-[10px] text-muted-foreground/60">
         {format(slot.start, "HH:mm")} – {format(slot.end, "HH:mm")}
@@ -126,6 +143,7 @@ export function WeekCalendar({
   onDayClick,
   getBusySlotsForDay,
   getExternalBusyMinutesForDay,
+  technicianMap,
 }: WeekCalendarProps) {
   const { getJobsForDay, getBookedMinutesForDay, loading } = useCalendarEvents(technicianId, referenceDate);
   const isMobile = useIsMobile();
@@ -249,7 +267,7 @@ export function WeekCalendar({
               }}
             >
               {dayBusySlots.map((slot, i) => (
-                <BusyBlock key={`busy-${i}`} slot={slot} />
+                <BusyBlock key={`busy-${i}`} slot={slot} tech={technicianMap?.get(slot.technicianId)} />
               ))}
               {dayJobs.map((job) => (
                 <CalendarCard
