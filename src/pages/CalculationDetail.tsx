@@ -1,5 +1,5 @@
 import { useParams, useNavigate } from "react-router-dom";
-import { useState, useEffect, useCallback, useRef } from "react";
+import { useState, useEffect, useCallback, useRef, useMemo } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
@@ -18,6 +18,8 @@ import {
   type CalculationStatus,
 } from "@/lib/calculation-status";
 import { OFFER_STATUS_CONFIG, ALL_OFFER_STATUSES, type OfferStatus } from "@/lib/offer-status";
+import { AI_MODE_CONFIG, ALL_AI_MODES, detectAiMode, type AiMode } from "@/lib/ai-mode";
+import { ExecutiveSummary } from "@/components/offer/ExecutiveSummary";
 import { ConvertToJobDialog } from "@/components/ConvertToJobDialog";
 import {
   ArrowLeft, Loader2, Sparkles, FileDown, ArrowRightLeft, Plus, Trash2, Save,
@@ -97,6 +99,8 @@ export default function CalculationDetail() {
   const [showCost, setShowCost] = useState(false);
   const [lastSaved, setLastSaved] = useState<Date | null>(null);
   const [calcChangedSinceOffer, setCalcChangedSinceOffer] = useState(false);
+  const [aiMode, setAiMode] = useState<AiMode>("service");
+  const [aiModeManual, setAiModeManual] = useState(false);
 
   // File upload
   const [files, setFiles] = useState<File[]>([]);
@@ -136,6 +140,19 @@ export default function CalculationDetail() {
   }, [id]);
 
   useEffect(() => { fetchCalc(); }, [fetchCalc]);
+
+  // Auto-detect AI mode when data changes
+  useEffect(() => {
+    if (!calc || aiModeManual) return;
+    const attachments = Array.isArray(calc.attachments) ? calc.attachments : [];
+    const detected = detectAiMode({
+      description: calc.description,
+      itemCount: items.length,
+      attachmentCount: attachments.length,
+      itemTitles: items.map((i) => i.title),
+    });
+    setAiMode(detected);
+  }, [calc, items, aiModeManual]);
 
   // Auto-save every 30s
   const itemsRef = useRef(items);
@@ -441,19 +458,36 @@ export default function CalculationDetail() {
       <header className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="space-y-1">
-            <h1 className="text-xl sm:text-2xl font-bold">Tilbud — {calc.project_title}</h1>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-xl sm:text-2xl font-bold">Tilbud — {calc.project_title}</h1>
+              {/* AI mode badge */}
+              <Select value={aiMode} onValueChange={(v) => { setAiMode(v as AiMode); setAiModeManual(true); }}>
+                <SelectTrigger className="h-6 w-auto gap-1 border-none bg-transparent p-0 text-[10px] font-medium shadow-none focus:ring-0">
+                  <Badge className={AI_MODE_CONFIG[aiMode].className + " text-[10px] px-2 py-0 cursor-pointer"}>
+                    <Brain className="h-2.5 w-2.5 mr-0.5" />
+                    {AI_MODE_CONFIG[aiMode].label}
+                  </Badge>
+                </SelectTrigger>
+                <SelectContent>
+                  {ALL_AI_MODES.map((m) => (
+                    <SelectItem key={m} value={m}>
+                      <span className="font-medium">{AI_MODE_CONFIG[m].label}</span>
+                      <span className="text-muted-foreground ml-1.5 text-xs">— {AI_MODE_CONFIG[m].description}</span>
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
             <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{calc.customer_name}</span>
               {calc.customer_email && <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{calc.customer_email}</span>}
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {/* Non-interactive status badge */}
             <Badge className={CALCULATION_STATUS_CONFIG[calc.status]?.className + " text-sm gap-1.5 px-3 py-1"}>
               {STATUS_ICONS[calc.status]}
               {CALCULATION_STATUS_CONFIG[calc.status]?.label}
             </Badge>
-            {/* Active version indicator (punkt 6) */}
             {latestOffer && calc.status !== "draft" && (
               <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded-lg">
                 v{latestOffer.version} • {format(new Date(latestOffer.created_at), "d. MMM yyyy", { locale: nb })}
@@ -595,6 +629,25 @@ export default function CalculationDetail() {
 
         {/* ===== Overview Tab ===== */}
         <TabsContent value="overview" className="space-y-4 pt-4">
+          {/* Executive summary for leaders */}
+          {isAdmin && items.length > 0 && (
+            <ExecutiveSummary
+              totalPrice={Number(calc.total_price)}
+              totalMaterial={Number(calc.total_material)}
+              totalLabor={Number(calc.total_labor)}
+              totalCost={totalCost}
+              marginPercent={marginPercent}
+              totalMargin={totalMargin}
+              aiMode={aiMode}
+              itemCount={items.length}
+              hasCustomerEmail={!!calc.customer_email}
+              attachmentCount={attachments.length}
+              missingInfoCount={analysis?.missing_information?.length || 0}
+              unansweredQuestions={analysis?.clarifying_questions?.length || 0}
+              calcChangedSinceOffer={calcChangedSinceOffer}
+              status={calc.status}
+            />
+          )}
           {calc.description && (
             <div className="rounded-xl border border-border/40 bg-card p-4">
               <h3 className="text-sm font-medium mb-2">Beskrivelse</h3>
