@@ -1,0 +1,2 @@
+ALTER TABLE public.communication_logs DROP CONSTRAINT communication_logs_mode_check;
+ALTER TABLE public.communication_logs ADD CONSTRAINT communication_logs_mode_check CHECK (mode = ANY (ARRAY['draft'::text, 'sent'::text, 'sending'::text, 'failed'::text, 'received'::text, 'thread_fetch_marker'::text]));
