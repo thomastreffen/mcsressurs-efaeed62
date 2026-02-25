@@ -129,23 +129,7 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
-              <Route
-                path="/sales/calculations"
-                element={
-                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                    <CalculationsPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/sales/calculations/new"
-                element={
-                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                    <NewCalculation />
-                  </ProtectedRoute>
-                }
-              />
-              <Route path="/sales/calculations/:id" element={<CalculationDetail />} />
+              {/* Tilbud is the primary module — calculations redirect here */}
               <Route
                 path="/sales/offers"
                 element={
@@ -158,14 +142,19 @@ const App = () => (
                 path="/sales/offers/new"
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                    <NewOfferWizard />
+                    <NewCalculation />
                   </ProtectedRoute>
                 }
               />
+              <Route path="/sales/offers/:id" element={<CalculationDetail />} />
+              {/* Legacy calculation routes → redirect to offers */}
+              <Route path="/sales/calculations" element={<Navigate to="/sales/offers" replace />} />
+              <Route path="/sales/calculations/new" element={<Navigate to="/sales/offers/new" replace />} />
+              <Route path="/sales/calculations/:id" element={<CalculationDetail />} />
 
               {/* Legacy calculation routes redirect */}
-              <Route path="/calculations" element={<Navigate to="/sales/calculations" replace />} />
-              <Route path="/calculations/new" element={<Navigate to="/sales/calculations/new" replace />} />
+              <Route path="/calculations" element={<Navigate to="/sales/offers" replace />} />
+              <Route path="/calculations/new" element={<Navigate to="/sales/offers/new" replace />} />
               <Route path="/calculations/:id" element={<CalculationDetail />} />
 
               <Route

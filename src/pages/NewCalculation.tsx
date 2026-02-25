@@ -219,12 +219,12 @@ export default function NewCalculation() {
 
   return (
     <div className="mx-auto max-w-3xl p-4 sm:p-6 space-y-6">
-      <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
+      <Button variant="ghost" size="sm" onClick={() => navigate("/sales/offers")} className="gap-1.5 -ml-2">
         <ArrowLeft className="h-4 w-4" /> Tilbake
       </Button>
 
       <div>
-        <h1 className="text-xl sm:text-2xl font-bold">Ny kalkulasjon</h1>
+        <h1 className="text-xl sm:text-2xl font-bold">Nytt tilbud</h1>
         <p className="text-sm text-muted-foreground mt-1">Steg {step + 1} av {STEPS.length} — {STEPS[step].label}</p>
       </div>
 
