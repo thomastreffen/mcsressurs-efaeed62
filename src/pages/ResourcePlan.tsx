@@ -6,6 +6,7 @@ import { WeekCalendar } from "@/components/WeekCalendar";
 import { TechnicianList } from "@/components/TechnicianList";
 import { StatusLegend } from "@/components/StatusLegend";
 import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
+import { JobQuickEditSheet } from "@/components/JobQuickEditSheet";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
@@ -26,6 +27,9 @@ export default function ResourcePlan() {
   const { getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
   const [assignOpen, setAssignOpen] = useState(false);
   const [clickedDate, setClickedDate] = useState<Date | null>(null);
+  const [editJob, setEditJob] = useState<CalendarEvent | null>(null);
+  const [editOpen, setEditOpen] = useState(false);
+  const [refreshKey, setRefreshKey] = useState(0);
 
   // Week navigation
   const [referenceDate, setReferenceDate] = useState<Date>(new Date());
@@ -37,7 +41,8 @@ export default function ResourcePlan() {
   const goToToday = useCallback(() => setReferenceDate(new Date()), []);
 
   const handleJobClick = (job: CalendarEvent) => {
-    navigate(`/projects/${job.id}`);
+    setEditJob(job);
+    setEditOpen(true);
   };
 
   const handleDayClick = (date: Date) => {
@@ -200,6 +205,14 @@ export default function ResourcePlan() {
         onOpenChange={setAssignOpen}
         preselectedDate={clickedDate}
         preselectedTechId={selectedTechId}
+        onAssigned={() => setRefreshKey((k) => k + 1)}
+      />
+
+      <JobQuickEditSheet
+        open={editOpen}
+        onOpenChange={setEditOpen}
+        job={editJob}
+        onUpdated={() => setRefreshKey((k) => k + 1)}
       />
     </div>
   );
