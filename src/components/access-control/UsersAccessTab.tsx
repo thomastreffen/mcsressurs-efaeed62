@@ -232,7 +232,7 @@ export function UsersAccessTab() {
                   <div className="space-y-1.5 mt-2">
                     {roles.map((r) => (
                       <label key={r.id} className="flex items-center gap-2 cursor-pointer text-sm">
-                        <Checkbox checked={selectedRoles.includes(r.id)} onCheckedChange={() => toggleRole(r.id)} />
+                        <Checkbox checked={selectedRoles.includes(r.id)} onCheckedChange={() => selectRole(r.id)} />
                         {r.name}
                       </label>
                     ))}
