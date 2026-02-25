@@ -15,7 +15,6 @@ import {
 } from "@/components/ui/table";
 import {
   CALCULATION_STATUS_CONFIG,
-  ALL_CALCULATION_STATUSES,
   type CalculationStatus,
 } from "@/lib/calculation-status";
 import { OFFER_STATUS_CONFIG, ALL_OFFER_STATUSES, type OfferStatus } from "@/lib/offer-status";
@@ -24,9 +23,11 @@ import {
   ArrowLeft, Loader2, Sparkles, FileDown, ArrowRightLeft, Plus, Trash2, Save,
   Building2, Mail, FileText, Brain, Package, Upload, X, Image as ImageIcon,
   AlertTriangle, Paperclip, Eye, EyeOff, ExternalLink, AlertCircle, ReceiptText, BookOpen,
+  Clock, CheckCircle2, XCircle, Send, RefreshCw, History,
 } from "lucide-react";
 import { toast } from "sonner";
 import { NewRegulationQueryDialog } from "@/components/regulation/NewRegulationQueryDialog";
+
 interface CalcItem {
   id: string;
   calculation_id: string;
@@ -69,6 +70,16 @@ interface Offer {
   sent_to_email: string | null;
   created_at: string;
 }
+
+// ── Status badge icons ──
+const STATUS_ICONS: Record<CalculationStatus, React.ReactNode> = {
+  draft: <Clock className="h-3.5 w-3.5" />,
+  generated: <FileDown className="h-3.5 w-3.5" />,
+  sent: <Send className="h-3.5 w-3.5" />,
+  accepted: <CheckCircle2 className="h-3.5 w-3.5" />,
+  rejected: <XCircle className="h-3.5 w-3.5" />,
+  converted: <ArrowRightLeft className="h-3.5 w-3.5" />,
+};
 
 export default function CalculationDetail() {
   const { id } = useParams<{ id: string }>();
@@ -113,7 +124,6 @@ export default function CalculationDetail() {
       });
       setSettings(s);
     }
-    // Check if calc changed since last offer
     if (calcRes.data && offersRes.data && offersRes.data.length > 0) {
       const lastOffer = offersRes.data[0];
       const calcUpdated = new Date(calcRes.data.updated_at);
@@ -270,7 +280,6 @@ export default function CalculationDetail() {
         body: { calculation_id: calc.id, created_by: user?.id },
       });
       if (error) {
-        // Check for 409 content-hash duplicate
         if (error.message?.includes("Ingen endringer")) {
           toast.info("Ingen endringer", { description: error.message });
           setPdfLoading(false);
@@ -289,9 +298,23 @@ export default function CalculationDetail() {
       toast.success(`Tilbud ${data.offer_number || ""} v${data.version} opprettet`, {
         description: "PDF generert og lagret",
       });
+      // Update status to generated
+      if (calc.status === "draft") {
+        await handleStatusChange("generated");
+      }
       fetchCalc();
     } catch (err: any) {
-      toast.error("Kunne ikke generere tilbud", { description: err.message });
+      // ── User-friendly error (punkt 4) ──
+      const rawMsg = err.message || "";
+      const isTechnical = rawMsg.includes("non-2xx") || rawMsg.includes("Edge Function") || rawMsg.includes("FunctionsHttpError");
+      toast.error("Kunne ikke generere tilbud", {
+        description: isTechnical
+          ? "Kontroller at alle påkrevde felt er fylt ut og prøv igjen."
+          : rawMsg || "En ukjent feil oppstod. Prøv igjen.",
+      });
+      if (import.meta.env.DEV) {
+        console.error("[Generer tilbud feil]", err);
+      }
     }
     setPdfLoading(false);
   };
@@ -300,11 +323,35 @@ export default function CalculationDetail() {
     await supabase.from("offers").update({ status }).eq("id", offerId);
     setOffers((prev) => prev.map((o) => o.id === offerId ? { ...o, status } : o));
     toast.success(`Tilbudsstatus endret til ${OFFER_STATUS_CONFIG[status].label}`);
-    // If accepted, also update calculation
     if (status === "accepted") {
-      await supabase.from("calculations").update({ status: "accepted" }).eq("id", calc!.id);
-      setCalc((prev) => prev ? { ...prev, status: "accepted" as CalculationStatus } : null);
+      await handleStatusChange("accepted");
     }
+    if (status === "rejected") {
+      await handleStatusChange("rejected");
+    }
+  };
+
+  // ── Action bar handlers (punkt 2) ──
+  const handleMarkAccepted = async () => {
+    if (!calc || offers.length === 0) return;
+    const latestOffer = offers[0];
+    await handleOfferStatusChange(latestOffer.id, "accepted");
+  };
+
+  const handleMarkRejected = async () => {
+    if (!calc || offers.length === 0) return;
+    const latestOffer = offers[0];
+    await handleOfferStatusChange(latestOffer.id, "rejected");
+  };
+
+  const handleSendOffer = async () => {
+    // For now mark latest offer as "sent" and update calc status
+    if (!calc || offers.length === 0) return;
+    const latestOffer = offers[0];
+    await supabase.from("offers").update({ status: "sent", sent_at: new Date().toISOString() }).eq("id", latestOffer.id);
+    setOffers((prev) => prev.map((o) => o.id === latestOffer.id ? { ...o, status: "sent" as OfferStatus, sent_at: new Date().toISOString() } : o));
+    await handleStatusChange("sent");
+    toast.success("Tilbud markert som sendt");
   };
 
   // File upload
@@ -372,37 +419,26 @@ export default function CalculationDetail() {
     return "bg-red-100 text-red-800 dark:bg-red-900 dark:text-red-200";
   };
 
+  const latestOffer = offers.length > 0 ? offers[0] : null;
   const latestAcceptedOffer = offers.find((o) => o.status === "accepted");
 
   return (
     <div className="mx-auto max-w-5xl p-4 sm:p-6 pb-24 space-y-6">
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
-            <ArrowLeft className="h-4 w-4" /> Tilbake
+      {/* ── Navigation row ── */}
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
+          <ArrowLeft className="h-4 w-4" /> Tilbake
+        </Button>
+        {calc.lead_id && (
+          <Button variant="link" size="sm" onClick={() => navigate(`/sales/leads/${calc.lead_id}`)} className="text-xs text-muted-foreground gap-1 px-1">
+            → Vis lead i pipeline
           </Button>
-          {calc.lead_id && (
-            <Button variant="link" size="sm" onClick={() => navigate(`/sales/leads/${calc.lead_id}`)} className="text-xs text-muted-foreground gap-1 px-1">
-              → Vis lead i pipeline
-            </Button>
-          )}
-        </div>
-        <div className="flex items-center gap-2">
-          {lastSaved && <span className="text-xs text-muted-foreground">Sist lagret {format(lastSaved, "HH:mm")}</span>}
-          {isAdmin && calc.status !== "converted" && (
-            <Select value={calc.status} onValueChange={(v) => handleStatusChange(v as CalculationStatus)}>
-              <SelectTrigger className="w-[160px]"><SelectValue /></SelectTrigger>
-              <SelectContent>
-                {ALL_CALCULATION_STATUSES.map((s) => (
-                  <SelectItem key={s} value={s}>{CALCULATION_STATUS_CONFIG[s].label}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-        </div>
+        )}
+        {lastSaved && <span className="ml-auto text-xs text-muted-foreground">Sist lagret {format(lastSaved, "HH:mm")}</span>}
       </div>
 
-      <header className="space-y-3">
+      {/* ── Header: title + status badge (punkt 1) ── */}
+      <header className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="space-y-1">
             <h1 className="text-xl sm:text-2xl font-bold">{calc.project_title}</h1>
@@ -411,106 +447,160 @@ export default function CalculationDetail() {
               {calc.customer_email && <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{calc.customer_email}</span>}
             </div>
           </div>
-          <Badge className={CALCULATION_STATUS_CONFIG[calc.status]?.className + " text-sm"}>
-            {CALCULATION_STATUS_CONFIG[calc.status]?.label}
-          </Badge>
-        </div>
-
-        {/* Version warning */}
-        {calcChangedSinceOffer && offers.length > 0 && isAdmin && (
-          <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">Kalkylen er endret siden siste tilbud</p>
-              <p className="text-xs text-orange-700 dark:text-orange-300">Generer ny versjon for å oppdatere tilbudet.</p>
-            </div>
-            <Button size="sm" variant="outline" onClick={handleGenerateOffer} disabled={pdfLoading} className="gap-1.5 shrink-0">
-              {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
-              Ny versjon
-            </Button>
-          </div>
-        )}
-
-        {isAdmin && (
-          <div className="flex flex-wrap gap-2">
-            <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" className="gap-1.5">
-              {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-              AI-analyse
-            </Button>
-            <Button onClick={() => saveItems()} variant="outline" className="gap-1.5">
-              <Save className="h-4 w-4" /> Lagre
-            </Button>
-            <Button onClick={handleGenerateOffer} disabled={pdfLoading || items.length === 0} variant="outline" className="gap-1.5">
-              {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-              Generer tilbud
-            </Button>
-            <Button onClick={() => setRegulationOpen(true)} variant="outline" className="gap-1.5">
-              <BookOpen className="h-4 w-4" /> Spør forskrift
-            </Button>
-            {(calc.status === "accepted" || latestAcceptedOffer) && (
-              <Button onClick={() => setConvertOpen(true)} className="gap-1.5">
-                <ArrowRightLeft className="h-4 w-4" /> Konverter til prosjekt
-              </Button>
+          <div className="flex items-center gap-2">
+            {/* Non-interactive status badge */}
+            <Badge className={CALCULATION_STATUS_CONFIG[calc.status]?.className + " text-sm gap-1.5 px-3 py-1"}>
+              {STATUS_ICONS[calc.status]}
+              {CALCULATION_STATUS_CONFIG[calc.status]?.label}
+            </Badge>
+            {/* Active version indicator (punkt 6) */}
+            {latestOffer && calc.status !== "draft" && (
+              <span className="text-xs text-muted-foreground font-mono bg-muted px-2 py-1 rounded-lg">
+                v{latestOffer.version} • {format(new Date(latestOffer.created_at), "d. MMM yyyy", { locale: nb })}
+              </span>
             )}
           </div>
+        </div>
+
+        {/* ── Dynamic action bar (punkt 2) ── */}
+        {isAdmin && (
+          <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-muted/30 p-3">
+            {/* Draft actions */}
+            {calc.status === "draft" && (
+              <>
+                <Button onClick={() => saveItems()} variant="outline" size="sm" className="gap-1.5 rounded-lg">
+                  <Save className="h-3.5 w-3.5" /> Lagre
+                </Button>
+                <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" size="sm" className="gap-1.5 rounded-lg">
+                  {aiLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Sparkles className="h-3.5 w-3.5" />}
+                  AI-analyse
+                </Button>
+                <Button onClick={handleGenerateOffer} disabled={pdfLoading || items.length === 0} size="sm" className="gap-1.5 rounded-lg">
+                  {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <FileDown className="h-3.5 w-3.5" />}
+                  Generer tilbud
+                </Button>
+              </>
+            )}
+
+            {/* Generated actions */}
+            {calc.status === "generated" && (
+              <>
+                <Button onClick={() => saveItems()} variant="outline" size="sm" className="gap-1.5 rounded-lg">
+                  <Save className="h-3.5 w-3.5" /> Lagre
+                </Button>
+                {calcChangedSinceOffer && (
+                  <Button onClick={handleGenerateOffer} disabled={pdfLoading} size="sm" variant="outline" className="gap-1.5 rounded-lg border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300">
+                    {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Opprett ny versjon
+                  </Button>
+                )}
+                <Button onClick={handleSendOffer} size="sm" className="gap-1.5 rounded-lg">
+                  <Send className="h-3.5 w-3.5" /> Send tilbud
+                </Button>
+              </>
+            )}
+
+            {/* Sent actions */}
+            {calc.status === "sent" && (
+              <>
+                <Button onClick={handleMarkAccepted} size="sm" className="gap-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Marker som akseptert
+                </Button>
+                <Button onClick={handleMarkRejected} size="sm" variant="outline" className="gap-1.5 rounded-lg border-destructive/30 text-destructive hover:bg-destructive/10">
+                  <XCircle className="h-3.5 w-3.5" /> Marker som avslått
+                </Button>
+              </>
+            )}
+
+            {/* Accepted actions */}
+            {calc.status === "accepted" && (
+              <Button onClick={() => setConvertOpen(true)} size="sm" className="gap-1.5 rounded-lg">
+                <ArrowRightLeft className="h-3.5 w-3.5" /> Konverter til prosjekt
+              </Button>
+            )}
+
+            {/* Always available secondary actions */}
+            <div className="ml-auto flex gap-2">
+              <Button onClick={() => setRegulationOpen(true)} variant="ghost" size="sm" className="gap-1.5 rounded-lg text-muted-foreground">
+                <BookOpen className="h-3.5 w-3.5" /> Forskrift
+              </Button>
+            </div>
+          </div>
         )}
 
+        {/* ── Smart versioning info (punkt 3) ── */}
+        {calcChangedSinceOffer && offers.length > 0 && isAdmin && calc.status === "generated" && (
+          <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3 flex items-start gap-2">
+            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
+            <div className="flex-1">
+              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">Kalkylen er endret siden siste genererte versjon</p>
+              <p className="text-xs text-orange-700 dark:text-orange-300">Opprett ny versjon for å oppdatere tilbudet.</p>
+            </div>
+            <Button size="sm" variant="outline" onClick={handleGenerateOffer} disabled={pdfLoading} className="gap-1.5 shrink-0 rounded-lg">
+              {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+              Opprett ny versjon
+            </Button>
+          </div>
+        )}
+
+        {/* ── KPI cards (punkt 6 — always visible) ── */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-          <div className="rounded-lg border bg-card p-3 text-center">
+          <div className="rounded-xl border border-border/40 bg-card p-3 text-center">
             <p className="text-xs text-muted-foreground">Materialer</p>
-            <p className="text-lg font-bold">kr {Number(calc.total_material).toLocaleString("nb-NO")}</p>
+            <p className="text-lg font-bold font-mono">kr {Number(calc.total_material).toLocaleString("nb-NO")}</p>
           </div>
-          <div className="rounded-lg border bg-card p-3 text-center">
+          <div className="rounded-xl border border-border/40 bg-card p-3 text-center">
             <p className="text-xs text-muted-foreground">Arbeid</p>
-            <p className="text-lg font-bold">kr {Number(calc.total_labor).toLocaleString("nb-NO")}</p>
+            <p className="text-lg font-bold font-mono">kr {Number(calc.total_labor).toLocaleString("nb-NO")}</p>
           </div>
-          <div className="rounded-lg border bg-card p-3 text-center">
+          <div className="rounded-xl border border-border/40 bg-card p-3 text-center">
             <p className="text-xs text-muted-foreground">Totalt eks. MVA</p>
-            <p className="text-lg font-bold text-primary">kr {Number(calc.total_price).toLocaleString("nb-NO")}</p>
+            <p className="text-lg font-bold text-primary font-mono">kr {Number(calc.total_price).toLocaleString("nb-NO")}</p>
           </div>
-          <div className="rounded-lg border bg-card p-3 text-center">
+          <div className="rounded-xl border border-border/40 bg-card p-3 text-center">
             <p className="text-xs text-muted-foreground">Totalt inkl. MVA</p>
-            <p className="text-lg font-bold">kr {(Number(calc.total_price) * 1.25).toLocaleString("nb-NO")}</p>
+            <p className="text-lg font-bold font-mono">kr {(Number(calc.total_price) * 1.25).toLocaleString("nb-NO")}</p>
           </div>
         </div>
 
         {/* Margin section - admin only */}
         {isAdmin && showCost && items.length > 0 && (
           <div className="grid grid-cols-3 gap-3">
-            <div className="rounded-lg border border-dashed bg-card p-3 text-center">
+            <div className="rounded-xl border border-dashed bg-card p-3 text-center">
               <p className="text-xs text-muted-foreground">Totalkost</p>
-              <p className="text-lg font-bold">kr {totalCost.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
+              <p className="text-lg font-bold font-mono">kr {totalCost.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
             </div>
-            <div className="rounded-lg border border-dashed bg-card p-3 text-center">
+            <div className="rounded-xl border border-dashed bg-card p-3 text-center">
               <p className="text-xs text-muted-foreground">Dekningsbidrag</p>
-              <p className="text-lg font-bold text-primary">kr {totalMargin.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
+              <p className="text-lg font-bold text-primary font-mono">kr {totalMargin.toLocaleString("nb-NO", { maximumFractionDigits: 0 })}</p>
             </div>
-            <div className="rounded-lg border border-dashed bg-card p-3 text-center">
+            <div className="rounded-xl border border-dashed bg-card p-3 text-center">
               <p className="text-xs text-muted-foreground">Dekningsgrad</p>
-              <p className="text-lg font-bold">{marginPercent.toFixed(1)}%</p>
+              <p className="text-lg font-bold font-mono">{marginPercent.toFixed(1)}%</p>
             </div>
           </div>
         )}
       </header>
 
+      {/* ── Tabs (punkt 5 — simplified) ── */}
       <Tabs defaultValue="overview">
-        <TabsList className="w-full sm:w-auto flex overflow-x-auto">
-          <TabsTrigger value="overview" className="gap-1.5"><FileText className="h-3.5 w-3.5" />Oversikt</TabsTrigger>
-          <TabsTrigger value="attachments" className="gap-1.5"><Paperclip className="h-3.5 w-3.5" />Vedlegg {attachments.length > 0 && `(${attachments.length})`}</TabsTrigger>
-          <TabsTrigger value="ai" className="gap-1.5"><Brain className="h-3.5 w-3.5" />AI Analyse</TabsTrigger>
-          <TabsTrigger value="items" className="gap-1.5"><Package className="h-3.5 w-3.5" />Kalkylelinjer ({items.length})</TabsTrigger>
-          <TabsTrigger value="offers" className="gap-1.5"><ReceiptText className="h-3.5 w-3.5" />Tilbud ({offers.length})</TabsTrigger>
+        <TabsList className="w-full sm:w-auto flex overflow-x-auto rounded-xl">
+          <TabsTrigger value="overview" className="gap-1.5 rounded-lg"><FileText className="h-3.5 w-3.5" />Oversikt</TabsTrigger>
+          <TabsTrigger value="items" className="gap-1.5 rounded-lg"><Package className="h-3.5 w-3.5" />Kalkylelinjer ({items.length})</TabsTrigger>
+          <TabsTrigger value="versions" className="gap-1.5 rounded-lg"><ReceiptText className="h-3.5 w-3.5" />Versjoner ({offers.length})</TabsTrigger>
+          <TabsTrigger value="attachments" className="gap-1.5 rounded-lg"><Paperclip className="h-3.5 w-3.5" />Vedlegg {attachments.length > 0 && `(${attachments.length})`}</TabsTrigger>
+          <TabsTrigger value="history" className="gap-1.5 rounded-lg"><History className="h-3.5 w-3.5" />Historikk</TabsTrigger>
         </TabsList>
 
         {/* ===== Overview Tab ===== */}
         <TabsContent value="overview" className="space-y-4 pt-4">
           {calc.description && (
-            <div className="rounded-lg border bg-card p-4">
+            <div className="rounded-xl border border-border/40 bg-card p-4">
               <h3 className="text-sm font-medium mb-2">Beskrivelse</h3>
               <p className="text-sm text-muted-foreground whitespace-pre-wrap">{calc.description}</p>
             </div>
           )}
-          <div className="rounded-lg border bg-card p-4 space-y-2">
+          <div className="rounded-xl border border-border/40 bg-card p-4 space-y-2">
             <h3 className="text-sm font-medium">Detaljer</h3>
             <div className="grid grid-cols-2 gap-2 text-sm">
               <div><span className="text-muted-foreground">Opprettet:</span> {format(new Date(calc.created_at), "d. MMM yyyy HH:mm", { locale: nb })}</div>
@@ -519,170 +609,71 @@ export default function CalculationDetail() {
               <div><span className="text-muted-foreground">Timepris:</span> kr {settings.default_hour_rate}</div>
             </div>
           </div>
-        </TabsContent>
 
-        {/* ===== Attachments Tab ===== */}
-        <TabsContent value="attachments" className="space-y-4 pt-4">
-          {isAdmin && (
-            <div className="flex items-center gap-2">
-              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="gap-1.5">
-                <Upload className="h-3.5 w-3.5" /> Velg filer
-              </Button>
-              {files.length > 0 && (
-                <Button size="sm" onClick={handleUpload} disabled={uploading} className="gap-1.5">
-                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
-                  Last opp ({files.length})
-                </Button>
-              )}
-              <span className="text-xs text-muted-foreground">Bilder, PDF, tegninger, Excel, Word</span>
-              <input ref={fileInputRef} type="file" multiple className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf"
-                onChange={(e) => {
-                  const valid = Array.from(e.target.files || []).filter((f) => {
-                    if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name} for stor`); return false; }
-                    return true;
-                  });
-                  setFiles((prev) => [...prev, ...valid]);
-                  if (fileInputRef.current) fileInputRef.current.value = "";
-                }}
-              />
-            </div>
-          )}
-
-          {files.length > 0 && (
-            <div className="space-y-1.5">
-              <p className="text-xs font-medium text-muted-foreground">Klare for opplasting</p>
-              {files.map((f, i) => (
-                <div key={i} className="flex items-center gap-2 rounded-md bg-accent px-2.5 py-1.5 text-sm">
-                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                  <span className="truncate flex-1">{f.name}</span>
-                  <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
-                  <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
-                </div>
-              ))}
-            </div>
-          )}
-
-          {attachments.length > 0 ? (
-            <div className="space-y-1.5">
-              {attachments.map((att: any, i: number) => (
-                <div key={i} className="flex items-center gap-2 rounded-md bg-secondary px-2.5 py-1.5 text-sm">
-                  {/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.name) ? <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="truncate flex-1 hover:underline">{att.name}</a>
-                  {isAdmin && (
-                    <button onClick={() => removeAttachment(att.url)} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
-                  )}
-                </div>
-              ))}
-            </div>
-          ) : files.length === 0 && (
-            <div className="border border-dashed rounded-lg p-8 text-center text-muted-foreground">
-              <Paperclip className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              <p className="text-sm">Ingen vedlegg</p>
-            </div>
-          )}
-        </TabsContent>
-
-        {/* ===== AI Analysis Tab ===== */}
-        <TabsContent value="ai" className="space-y-4 pt-4">
-          {!analysis ? (
-            <div className="rounded-lg border border-dashed bg-card p-8 text-center space-y-3">
-              <Sparkles className="h-10 w-10 mx-auto text-muted-foreground" />
-              <h3 className="text-lg font-medium">Ingen AI-analyse ennå</h3>
-              <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Klikk "AI-analyse" for å la AI analysere arbeidsbeskrivelsen og generere materialliste og timeregnskap.
-              </p>
-              {isAdmin && (
-                <Button onClick={handleAiGenerate} disabled={aiLoading} className="gap-1.5">
-                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Start AI-analyse
-                </Button>
-              )}
-            </div>
-          ) : analysis.status === "insufficient_data" ? (
-            <div className="space-y-4">
-              <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-4 space-y-3">
-                <div className="flex items-start gap-2">
-                  <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
-                  <div>
-                    <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">Mer informasjon kreves før AI kan generere realistisk kalkyle</h3>
-                    <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">Beskrivelsen mangler kritisk informasjon.</p>
-                  </div>
-                </div>
-                {analysis.missing_information?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">Manglende informasjon:</p>
-                    <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
-                      {analysis.missing_information.map((info: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{info}</span></li>)}
-                    </ul>
-                  </div>
-                )}
-                {analysis.clarifying_questions?.length > 0 && (
-                  <div>
-                    <p className="text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">Oppfølgingsspørsmål:</p>
-                    <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
-                      {analysis.clarifying_questions.map((q: string, i: number) => <li key={i} className="flex gap-2"><span>❓</span><span>{q}</span></li>)}
-                    </ul>
-                  </div>
-                )}
-              </div>
-              {isAdmin && (
-                <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" className="gap-1.5">
-                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Kjør AI-analyse på nytt
-                </Button>
-              )}
-            </div>
-          ) : (
-            <div className="space-y-4">
-              {analysis.confidence_level && (
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="text-xs text-muted-foreground">Konfidens:</span>
-                  <Badge className={confidenceColor(analysis.confidence_level)}>
-                    {analysis.confidence_level === "high" ? "Høy" : analysis.confidence_level === "medium" ? "Middels" : "Lav"}
+          {/* AI Analysis inline on overview */}
+          {analysis && analysis.status !== "insufficient_data" && (
+            <div className="rounded-xl border border-border/40 bg-card p-4 space-y-3">
+              <div className="flex items-center gap-2">
+                <Brain className="h-4 w-4 text-primary" />
+                <h3 className="text-sm font-medium">AI-analyse</h3>
+                {analysis.confidence_level && (
+                  <Badge className={confidenceColor(analysis.confidence_level) + " text-[10px]"}>
+                    {analysis.confidence_level === "high" ? "Høy konfidens" : analysis.confidence_level === "medium" ? "Middels konfidens" : "Lav konfidens"}
                   </Badge>
-                  {analysis.requires_manual_review && <Badge variant="outline" className="text-xs">Krever manuell gjennomgang</Badge>}
-                </div>
-              )}
-              <div className="rounded-lg border bg-card p-4 space-y-2">
-                <h3 className="text-sm font-medium">Oppsummering</h3>
-                <p className="text-sm text-muted-foreground">{analysis.job_summary}</p>
-                {analysis.job_type && <Badge variant="outline">{analysis.job_type}</Badge>}
+                )}
               </div>
-              {analysis.assumptions?.length > 0 && (
-                <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-950 p-4 space-y-2">
-                  <h3 className="text-sm font-medium text-blue-800 dark:text-blue-200">📋 Forutsetninger</h3>
-                  <ul className="text-sm space-y-0.5 text-blue-700 dark:text-blue-300">
-                    {analysis.assumptions.map((a: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{a}</span></li>)}
-                  </ul>
-                </div>
-              )}
+              {analysis.job_summary && <p className="text-sm text-muted-foreground">{analysis.job_summary}</p>}
               {analysis.risk_notes?.length > 0 && (
-                <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-4 space-y-2">
-                  <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">⚠ Risikovurdering</h3>
-                  <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
-                    {analysis.risk_notes.map((note: string, i: number) => <li key={i} className="flex gap-2"><span>•</span><span>{note}</span></li>)}
+                <div className="rounded-lg border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3">
+                  <p className="text-xs font-medium text-orange-800 dark:text-orange-200 mb-1">⚠ Risikovurdering</p>
+                  <ul className="text-xs space-y-0.5 text-orange-700 dark:text-orange-300">
+                    {analysis.risk_notes.map((note: string, i: number) => <li key={i}>• {note}</li>)}
                   </ul>
                 </div>
               )}
               <div className="grid grid-cols-2 gap-3">
                 {analysis.estimated_duration_days && (
-                  <div className="rounded-lg border bg-card p-3">
+                  <div className="rounded-lg border bg-muted/30 p-2">
                     <p className="text-xs text-muted-foreground">Estimert varighet</p>
-                    <p className="text-lg font-bold">{analysis.estimated_duration_days} dager</p>
+                    <p className="text-sm font-bold">{analysis.estimated_duration_days} dager</p>
                   </div>
                 )}
                 {analysis.recommended_technicians && (
-                  <div className="rounded-lg border bg-card p-3">
+                  <div className="rounded-lg border bg-muted/30 p-2">
                     <p className="text-xs text-muted-foreground">Anbefalt montører</p>
-                    <p className="text-lg font-bold">{analysis.recommended_technicians} stk</p>
+                    <p className="text-sm font-bold">{analysis.recommended_technicians} stk</p>
                   </div>
                 )}
               </div>
-              {isAdmin && (
-                <Button onClick={handleAiGenerate} disabled={aiLoading} variant="outline" size="sm" className="gap-1.5">
-                  {aiLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
-                  Kjør på nytt
-                </Button>
+            </div>
+          )}
+
+          {/* No AI analysis yet */}
+          {!analysis && isAdmin && (
+            <div className="rounded-xl border border-dashed bg-card p-6 text-center space-y-2">
+              <Sparkles className="h-8 w-8 mx-auto text-muted-foreground" />
+              <p className="text-sm text-muted-foreground">Ingen AI-analyse ennå. Kjør analyse fra handlingsraden over.</p>
+            </div>
+          )}
+
+          {analysis && analysis.status === "insufficient_data" && (
+            <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-4 space-y-3">
+              <div className="flex items-start gap-2">
+                <AlertTriangle className="h-5 w-5 text-orange-600 dark:text-orange-400 shrink-0 mt-0.5" />
+                <div>
+                  <h3 className="text-sm font-medium text-orange-800 dark:text-orange-200">Mer informasjon kreves</h3>
+                  <p className="text-sm text-orange-700 dark:text-orange-300 mt-1">AI kan ikke generere realistisk kalkyle uten ytterligere informasjon.</p>
+                </div>
+              </div>
+              {analysis.missing_information?.length > 0 && (
+                <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
+                  {analysis.missing_information.map((info: string, i: number) => <li key={i}>• {info}</li>)}
+                </ul>
+              )}
+              {analysis.clarifying_questions?.length > 0 && (
+                <ul className="text-sm space-y-0.5 text-orange-700 dark:text-orange-300">
+                  {analysis.clarifying_questions.map((q: string, i: number) => <li key={i}>❓ {q}</li>)}
+                </ul>
               )}
             </div>
           )}
@@ -706,9 +697,9 @@ export default function CalculationDetail() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Materialer</h3>
-              {isAdmin && <Button variant="outline" size="sm" onClick={() => addItem("material")} className="gap-1"><Plus className="h-3 w-3" /> Legg til</Button>}
+              {isAdmin && <Button variant="outline" size="sm" onClick={() => addItem("material")} className="gap-1 rounded-lg"><Plus className="h-3 w-3" /> Legg til</Button>}
             </div>
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-xl border border-border/40 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -753,9 +744,9 @@ export default function CalculationDetail() {
           <div className="space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Arbeid</h3>
-              {isAdmin && <Button variant="outline" size="sm" onClick={() => addItem("labor")} className="gap-1"><Plus className="h-3 w-3" /> Legg til</Button>}
+              {isAdmin && <Button variant="outline" size="sm" onClick={() => addItem("labor")} className="gap-1 rounded-lg"><Plus className="h-3 w-3" /> Legg til</Button>}
             </div>
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-xl border border-border/40 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -791,24 +782,18 @@ export default function CalculationDetail() {
           </div>
         </TabsContent>
 
-        {/* ===== Offers Tab ===== */}
-        <TabsContent value="offers" className="space-y-4 pt-4">
+        {/* ===== Versions Tab (punkt 5 — replaces "Tilbud") ===== */}
+        <TabsContent value="versions" className="space-y-4 pt-4">
           {offers.length === 0 ? (
-            <div className="rounded-lg border border-dashed bg-card p-8 text-center space-y-3">
+            <div className="rounded-xl border border-dashed bg-card p-8 text-center space-y-3">
               <ReceiptText className="h-10 w-10 mx-auto text-muted-foreground" />
-              <h3 className="text-lg font-medium">Ingen tilbud generert</h3>
+              <h3 className="text-lg font-medium">Ingen versjoner generert</h3>
               <p className="text-sm text-muted-foreground max-w-md mx-auto">
-                Klikk "Generer tilbud" for å opprette et formelt tilbudsdokument basert på kalkylen.
+                Generer et tilbud for å opprette den første versjonen basert på kalkylen.
               </p>
-              {isAdmin && (
-                <Button onClick={handleGenerateOffer} disabled={pdfLoading || items.length === 0} className="gap-1.5">
-                  {pdfLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <FileDown className="h-4 w-4" />}
-                  Generer tilbud
-                </Button>
-              )}
             </div>
           ) : (
-            <div className="rounded-lg border overflow-x-auto">
+            <div className="rounded-xl border border-border/40 overflow-x-auto">
               <Table>
                 <TableHeader>
                   <TableRow>
@@ -818,39 +803,29 @@ export default function CalculationDetail() {
                     <TableHead>Status</TableHead>
                     <TableHead className="text-right">Eks. MVA</TableHead>
                     <TableHead className="text-right">Inkl. MVA</TableHead>
-                    <TableHead>Handling</TableHead>
+                    <TableHead>PDF</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {offers.map((offer) => (
-                    <TableRow key={offer.id}>
+                  {offers.map((offer, idx) => (
+                    <TableRow key={offer.id} className={idx === 0 ? "bg-primary/5" : ""}>
                       <TableCell className="font-mono text-sm font-medium">{offer.offer_number}</TableCell>
-                      <TableCell className="text-sm">v{offer.version}</TableCell>
+                      <TableCell className="text-sm font-medium">
+                        v{offer.version}
+                        {idx === 0 && <Badge variant="outline" className="ml-1.5 text-[10px]">Aktiv</Badge>}
+                      </TableCell>
                       <TableCell className="text-sm text-muted-foreground">{format(new Date(offer.created_at), "d. MMM yyyy HH:mm", { locale: nb })}</TableCell>
                       <TableCell>
-                        {isAdmin ? (
-                          <Select value={offer.status} onValueChange={(v) => handleOfferStatusChange(offer.id, v as OfferStatus)}>
-                            <SelectTrigger className="h-7 w-[120px] text-xs"><SelectValue /></SelectTrigger>
-                            <SelectContent>
-                              {ALL_OFFER_STATUSES.map((s) => (
-                                <SelectItem key={s} value={s}>{OFFER_STATUS_CONFIG[s].label}</SelectItem>
-                              ))}
-                            </SelectContent>
-                          </Select>
-                        ) : (
-                          <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className}>{OFFER_STATUS_CONFIG[offer.status]?.label}</Badge>
-                        )}
+                        <Badge className={OFFER_STATUS_CONFIG[offer.status]?.className}>{OFFER_STATUS_CONFIG[offer.status]?.label}</Badge>
                       </TableCell>
                       <TableCell className="text-right font-mono text-sm">kr {Number(offer.total_ex_vat).toLocaleString("nb-NO")}</TableCell>
                       <TableCell className="text-right font-mono text-sm">kr {Number(offer.total_inc_vat).toLocaleString("nb-NO")}</TableCell>
                       <TableCell>
-                        <div className="flex gap-1">
-                          {offer.generated_pdf_url && (
-                            <Button variant="ghost" size="sm" className="gap-1 h-7 text-xs" onClick={() => window.open(offer.generated_pdf_url!, "_blank")}>
-                              <ExternalLink className="h-3 w-3" /> Åpne
-                            </Button>
-                          )}
-                        </div>
+                        {offer.generated_pdf_url && (
+                          <Button variant="ghost" size="sm" className="gap-1 h-7 text-xs rounded-lg" onClick={() => window.open(offer.generated_pdf_url!, "_blank")}>
+                            <ExternalLink className="h-3 w-3" /> Åpne
+                          </Button>
+                        )}
                       </TableCell>
                     </TableRow>
                   ))}
@@ -858,6 +833,117 @@ export default function CalculationDetail() {
               </Table>
             </div>
           )}
+        </TabsContent>
+
+        {/* ===== Attachments Tab ===== */}
+        <TabsContent value="attachments" className="space-y-4 pt-4">
+          {isAdmin && (
+            <div className="flex items-center gap-2">
+              <Button variant="outline" size="sm" onClick={() => fileInputRef.current?.click()} className="gap-1.5 rounded-lg">
+                <Upload className="h-3.5 w-3.5" /> Velg filer
+              </Button>
+              {files.length > 0 && (
+                <Button size="sm" onClick={handleUpload} disabled={uploading} className="gap-1.5 rounded-lg">
+                  {uploading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Upload className="h-3.5 w-3.5" />}
+                  Last opp ({files.length})
+                </Button>
+              )}
+              <span className="text-xs text-muted-foreground">Bilder, PDF, tegninger, Excel, Word</span>
+              <input ref={fileInputRef} type="file" multiple className="hidden" accept="image/*,.pdf,.doc,.docx,.xls,.xlsx,.dwg,.dxf"
+                onChange={(e) => {
+                  const valid = Array.from(e.target.files || []).filter((f) => {
+                    if (f.size > 10 * 1024 * 1024) { toast.error(`${f.name} for stor`); return false; }
+                    return true;
+                  });
+                  setFiles((prev) => [...prev, ...valid]);
+                  if (fileInputRef.current) fileInputRef.current.value = "";
+                }}
+              />
+            </div>
+          )}
+
+          {files.length > 0 && (
+            <div className="space-y-1.5">
+              <p className="text-xs font-medium text-muted-foreground">Klare for opplasting</p>
+              {files.map((f, i) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-accent px-2.5 py-1.5 text-sm">
+                  <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
+                  <span className="truncate flex-1">{f.name}</span>
+                  <span className="text-xs text-muted-foreground">{(f.size / 1024).toFixed(0)} KB</span>
+                  <button onClick={() => setFiles((prev) => prev.filter((_, j) => j !== i))} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+                </div>
+              ))}
+            </div>
+          )}
+
+          {attachments.length > 0 ? (
+            <div className="space-y-1.5">
+              {attachments.map((att: any, i: number) => (
+                <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-1.5 text-sm">
+                  {/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.name) ? <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
+                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="truncate flex-1 hover:underline">{att.name}</a>
+                  {isAdmin && (
+                    <button onClick={() => removeAttachment(att.url)} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
+                  )}
+                </div>
+              ))}
+            </div>
+          ) : files.length === 0 && (
+            <div className="border border-dashed rounded-xl p-8 text-center text-muted-foreground">
+              <Paperclip className="h-8 w-8 mx-auto mb-2 opacity-40" />
+              <p className="text-sm">Ingen vedlegg</p>
+            </div>
+          )}
+        </TabsContent>
+
+        {/* ===== History Tab (punkt 5) ===== */}
+        <TabsContent value="history" className="space-y-4 pt-4">
+          <div className="rounded-xl border border-border/40 bg-card p-4 space-y-3">
+            <h3 className="text-sm font-medium flex items-center gap-1.5"><History className="h-4 w-4 text-muted-foreground" /> Hendelseslogg</h3>
+            <div className="space-y-2">
+              {/* Calculation created */}
+              <div className="flex items-start gap-3 text-sm">
+                <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
+                <div>
+                  <p className="font-medium">Kalkulasjon opprettet</p>
+                  <p className="text-xs text-muted-foreground">{format(new Date(calc.created_at), "d. MMM yyyy HH:mm", { locale: nb })}</p>
+                </div>
+              </div>
+              {/* AI analysis */}
+              {analysis && (
+                <div className="flex items-start gap-3 text-sm">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
+                  <div>
+                    <p className="font-medium">AI-analyse kjørt</p>
+                    <p className="text-xs text-muted-foreground">
+                      {analysis.confidence_level ? `Konfidens: ${analysis.confidence_level}` : "Status: " + (analysis.status || "fullført")}
+                    </p>
+                  </div>
+                </div>
+              )}
+              {/* Offer versions */}
+              {[...offers].reverse().map((offer) => (
+                <div key={offer.id} className="flex items-start gap-3 text-sm">
+                  <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
+                  <div>
+                    <p className="font-medium">Tilbud {offer.offer_number} v{offer.version} generert</p>
+                    <p className="text-xs text-muted-foreground">
+                      {format(new Date(offer.created_at), "d. MMM yyyy HH:mm", { locale: nb })}
+                      {offer.sent_at && ` • Sendt ${format(new Date(offer.sent_at), "d. MMM yyyy", { locale: nb })}`}
+                    </p>
+                  </div>
+                </div>
+              ))}
+              {/* Last updated */}
+              <div className="flex items-start gap-3 text-sm">
+                <div className="w-1.5 h-1.5 rounded-full bg-muted-foreground/30 mt-2 shrink-0" />
+                <div>
+                  <p className="text-muted-foreground">Sist oppdatert</p>
+                  <p className="text-xs text-muted-foreground">{format(new Date(calc.updated_at), "d. MMM yyyy HH:mm", { locale: nb })}</p>
+                </div>
+              </div>
+            </div>
+          </div>
         </TabsContent>
       </Tabs>
 
@@ -867,7 +953,7 @@ export default function CalculationDetail() {
           <div className="text-xs text-muted-foreground">
             {lastSaved ? `Sist lagret kl ${format(lastSaved, "HH:mm:ss")}` : "Ikke lagret ennå"} • Auto-lagring aktiv
           </div>
-          <Button onClick={() => saveItems()} className="gap-1.5">
+          <Button onClick={() => saveItems()} className="gap-1.5 rounded-lg">
             <Save className="h-4 w-4" /> Lagre endringer
           </Button>
         </div>
