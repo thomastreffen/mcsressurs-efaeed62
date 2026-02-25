@@ -161,7 +161,7 @@ export default function OverviewPage() {
 
     const leadsRes = await fetchActiveLeads("id, status, company_name, estimated_value, probability, next_action_date, updated_at, created_at, expected_close_date, assigned_owner_user_id");
 
-    const [eventsRes, risksRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes, calcsRes, activityRes] = await Promise.all([
+    const [eventsRes, risksRes, offersRes, changeOrdersRes, techsRes, calLinksRes, calEventsRes, calcsRes, activityRes, expiringDocsRes] = await Promise.all([
       supabase.from("events").select("id, title, status, customer, start_time, end_time, meeting_join_url, internal_number, created_at, updated_at, event_technicians(technician_id, technicians(name))").is("deleted_at", null),
       supabase.from("job_risk_items").select("id, job_id, severity, status, category, created_at, updated_at"),
       supabase.from("offers").select("id, offer_number, status, total_inc_vat, sent_at, created_at, calculation_id, lead_id, calculations(customer_name, project_title)").order("created_at", { ascending: false }),
@@ -171,6 +171,7 @@ export default function OverviewPage() {
       supabase.from("lead_calendar_links").select("id, lead_id, event_start, event_subject, event_end").gte("event_start", todayStart).lt("event_start", todayEnd).order("event_start", { ascending: true }),
       supabase.from("calculations").select("id, project_title, customer_name, created_at, status, lead_id").is("deleted_at", null).gte("created_at", h24),
       supabase.from("activity_log").select("id, entity_type, entity_id, action, title, created_at").gte("created_at", h24).order("created_at", { ascending: false }).limit(20),
+      supabase.from("user_documents").select("id, user_id, file_name, expires_at, category").not("expires_at", "is", null).lte("expires_at", format(subDays(now, -30), "yyyy-MM-dd")),
     ]);
 
     const events = eventsRes.data || [];
@@ -312,6 +313,24 @@ export default function OverviewPage() {
         label: "Synkroniseringsfeil", count: syncErrors.length, severity: "critical", href: "/admin/integration-health",
         urgency: "today", module: "System",
         priorityScore: calculateActionPriority({ urgency: "today", isSyncError: true }),
+      });
+    }
+
+    // Expiring personnel documents
+    const expiringDocs = (expiringDocsRes.data || []).filter((d: any) => {
+      const daysLeft = differenceInDays(new Date(d.expires_at), now);
+      return daysLeft <= 30;
+    });
+    if (expiringDocs.length > 0) {
+      const expired = expiringDocs.filter((d: any) => differenceInDays(new Date(d.expires_at), now) < 0);
+      actionList.push({
+        label: expired.length > 0 ? "Utløpte personaldokumenter" : "Personaldokumenter utløper snart",
+        count: expiringDocs.length,
+        severity: expired.length > 0 ? "critical" : "warning",
+        href: "/admin/ansatte",
+        urgency: expired.length > 0 ? "overdue" : "this_week",
+        module: "System",
+        priorityScore: calculateActionPriority({ urgency: expired.length > 0 ? "overdue" : "this_week" }),
       });
     }
 
