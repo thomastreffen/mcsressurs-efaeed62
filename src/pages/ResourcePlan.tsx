@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { useNavigate } from "react-router-dom";
 import { addWeeks, startOfWeek, format, isSameWeek } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -50,6 +50,15 @@ export default function ResourcePlan() {
   const selectedTech = selectedTechId
     ? technicians.find((t) => t.id === selectedTechId)
     : null;
+
+  // Build a map for technician color/name lookup
+  const technicianMap = useMemo(() => {
+    const map = new Map<string, { name: string; color: string | null }>();
+    for (const t of technicians) {
+      map.set(t.id, { name: t.name, color: t.color || null });
+    }
+    return map;
+  }, [technicians]);
 
   return (
     <div className="flex flex-1 overflow-hidden h-full">
@@ -182,6 +191,7 @@ export default function ResourcePlan() {
           onDayClick={isAdmin ? handleDayClick : undefined}
           getBusySlotsForDay={getBusySlotsForDay}
           getExternalBusyMinutesForDay={getExternalBusyMinutesForDay}
+          technicianMap={technicianMap}
         />
       </div>
 
