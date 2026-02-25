@@ -2217,30 +2217,57 @@ export type Database = {
       }
       technicians: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
+          birth_date: string | null
           color: string | null
           created_at: string
+          driver_license_classes: string | null
           email: string
+          hms_card_expires_at: string | null
+          hms_card_number: string | null
           id: string
+          is_plannable_resource: boolean
           microsoft_user_id: string | null
           name: string
+          notes: string | null
+          trade_certificate_type: string | null
           user_id: string
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          birth_date?: string | null
           color?: string | null
           created_at?: string
+          driver_license_classes?: string | null
           email: string
+          hms_card_expires_at?: string | null
+          hms_card_number?: string | null
           id?: string
+          is_plannable_resource?: boolean
           microsoft_user_id?: string | null
           name: string
+          notes?: string | null
+          trade_certificate_type?: string | null
           user_id: string
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          birth_date?: string | null
           color?: string | null
           created_at?: string
+          driver_license_classes?: string | null
           email?: string
+          hms_card_expires_at?: string | null
+          hms_card_number?: string | null
           id?: string
+          is_plannable_resource?: boolean
           microsoft_user_id?: string | null
           name?: string
+          notes?: string | null
+          trade_certificate_type?: string | null
           user_id?: string
         }
         Relationships: []
@@ -2268,6 +2295,47 @@ export type Database = {
           value?: Json
         }
         Relationships: []
+      }
+      user_documents: {
+        Row: {
+          category: string
+          created_at: string
+          expires_at: string | null
+          file_name: string
+          file_path: string
+          id: string
+          uploaded_by: string | null
+          user_id: string
+        }
+        Insert: {
+          category?: string
+          created_at?: string
+          expires_at?: string | null
+          file_name: string
+          file_path: string
+          id?: string
+          uploaded_by?: string | null
+          user_id: string
+        }
+        Update: {
+          category?: string
+          created_at?: string
+          expires_at?: string | null
+          file_name?: string
+          file_path?: string
+          id?: string
+          uploaded_by?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_documents_user_id_fkey"
+            columns: ["user_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       user_memberships: {
         Row: {

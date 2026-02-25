@@ -27,6 +27,8 @@ export function TechnicianList({ selectedId, onSelect, allowDeselect }: Technici
         .from("technicians")
         .select("id, name, email, user_id, color")
         .not("user_id", "is", null)
+        .eq("is_plannable_resource", true)
+        .is("archived_at", null)
         .order("name");
 
       if (error) {

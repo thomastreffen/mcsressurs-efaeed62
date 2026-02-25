@@ -3,7 +3,7 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
-import { Loader2, ChevronRight, Shield, Building, ShieldAlert, ChevronDown, Info } from "lucide-react";
+import { Loader2, ChevronRight, Shield, Building, ShieldAlert, ChevronDown, Info, Archive, FolderOpen } from "lucide-react";
 import { toast } from "sonner";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { Label } from "@/components/ui/label";
@@ -13,12 +13,17 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { Switch } from "@/components/ui/switch";
 import { PERMISSION_CATEGORIES, SCOPE_OPTIONS, getPermLabel, getPermDescription } from "@/lib/permission-labels";
+import { PersonnelDialog } from "./PersonnelDialog";
+import { cn } from "@/lib/utils";
 
 interface UserRow {
   id: string;
   email: string;
   name: string;
+  technician_id: string | null;
+  is_archived: boolean;
   role_assignments: { role_id: string; role_name: string }[];
   memberships: { company_id: string; department_id: string | null; company_name: string; department_name: string | null }[];
   overrides: { permission_key: string; allowed: boolean }[];
@@ -47,18 +52,32 @@ export function UsersAccessTab() {
   const [saving, setSaving] = useState(false);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [scopeOverride, setScopeOverride] = useState<string>("inherit");
+  const [showArchived, setShowArchived] = useState(false);
+  const [personnelOpen, setPersonnelOpen] = useState(false);
+  const [personnelTechId, setPersonnelTechId] = useState<string | null>(null);
 
   const fetchAll = async () => {
     setLoading(true);
     const { data: usersData } = await supabase.functions.invoke("list-users");
     const userList: { id: string; email: string; name: string }[] = usersData?.users || [];
 
-    const { data: assignments } = await supabase.from("user_role_assignments").select("user_id, role_id");
-    const { data: rolesData } = await supabase.from("roles").select("id, name").order("name");
-    const { data: memberships } = await supabase.from("user_memberships").select("user_id, company_id, department_id");
-    const { data: comps } = await supabase.from("internal_companies").select("id, name").eq("is_active", true);
-    const { data: depts } = await supabase.from("departments").select("id, name, company_id").eq("is_active", true);
-    const { data: overridesData } = await supabase.from("user_permission_overrides").select("user_id, permission_key, allowed");
+    const [
+      { data: assignments },
+      { data: rolesData },
+      { data: memberships },
+      { data: comps },
+      { data: depts },
+      { data: overridesData },
+      { data: techData },
+    ] = await Promise.all([
+      supabase.from("user_role_assignments").select("user_id, role_id"),
+      supabase.from("roles").select("id, name").order("name"),
+      supabase.from("user_memberships").select("user_id, company_id, department_id"),
+      supabase.from("internal_companies").select("id, name").eq("is_active", true),
+      supabase.from("departments").select("id, name, company_id").eq("is_active", true),
+      supabase.from("user_permission_overrides").select("user_id, permission_key, allowed"),
+      supabase.from("technicians").select("id, user_id, archived_at"),
+    ]);
 
     const roleMap = new Map((rolesData as any[] || []).map((r: any) => [r.id, r.name]));
     const compMap = new Map((comps as any[] || []).map((c: any) => [c.id, c.name]));
@@ -69,16 +88,24 @@ export function UsersAccessTab() {
       departments: (depts as any[] || []).filter((d: any) => d.company_id === c.id).map((d: any) => ({ id: d.id, name: d.name })),
     }));
 
-    const enriched: UserRow[] = userList.map((u) => ({
-      ...u,
-      role_assignments: (assignments as any[] || []).filter((a: any) => a.user_id === u.id).map((a: any) => ({ role_id: a.role_id, role_name: roleMap.get(a.role_id) || "?" })),
-      memberships: (memberships as any[] || []).filter((m: any) => m.user_id === u.id).map((m: any) => ({
-        company_id: m.company_id, department_id: m.department_id,
-        company_name: compMap.get(m.company_id) || "?",
-        department_name: m.department_id ? deptMap.get(m.department_id) || "?" : null,
-      })),
-      overrides: (overridesData as any[] || []).filter((o: any) => o.user_id === u.id).map((o: any) => ({ permission_key: o.permission_key, allowed: o.allowed })),
-    }));
+    const techList = (techData as any[] || []);
+    const techByUserId = new Map(techList.map((t: any) => [t.user_id, t]));
+
+    const enriched: UserRow[] = userList.map((u) => {
+      const tech = techByUserId.get(u.id);
+      return {
+        ...u,
+        technician_id: tech?.id || null,
+        is_archived: !!tech?.archived_at,
+        role_assignments: (assignments as any[] || []).filter((a: any) => a.user_id === u.id).map((a: any) => ({ role_id: a.role_id, role_name: roleMap.get(a.role_id) || "?" })),
+        memberships: (memberships as any[] || []).filter((m: any) => m.user_id === u.id).map((m: any) => ({
+          company_id: m.company_id, department_id: m.department_id,
+          company_name: compMap.get(m.company_id) || "?",
+          department_name: m.department_id ? deptMap.get(m.department_id) || "?" : null,
+        })),
+        overrides: (overridesData as any[] || []).filter((o: any) => o.user_id === u.id).map((o: any) => ({ permission_key: o.permission_key, allowed: o.allowed })),
+      };
+    });
 
     setUsers(enriched);
     setRoles((rolesData as any[]) || []);
@@ -179,20 +206,31 @@ export function UsersAccessTab() {
 
   const activeOverrideCount = Object.keys(overrides).length + (scopeOverride !== "inherit" ? 1 : 0);
 
+  const filteredUsers = showArchived ? users : users.filter((u) => !u.is_archived);
+
   if (loading) {
     return <div className="flex items-center justify-center py-12"><Loader2 className="h-6 w-6 animate-spin text-muted-foreground" /></div>;
   }
 
   return (
     <TooltipProvider>
-      <div className="mt-4 space-y-3">
-        <h3 className="text-sm font-semibold">Brukere ({users.length})</h3>
+       <div className="mt-4 space-y-3">
+        <div className="flex items-center justify-between">
+          <h3 className="text-sm font-semibold">Brukere ({filteredUsers.length})</h3>
+          <div className="flex items-center gap-2">
+            <Label className="text-xs text-muted-foreground">Vis arkiverte</Label>
+            <Switch checked={showArchived} onCheckedChange={setShowArchived} />
+          </div>
+        </div>
 
-        {users.map((u) => (
-          <Card key={u.id} className="cursor-pointer hover:bg-accent/50 transition-colors" onClick={() => openEdit(u)}>
+        {filteredUsers.map((u) => (
+          <Card key={u.id} className={cn("cursor-pointer hover:bg-accent/50 transition-colors", u.is_archived && "opacity-60")} onClick={() => openEdit(u)}>
             <CardContent className="p-4 flex items-center justify-between">
               <div className="min-w-0">
-                <p className="font-medium text-sm truncate">{u.name}</p>
+                <div className="flex items-center gap-2">
+                  <p className="font-medium text-sm truncate">{u.name}</p>
+                  {u.is_archived && <Badge variant="outline" className="text-[10px] gap-1"><Archive className="h-3 w-3" />Arkivert</Badge>}
+                </div>
                 <p className="text-xs text-muted-foreground truncate">{u.email}</p>
                 <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                   {u.role_assignments.map((r) => (
@@ -213,7 +251,19 @@ export function UsersAccessTab() {
                   )}
                 </div>
               </div>
-              <ChevronRight className="h-4 w-4 text-muted-foreground shrink-0" />
+              <div className="flex items-center gap-1 shrink-0">
+                {u.technician_id && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8"
+                    onClick={(e) => { e.stopPropagation(); setPersonnelTechId(u.technician_id); setPersonnelOpen(true); }}
+                  >
+                    <FolderOpen className="h-4 w-4 text-muted-foreground" />
+                  </Button>
+                )}
+                <ChevronRight className="h-4 w-4 text-muted-foreground" />
+              </div>
             </CardContent>
           </Card>
         ))}
@@ -356,6 +406,13 @@ export function UsersAccessTab() {
             </DialogFooter>
           </DialogContent>
         </Dialog>
+
+        <PersonnelDialog
+          technicianId={personnelTechId}
+          open={personnelOpen}
+          onOpenChange={setPersonnelOpen}
+          onSaved={fetchAll}
+        />
       </div>
     </TooltipProvider>
   );
