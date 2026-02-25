@@ -30,6 +30,7 @@ import {
 } from "@/lib/job-status";
 import { useAuth } from "@/hooks/useAuth";
 import { JobCalendarSync } from "@/components/JobCalendarSync";
+import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
 import { EmailComposer } from "@/components/EmailComposer";
 import {
   ArrowLeft,
@@ -149,6 +150,7 @@ export default function JobDetail() {
   const [meetingLoading, setMeetingLoading] = useState(false);
   const [offerData, setOfferData] = useState<any>(null);
   const [debugOpen, setDebugOpen] = useState(false);
+  const [resourceAssignOpen, setResourceAssignOpen] = useState(false);
 
   // Economy source hierarchy state
   const [econData, setEconData] = useState<{
@@ -922,6 +924,20 @@ export default function JobDetail() {
                     </div>
                   </div>
 
+                  {isAdmin && (
+                    <div className="pt-3 border-t border-border/40">
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="rounded-xl gap-1.5"
+                        onClick={() => setResourceAssignOpen(true)}
+                      >
+                        <CalendarCheck className="h-3.5 w-3.5" />
+                        Planlegg ressurs
+                      </Button>
+                    </div>
+                  )}
+
                   {job.attendeeStatuses.length > 0 && (
                     <div className="pt-3 border-t border-border/40">
                       <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
@@ -1050,6 +1066,13 @@ export default function JobDetail() {
         onOpenChange={setLightboxOpen}
         canDelete={isAdmin}
         onDelete={handleDeleteAttachment}
+      />
+      <ResourceAssignDialog
+        open={resourceAssignOpen}
+        onOpenChange={setResourceAssignOpen}
+        projectId={id}
+        projectTitle={job.title}
+        onAssigned={() => { fetchJob(); fetchLogs(); }}
       />
     </>
   );
