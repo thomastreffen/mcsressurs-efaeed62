@@ -52,6 +52,7 @@ import ContractsPage from "./pages/ContractsPage";
 import ContractDetail from "./pages/ContractDetail";
 import ContractCronPage from "./pages/ContractCronPage";
 import EmployeesPage from "./pages/EmployeesPage";
+import PersonnelDetailPage from "./pages/PersonnelDetailPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -244,6 +245,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <EmployeesPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/ansatte/:id"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <PersonnelDetailPage />
                   </ProtectedRoute>
                 }
               />

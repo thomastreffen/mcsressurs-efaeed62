@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
-import { PersonnelDialog } from "@/components/access-control/PersonnelDialog";
 import { Switch } from "@/components/ui/switch";
 import { Badge } from "@/components/ui/badge";
 import { Loader2, FolderOpen, Users, Archive } from "lucide-react";
@@ -17,11 +17,10 @@ interface TechRow {
 }
 
 export default function EmployeesPage() {
+  const navigate = useNavigate();
   const [technicians, setTechnicians] = useState<TechRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showArchived, setShowArchived] = useState(false);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const [dialogOpen, setDialogOpen] = useState(false);
 
   const fetchTechnicians = async () => {
     setLoading(true);
@@ -43,11 +42,6 @@ export default function EmployeesPage() {
   useEffect(() => {
     fetchTechnicians();
   }, [showArchived]);
-
-  const openDialog = (id: string) => {
-    setSelectedId(id);
-    setDialogOpen(true);
-  };
 
   return (
     <div className="p-4 sm:p-6 space-y-6 max-w-5xl mx-auto">
@@ -91,7 +85,7 @@ export default function EmployeesPage() {
                 <TableRow
                   key={tech.id}
                   className="cursor-pointer hover:bg-muted/50"
-                  onClick={() => openDialog(tech.id)}
+                  onClick={() => navigate(`/admin/ansatte/${tech.id}`)}
                 >
                   <TableCell>
                     <div>
@@ -125,7 +119,7 @@ export default function EmployeesPage() {
                       className="h-8 w-8"
                       onClick={(e) => {
                         e.stopPropagation();
-                        openDialog(tech.id);
+                        navigate(`/admin/ansatte/${tech.id}`);
                       }}
                     >
                       <FolderOpen className="h-4 w-4 text-muted-foreground" />
@@ -137,13 +131,6 @@ export default function EmployeesPage() {
           </Table>
         </div>
       )}
-
-      <PersonnelDialog
-        technicianId={selectedId}
-        open={dialogOpen}
-        onOpenChange={setDialogOpen}
-        onSaved={fetchTechnicians}
-      />
     </div>
   );
 }
