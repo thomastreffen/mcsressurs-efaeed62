@@ -116,10 +116,14 @@ Deno.serve(async (req) => {
 
       const newUserId = newUser.user.id;
 
-      // Assign default role
+      // Assign default role (legacy + new permission system)
       await supabaseAdmin.from("user_roles").insert({
         user_id: newUserId,
         role: "montør",
+      });
+      await supabaseAdmin.from("user_role_assignments").insert({
+        user_id: newUserId,
+        role_id: "b0000000-0000-0000-0000-000000000001", // Montør role
       });
 
       // Create technician record
