@@ -78,6 +78,10 @@ export function ResourceAssignDialog({
   const [assignStartTime, setAssignStartTime] = useState("08:00");
   const [assignEndTime, setAssignEndTime] = useState("16:00");
 
+  // Conflict detection
+  const [conflicts, setConflicts] = useState<{ techName: string; jobTitle: string; start: string; end: string }[]>([]);
+  const [checkingConflicts, setCheckingConflicts] = useState(false);
+
   // Initialize from props
   useEffect(() => {
     if (open) {
@@ -138,12 +142,65 @@ export function ResourceAssignDialog({
     setAssignStartTime("08:00");
     setAssignEndTime("16:00");
     setMode("new");
+    setConflicts([]);
   };
 
   const handleClose = (v: boolean) => {
     if (!v) resetForm();
     onOpenChange(v);
   };
+
+  // Check for conflicts before submitting
+  const checkConflicts = useCallback(async (date: string, start: string, end: string, techs: string[]) => {
+    if (!date || techs.length === 0) {
+      setConflicts([]);
+      return;
+    }
+    setCheckingConflicts(true);
+    try {
+      const startISO = new Date(`${date}T${start}`).toISOString();
+      const endISO = new Date(`${date}T${end}`).toISOString();
+
+      // Check overlapping events for each technician
+      const { data: overlaps } = await supabase
+        .from("events")
+        .select("id, title, start_time, end_time, event_technicians(technician_id, technicians(name))")
+        .is("deleted_at", null)
+        .lt("start_time", endISO)
+        .gt("end_time", startISO);
+
+      const found: typeof conflicts = [];
+      for (const ev of overlaps || []) {
+        const evTechs = (ev as any).event_technicians || [];
+        for (const et of evTechs) {
+          if (techs.includes(et.technician_id)) {
+            found.push({
+              techName: et.technicians?.name || "Ukjent",
+              jobTitle: (ev as any).title,
+              start: format(new Date((ev as any).start_time), "HH:mm"),
+              end: format(new Date((ev as any).end_time), "HH:mm"),
+            });
+          }
+        }
+      }
+      setConflicts(found);
+    } catch {
+      setConflicts([]);
+    }
+    setCheckingConflicts(false);
+  }, []);
+
+  // Auto-check conflicts when inputs change
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      if (mode === "new" && startDate && techIds.length > 0) {
+        checkConflicts(startDate, startTime, endTime, techIds);
+      } else if (mode === "existing" && assignDate && techIds.length > 0) {
+        checkConflicts(assignDate, assignStartTime, assignEndTime, techIds);
+      }
+    }, 500);
+    return () => clearTimeout(timer);
+  }, [mode, startDate, startTime, endTime, assignDate, assignStartTime, assignEndTime, techIds, checkConflicts]);
 
   // Create new event
   const handleCreateNew = async (e: React.FormEvent) => {
@@ -300,10 +357,28 @@ export function ResourceAssignDialog({
                   endTime={endTime} setEndTime={setEndTime}
                   techIds={techIds} setTechIds={setTechIds}
                 />
+                {/* Conflict warnings */}
+                {conflicts.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1.5">
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <p className="text-sm font-semibold">Kalenderkonflikt oppdaget</p>
+                    </div>
+                    {conflicts.map((c, i) => (
+                      <p key={i} className="text-xs text-amber-700/80 dark:text-amber-400/80 ml-6">
+                        {c.techName}: «{c.jobTitle}» ({c.start}–{c.end})
+                      </p>
+                    ))}
+                    <p className="text-xs text-amber-600/70 dark:text-amber-500/70 ml-6">
+                      Du kan fortsatt opprette, men montøren er allerede booket i dette tidsrommet.
+                    </p>
+                  </div>
+                )}
+
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => handleClose(false)}>Avbryt</Button>
                   <Button type="submit" disabled={safeTechIds.length === 0 || submitting}>
-                    {submitting ? "Oppretter..." : "Opprett hendelse"}
+                    {submitting ? "Oppretter..." : conflicts.length > 0 ? "Opprett likevel" : "Opprett hendelse"}
                   </Button>
                 </DialogFooter>
               </form>
@@ -331,10 +406,26 @@ export function ResourceAssignDialog({
                   </div>
                 </div>
                 <TechnicianMultiSelect selectedIds={techIds} onChange={setTechIds} />
+
+                {/* Conflict warnings */}
+                {conflicts.length > 0 && (
+                  <div className="rounded-lg border border-amber-500/30 bg-amber-500/10 p-3 space-y-1.5">
+                    <div className="flex items-center gap-2 text-amber-700 dark:text-amber-400">
+                      <AlertTriangle className="h-4 w-4 shrink-0" />
+                      <p className="text-sm font-semibold">Kalenderkonflikt oppdaget</p>
+                    </div>
+                    {conflicts.map((c, i) => (
+                      <p key={i} className="text-xs text-amber-700/80 dark:text-amber-400/80 ml-6">
+                        {c.techName}: «{c.jobTitle}» ({c.start}–{c.end})
+                      </p>
+                    ))}
+                  </div>
+                )}
+
                 <DialogFooter>
                   <Button type="button" variant="outline" onClick={() => handleClose(false)}>Avbryt</Button>
                   <Button type="submit" disabled={!selectedJobId || safeTechIds.length === 0 || submitting}>
-                    {submitting ? "Tildeler..." : "Tildel montør(er)"}
+                    {submitting ? "Tildeler..." : conflicts.length > 0 ? "Tildel likevel" : "Tildel montør(er)"}
                   </Button>
                 </DialogFooter>
               </form>

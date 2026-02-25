@@ -19,7 +19,13 @@ import {
   RotateCcw,
   Copy,
   CheckCircle2,
+  MessageSquarePlus,
+  Camera,
+  X,
+  Send,
+  StickyNote,
 } from "lucide-react";
+import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 
@@ -98,10 +104,17 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
   const [uploading, setUploading] = useState(false);
   const [analyzingId, setAnalyzingId] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("all");
-  // Track which docs have been analyzed (doc_id -> true)
   const [analyzedDocs, setAnalyzedDocs] = useState<Set<string>>(new Set());
   const fileRef = useRef<HTMLInputElement>(null);
   const analysisInFlightRef = useRef(false);
+
+  // Quick note state
+  const [showQuickNote, setShowQuickNote] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [noteImageFile, setNoteImageFile] = useState<File | null>(null);
+  const [noteImagePreview, setNoteImagePreview] = useState<string | null>(null);
+  const [savingNote, setSavingNote] = useState(false);
+  const noteImageRef = useRef<HTMLInputElement>(null);
 
   const fetchDocs = useCallback(async () => {
     const { data } = await supabase
@@ -129,6 +142,82 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
   }, [jobId]);
 
   useEffect(() => { fetchDocs(); }, [fetchDocs]);
+
+  // Handle note image selection
+  const handleNoteImage = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) {
+      toast.error("Bildet er for stort (maks 10 MB)");
+      return;
+    }
+    setNoteImageFile(file);
+    setNoteImagePreview(URL.createObjectURL(file));
+  };
+
+  const handleSaveNote = async () => {
+    if (!noteText.trim() && !noteImageFile) return;
+    setSavingNote(true);
+
+    let imageUrl: string | null = null;
+
+    // Upload image if present
+    if (noteImageFile) {
+      const filePath = `${jobId}/note-${Date.now()}-${noteImageFile.name.replace(/[^\w.\-()]/g, "_")}`;
+      const { error: uploadError } = await supabase.storage
+        .from("job-attachments")
+        .upload(filePath, noteImageFile);
+
+      if (uploadError) {
+        toast.error("Kunne ikke laste opp bilde");
+        setSavingNote(false);
+        return;
+      }
+
+      const { data: urlData } = supabase.storage
+        .from("job-attachments")
+        .getPublicUrl(filePath);
+      imageUrl = urlData.publicUrl;
+
+      // Also register as a document
+      await supabase.from("documents").insert({
+        entity_type: "job",
+        entity_id: jobId,
+        file_name: noteImageFile.name,
+        file_path: filePath,
+        mime_type: noteImageFile.type,
+        file_size: noteImageFile.size,
+        storage_bucket: "job-attachments",
+        public_url: imageUrl,
+        uploaded_by: user?.id || null,
+        company_id: companyId || null,
+        category: "image",
+      });
+    }
+
+    // Save as activity log
+    const metadata: any = {};
+    if (imageUrl) metadata.image_url = imageUrl;
+
+    await supabase.from("activity_log").insert({
+      entity_type: "job",
+      entity_id: jobId,
+      action: "note_added",
+      type: "note",
+      title: "Notat lagt til",
+      description: noteText.trim() || (imageUrl ? "Bilde lagt til" : ""),
+      performed_by: user?.id || null,
+      metadata,
+    });
+
+    toast.success("Notat lagret");
+    setNoteText("");
+    setNoteImageFile(null);
+    setNoteImagePreview(null);
+    setShowQuickNote(false);
+    setSavingNote(false);
+    fetchDocs();
+  };
 
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
@@ -303,6 +392,15 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
           <Button
             variant="outline"
             size="sm"
+            onClick={() => setShowQuickNote(!showQuickNote)}
+            className="gap-1.5 rounded-xl text-xs"
+          >
+            <StickyNote className="h-3.5 w-3.5" />
+            Notat
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
             onClick={() => fileRef.current?.click()}
             disabled={uploading}
             className="gap-1.5 rounded-xl text-xs"
@@ -320,6 +418,75 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
           />
         </div>
       </div>
+
+      {/* Quick Note section */}
+      {showQuickNote && (
+        <div className="rounded-xl border border-border/40 p-4 bg-secondary/20 space-y-3">
+          <div className="flex items-center justify-between">
+            <h4 className="text-sm font-semibold flex items-center gap-2">
+              <MessageSquarePlus className="h-4 w-4 text-primary" />
+              Legg til notat
+            </h4>
+            <button onClick={() => setShowQuickNote(false)} className="text-muted-foreground hover:text-foreground">
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+
+          <Textarea
+            value={noteText}
+            onChange={(e) => setNoteText(e.target.value)}
+            placeholder="Skriv notat, kommentar eller observasjon..."
+            rows={3}
+          />
+
+          {/* Image preview */}
+          {noteImagePreview && (
+            <div className="relative inline-block">
+              <img
+                src={noteImagePreview}
+                alt="Vedlagt bilde"
+                className="max-h-32 rounded-lg border border-border/40"
+              />
+              <button
+                onClick={() => { setNoteImageFile(null); setNoteImagePreview(null); }}
+                className="absolute -top-2 -right-2 bg-destructive text-destructive-foreground rounded-full p-0.5"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          )}
+
+          <div className="flex items-center gap-2">
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 text-xs"
+              onClick={() => noteImageRef.current?.click()}
+            >
+              <Camera className="h-3.5 w-3.5" />
+              Legg til bilde
+            </Button>
+            <input
+              ref={noteImageRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleNoteImage}
+              className="hidden"
+            />
+            <Button
+              size="sm"
+              className="gap-1.5 text-xs ml-auto"
+              onClick={handleSaveNote}
+              disabled={savingNote || (!noteText.trim() && !noteImageFile)}
+            >
+              {savingNote ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Send className="h-3.5 w-3.5" />}
+              Lagre notat
+            </Button>
+          </div>
+        </div>
+      )}
+
 
       {/* Analysis summary cards */}
       {latestOfferAnalysis && (

@@ -261,6 +261,32 @@ Deno.serve(async (req) => {
       const draft = await graphRes.json();
       log(`Draft created: ${draft.id?.slice(0, 30)}`);
 
+      // Add attachments to draft if provided
+      const draftAttachments = body.attachments || [];
+      if (draftAttachments.length > 0) {
+        log(`Adding ${draftAttachments.length} attachment(s) to draft`);
+        for (const att of draftAttachments) {
+          try {
+            const fileRes = await fetch(att.url);
+            if (!fileRes.ok) { log(`Failed to download: ${att.name}`); continue; }
+            const fileBuffer = await fileRes.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
+            const attRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}/attachments`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name: att.name,
+                contentType: att.contentType || "application/octet-stream",
+                contentBytes: base64,
+              }),
+            });
+            if (attRes.ok) log(`Attachment added: ${att.name}`);
+            else log(`Attachment failed: ${att.name} – ${attRes.status}`);
+          } catch (e: any) { log(`Attachment error: ${att.name} – ${e.message}`); }
+        }
+      }
+
       const logRow = {
         entity_type,
         entity_id,
@@ -415,6 +441,42 @@ Deno.serve(async (req) => {
         conversation_id: draft.conversationId || null,
         outlook_weblink: draft.webLink || null,
       }).eq("id", claimId);
+
+      // ── Step 1b: Add attachments to draft ──
+      const attachmentsList = body.attachments || [];
+      if (attachmentsList.length > 0) {
+        log(`Adding ${attachmentsList.length} attachment(s) to draft`);
+        for (const att of attachmentsList) {
+          try {
+            const fileRes = await fetch(att.url);
+            if (!fileRes.ok) {
+              log(`Failed to download attachment: ${att.name} (${fileRes.status})`);
+              continue;
+            }
+            const fileBuffer = await fileRes.arrayBuffer();
+            const base64 = btoa(String.fromCharCode(...new Uint8Array(fileBuffer)));
+
+            const attRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}/attachments`, {
+              method: "POST",
+              headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
+              body: JSON.stringify({
+                "@odata.type": "#microsoft.graph.fileAttachment",
+                name: att.name,
+                contentType: att.contentType || "application/octet-stream",
+                contentBytes: base64,
+              }),
+            });
+            if (attRes.ok) {
+              log(`Attachment added: ${att.name}`);
+            } else {
+              const attErr = await attRes.text();
+              log(`Attachment failed: ${att.name} – ${attRes.status} ${attErr.substring(0, 100)}`);
+            }
+          } catch (attErr: any) {
+            log(`Attachment error: ${att.name} – ${attErr.message}`);
+          }
+        }
+      }
 
       // ── Step 2: Send the draft ──
       const sendRes = await fetch(`${GRAPH_BASE}/me/messages/${draft.id}/send`, {
