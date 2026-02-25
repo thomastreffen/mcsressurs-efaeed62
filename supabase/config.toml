@@ -74,3 +74,6 @@ verify_jwt = false
 
 [functions.extract-user-document]
 verify_jwt = false
+
+[functions.inbox-scan]
+verify_jwt = false
