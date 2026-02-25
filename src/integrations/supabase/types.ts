@@ -1612,6 +1612,47 @@ export type Database = {
           },
         ]
       }
+      job_task_notes: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          file_mime_type: string | null
+          file_name: string | null
+          file_path: string | null
+          id: string
+          note_text: string | null
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          file_mime_type?: string | null
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          note_text?: string | null
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          file_mime_type?: string | null
+          file_name?: string | null
+          file_path?: string | null
+          id?: string
+          note_text?: string | null
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_task_notes_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "job_tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       job_tasks: {
         Row: {
           assigned_technician_ids: string[] | null
