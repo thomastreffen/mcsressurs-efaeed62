@@ -1612,6 +1612,68 @@ export type Database = {
           },
         ]
       }
+      job_tasks: {
+        Row: {
+          assigned_technician_ids: string[] | null
+          completed_at: string | null
+          completed_by: string | null
+          created_at: string
+          created_by: string | null
+          description: string | null
+          end_time: string | null
+          id: string
+          job_id: string
+          scheduled_date: string | null
+          sort_order: number
+          start_time: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          assigned_technician_ids?: string[] | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string
+          job_id: string
+          scheduled_date?: string | null
+          sort_order?: number
+          start_time?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          assigned_technician_ids?: string[] | null
+          completed_at?: string | null
+          completed_by?: string | null
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          end_time?: string | null
+          id?: string
+          job_id?: string
+          scheduled_date?: string | null
+          sort_order?: number
+          start_time?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_tasks_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       lead_calendar_links: {
         Row: {
           attendee_emails: string[] | null

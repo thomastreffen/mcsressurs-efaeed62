@@ -31,6 +31,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { JobCalendarSync } from "@/components/JobCalendarSync";
 import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
+import { ProjectPlanTab } from "@/components/ProjectPlanTab";
 import { EmailComposer } from "@/components/EmailComposer";
 import {
   ArrowLeft,
@@ -925,62 +926,21 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── PLAN ── */}
-            <TabsContent value="plan" className="mt-6 min-h-[400px] space-y-6">
-              <SectionCard accent="blue">
-                <SectionTitle icon={<Clock className="h-4 w-4 text-primary" />}>Planlegging</SectionTitle>
-                <div className="space-y-3">
-                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tidspunkt</p>
-                      <p className="text-sm font-medium">{format(job.start, "EEEE d. MMM", { locale: nb })}</p>
-                      <p className="text-xs text-muted-foreground">{format(job.start, "HH:mm")} – {format(job.end, "HH:mm")}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Adresse</p>
-                      <p className="text-sm font-medium">{job.address || "—"}</p>
-                    </div>
-                    <div className="space-y-1">
-                      <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Montører</p>
-                      <p className="text-sm font-medium">
-                        {technicianNames.length > 0 ? technicianNames.join(", ") : `${job.technicianIds.length} tildelt`}
-                      </p>
-                    </div>
-                  </div>
-
-                  {isAdmin && (
-                    <div className="pt-3 border-t border-border/40">
-                      <Button
-                        size="sm"
-                        variant="outline"
-                        className="rounded-xl gap-1.5"
-                        onClick={() => setResourceAssignOpen(true)}
-                      >
-                        <CalendarCheck className="h-3.5 w-3.5" />
-                        Planlegg ressurs
-                      </Button>
-                    </div>
-                  )}
-
-                  {job.attendeeStatuses.length > 0 && (
-                    <div className="pt-3 border-t border-border/40">
-                      <AttendeeStatusList attendeeStatuses={job.attendeeStatuses} />
-                    </div>
-                  )}
-
-                  <div ref={syncRef} className="pt-3 border-t border-border/40">
-                    <JobCalendarSync
-                      jobId={job.id}
-                      jobStart={job.start}
-                      jobEnd={job.end}
-                      technicianIds={job.technicianIds}
-                      isAdmin={isAdmin}
-                      calendarDirty={job.calendarDirty}
-                      calendarLastSyncedAt={job.calendarLastSyncedAt}
-                      onSynced={() => fetchJob()}
-                    />
-                  </div>
-                </div>
-              </SectionCard>
+            <TabsContent value="plan" className="mt-6 min-h-[400px]">
+              <ProjectPlanTab
+                jobId={job.id}
+                jobTitle={job.title}
+                jobStart={job.start}
+                jobEnd={job.end}
+                jobAddress={job.address}
+                technicianIds={job.technicianIds}
+                technicianNames={technicianNames}
+                isAdmin={isAdmin}
+                calendarDirty={job.calendarDirty}
+                calendarLastSyncedAt={job.calendarLastSyncedAt}
+                onSynced={() => fetchJob()}
+                onResourceAssign={() => fetchJob()}
+              />
             </TabsContent>
 
             {/* ── E-POST ── */}
@@ -1089,13 +1049,6 @@ export default function JobDetail() {
         onOpenChange={setLightboxOpen}
         canDelete={isAdmin}
         onDelete={handleDeleteAttachment}
-      />
-      <ResourceAssignDialog
-        open={resourceAssignOpen}
-        onOpenChange={setResourceAssignOpen}
-        projectId={id}
-        projectTitle={job.title}
-        onAssigned={() => { fetchJob(); fetchLogs(); }}
       />
     </>
   );
