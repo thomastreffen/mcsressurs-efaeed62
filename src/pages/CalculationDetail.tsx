@@ -241,7 +241,7 @@ export default function CalculationDetail() {
     await supabase.from("calculations").update(totals).eq("id", calc.id);
     setCalc((prev) => prev ? { ...prev, ...totals } : null);
     setLastSaved(new Date());
-    if (!silent) toast.success("Kalkulasjon lagret");
+    if (!silent) toast.success("Tilbud lagret");
   };
 
   const addItem = async (type: "material" | "labor") => {
@@ -398,8 +398,8 @@ export default function CalculationDetail() {
   if (!calc) return (
     <div className="flex items-center justify-center p-12">
       <div className="text-center space-y-2">
-        <p className="text-lg font-medium">Kalkulasjon ikke funnet</p>
-        <Button variant="outline" onClick={() => navigate("/calculations")}>Tilbake</Button>
+        <p className="text-lg font-medium">Tilbud ikke funnet</p>
+        <Button variant="outline" onClick={() => navigate("/sales/offers")}>Tilbake</Button>
       </div>
     </div>
   );
@@ -426,7 +426,7 @@ export default function CalculationDetail() {
     <div className="mx-auto max-w-5xl p-4 sm:p-6 pb-24 space-y-6">
       {/* ── Navigation row ── */}
       <div className="flex items-center gap-2">
-        <Button variant="ghost" size="sm" onClick={() => navigate("/sales/calculations")} className="gap-1.5 -ml-2">
+        <Button variant="ghost" size="sm" onClick={() => navigate("/sales/offers")} className="gap-1.5 -ml-2">
           <ArrowLeft className="h-4 w-4" /> Tilbake
         </Button>
         {calc.lead_id && (
@@ -437,11 +437,11 @@ export default function CalculationDetail() {
         {lastSaved && <span className="ml-auto text-xs text-muted-foreground">Sist lagret {format(lastSaved, "HH:mm")}</span>}
       </div>
 
-      {/* ── Header: title + status badge (punkt 1) ── */}
+      {/* ── Header: title + status badge ── */}
       <header className="space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between gap-3">
           <div className="space-y-1">
-            <h1 className="text-xl sm:text-2xl font-bold">{calc.project_title}</h1>
+            <h1 className="text-xl sm:text-2xl font-bold">Tilbud — {calc.project_title}</h1>
             <div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
               <span className="flex items-center gap-1.5"><Building2 className="h-3.5 w-3.5" />{calc.customer_name}</span>
               {calc.customer_email && <span className="flex items-center gap-1.5"><Mail className="h-3.5 w-3.5" />{calc.customer_email}</span>}
@@ -462,7 +462,7 @@ export default function CalculationDetail() {
           </div>
         </div>
 
-        {/* ── Dynamic action bar (punkt 2) ── */}
+        {/* ── Dynamic action bar ── */}
         {isAdmin && (
           <div className="flex flex-wrap items-center gap-2 rounded-xl border border-border/40 bg-muted/30 p-3">
             {/* Draft actions */}
@@ -491,7 +491,7 @@ export default function CalculationDetail() {
                 {calcChangedSinceOffer && (
                   <Button onClick={handleGenerateOffer} disabled={pdfLoading} size="sm" variant="outline" className="gap-1.5 rounded-lg border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300">
                     {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-                    Opprett ny versjon
+                    Generer oppdatert tilbud
                   </Button>
                 )}
                 <Button onClick={handleSendOffer} size="sm" className="gap-1.5 rounded-lg">
@@ -503,6 +503,12 @@ export default function CalculationDetail() {
             {/* Sent actions */}
             {calc.status === "sent" && (
               <>
+                {calcChangedSinceOffer && (
+                  <Button onClick={handleGenerateOffer} disabled={pdfLoading} size="sm" variant="outline" className="gap-1.5 rounded-lg border-orange-300 text-orange-700 dark:border-orange-700 dark:text-orange-300">
+                    {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+                    Generer oppdatert tilbud
+                  </Button>
+                )}
                 <Button onClick={handleMarkAccepted} size="sm" className="gap-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white">
                   <CheckCircle2 className="h-3.5 w-3.5" /> Marker som akseptert
                 </Button>
@@ -528,18 +534,13 @@ export default function CalculationDetail() {
           </div>
         )}
 
-        {/* ── Smart versioning info (punkt 3) ── */}
-        {calcChangedSinceOffer && offers.length > 0 && isAdmin && calc.status === "generated" && (
-          <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3 flex items-start gap-2">
-            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 mt-0.5 shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">Kalkylen er endret siden siste genererte versjon</p>
-              <p className="text-xs text-orange-700 dark:text-orange-300">Opprett ny versjon for å oppdatere tilbudet.</p>
-            </div>
-            <Button size="sm" variant="outline" onClick={handleGenerateOffer} disabled={pdfLoading} className="gap-1.5 shrink-0 rounded-lg">
-              {pdfLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
-              Opprett ny versjon
-            </Button>
+        {/* ── Changed since last version badge ── */}
+        {calcChangedSinceOffer && offers.length > 0 && isAdmin && (calc.status === "generated" || calc.status === "sent") && (
+          <div className="rounded-xl border border-orange-200 dark:border-orange-800 bg-orange-50 dark:bg-orange-950 p-3 flex items-center gap-2">
+            <AlertCircle className="h-4 w-4 text-orange-600 dark:text-orange-400 shrink-0" />
+            <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+              Endret siden v{latestOffer?.version}
+            </p>
           </div>
         )}
 
@@ -586,7 +587,7 @@ export default function CalculationDetail() {
       <Tabs defaultValue="overview">
         <TabsList className="w-full sm:w-auto flex overflow-x-auto rounded-xl">
           <TabsTrigger value="overview" className="gap-1.5 rounded-lg"><FileText className="h-3.5 w-3.5" />Oversikt</TabsTrigger>
-          <TabsTrigger value="items" className="gap-1.5 rounded-lg"><Package className="h-3.5 w-3.5" />Kalkylelinjer ({items.length})</TabsTrigger>
+          <TabsTrigger value="items" className="gap-1.5 rounded-lg"><Package className="h-3.5 w-3.5" />Kalkyle ({items.length})</TabsTrigger>
           <TabsTrigger value="versions" className="gap-1.5 rounded-lg"><ReceiptText className="h-3.5 w-3.5" />Versjoner ({offers.length})</TabsTrigger>
           <TabsTrigger value="attachments" className="gap-1.5 rounded-lg"><Paperclip className="h-3.5 w-3.5" />Vedlegg {attachments.length > 0 && `(${attachments.length})`}</TabsTrigger>
           <TabsTrigger value="history" className="gap-1.5 rounded-lg"><History className="h-3.5 w-3.5" />Historikk</TabsTrigger>
@@ -905,7 +906,7 @@ export default function CalculationDetail() {
               <div className="flex items-start gap-3 text-sm">
                 <div className="w-1.5 h-1.5 rounded-full bg-primary mt-2 shrink-0" />
                 <div>
-                  <p className="font-medium">Kalkulasjon opprettet</p>
+                  <p className="font-medium">Tilbud opprettet</p>
                   <p className="text-xs text-muted-foreground">{format(new Date(calc.created_at), "d. MMM yyyy HH:mm", { locale: nb })}</p>
                 </div>
               </div>

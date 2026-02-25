@@ -46,8 +46,7 @@ const salesNav = [
   { title: "Sales Pulse", url: "/sales", icon: BarChart3 },
   { title: "Pipeline", url: "/sales/pipeline", icon: TrendingUp },
   { title: "Leads", url: "/sales/leads", icon: UserPlus },
-  { title: "Kalkulasjoner", url: "/sales/calculations", icon: Calculator },
-  { title: "Tilbudsoversikt", url: "/sales/offers", icon: ReceiptText },
+  { title: "Tilbud", url: "/sales/offers", icon: ReceiptText },
 ];
 
 const projectNav = [
