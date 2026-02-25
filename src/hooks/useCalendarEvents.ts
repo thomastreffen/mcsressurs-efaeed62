@@ -14,12 +14,13 @@ export interface CalendarEvent extends Job {
   technicians: TechnicianInfo[];
 }
 
-export function useCalendarEvents(technicianId: string | null) {
+export function useCalendarEvents(technicianId: string | null, referenceDate?: Date) {
   const [events, setEvents] = useState<CalendarEvent[]>([]);
   const [loading, setLoading] = useState(false);
 
-  const weekStart = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
-  const weekEnd = useMemo(() => endOfWeek(new Date(), { weekStartsOn: 1 }), []);
+  const refDate = referenceDate ?? new Date();
+  const weekStart = useMemo(() => startOfWeek(refDate, { weekStartsOn: 1 }), [refDate.toDateString()]);
+  const weekEnd = useMemo(() => endOfWeek(refDate, { weekStartsOn: 1 }), [refDate.toDateString()]);
   const weekStartISO = weekStart.toISOString();
   const weekEndISO = weekEnd.toISOString();
 
@@ -67,14 +68,12 @@ export function useCalendarEvents(technicianId: string | null) {
 
       const allEvents = data ?? [];
 
-      // Filter by technician if one is selected
       const filtered = technicianId
         ? allEvents.filter((e: any) =>
             e.event_technicians?.some((et: any) => et.technician_id === technicianId)
           )
         : allEvents;
 
-      // Deduplicate by event.id
       const uniqueMap = new Map<string, (typeof filtered)[0]>();
       for (const e of filtered) {
         uniqueMap.set(e.id, e);
@@ -112,7 +111,7 @@ export function useCalendarEvents(technicianId: string | null) {
         };
       });
 
-      console.log(`[Calendar] Fetched ${mapped.length} unique events (tech: ${technicianId ?? "ALL"})`);
+      console.log(`[Calendar] Fetched ${mapped.length} unique events (tech: ${technicianId ?? "ALL"}, week: ${weekStartISO.slice(0, 10)})`);
       setEvents(mapped);
     } catch (err) {
       console.error("[Calendar] Fetch exception:", err);
@@ -121,12 +120,10 @@ export function useCalendarEvents(technicianId: string | null) {
     }
   }, [technicianId, weekStartISO, weekEndISO]);
 
-  // Initial fetch
   useEffect(() => {
     fetchEvents();
   }, [fetchEvents]);
 
-  // Realtime – only on events table
   useEffect(() => {
     const channel = supabase
       .channel("calendar-updates")
