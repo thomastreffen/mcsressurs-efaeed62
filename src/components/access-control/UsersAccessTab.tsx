@@ -108,8 +108,9 @@ export function UsersAccessTab() {
     setDialogOpen(true);
   };
 
-  const toggleRole = (roleId: string) => {
-    setSelectedRoles((prev) => prev.includes(roleId) ? prev.filter((r) => r !== roleId) : [...prev, roleId]);
+  const selectRole = (roleId: string) => {
+    // Mutually exclusive: only one role at a time
+    setSelectedRoles((prev) => prev.includes(roleId) ? [] : [roleId]);
   };
 
   const toggleMembership = (companyId: string, deptId: string | null) => {
@@ -231,7 +232,7 @@ export function UsersAccessTab() {
                   <div className="space-y-1.5 mt-2">
                     {roles.map((r) => (
                       <label key={r.id} className="flex items-center gap-2 cursor-pointer text-sm">
-                        <Checkbox checked={selectedRoles.includes(r.id)} onCheckedChange={() => toggleRole(r.id)} />
+                        <Checkbox checked={selectedRoles.includes(r.id)} onCheckedChange={() => selectRole(r.id)} />
                         {r.name}
                       </label>
                     ))}
