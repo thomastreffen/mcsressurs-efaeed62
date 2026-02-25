@@ -69,7 +69,7 @@ interface ActivityFeedItem {
 function SectionHeader({ title, action }: { title: string; action?: React.ReactNode }) {
   return (
     <div className="flex items-center justify-between mb-4">
-      <h2 className="text-sm font-semibold text-foreground tracking-tight">{title}</h2>
+      <h2 className="text-[15px] font-semibold text-foreground tracking-tight">{title}</h2>
       {action}
     </div>
   );
@@ -91,12 +91,21 @@ function ActivityIcon({ type }: { type: ActivityFeedItem["type"] }) {
 
 function UrgencyBadge({ urgency }: { urgency: "today" | "this_week" | "overdue" }) {
   const map = {
-    overdue: { text: "Forfalt", cls: "bg-destructive/10 text-destructive" },
+    overdue: { text: "Forfalt", cls: "bg-destructive/15 text-destructive font-semibold" },
     today: { text: "I dag", cls: "bg-primary/10 text-primary" },
     this_week: { text: "Denne uken", cls: "bg-muted text-muted-foreground" },
   };
   const { text, cls } = map[urgency];
-  return <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${cls}`}>{text}</span>;
+  return <span className={`text-[11px] font-medium rounded-full px-2.5 py-0.5 ${cls}`}>{text}</span>;
+}
+
+function ModuleBadge({ module }: { module: string }) {
+  const map: Record<string, string> = {
+    "Salg": "bg-primary/8 text-primary",
+    "Prosjekt": "bg-accent/10 text-accent",
+    "System": "bg-muted text-muted-foreground",
+  };
+  return <span className={`text-[10px] font-medium rounded-full px-2 py-0.5 ${map[module] || "bg-muted text-muted-foreground"}`}>{module}</span>;
 }
 
 // ── Pulse stripe ──
@@ -370,28 +379,29 @@ export default function OverviewPage() {
         {pulse && <PulseStripe pulse={pulse} />}
       </div>
 
-      {/* ── 1. KREVER HANDLING — Primary section, full width ── */}
-      <div className="rounded-2xl bg-destructive/[0.03] border border-destructive/10 p-5 sm:p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="flex items-center gap-2">
-            <div className="h-8 w-8 rounded-full bg-destructive/10 flex items-center justify-center">
-              <AlertTriangle className="h-4 w-4 text-destructive" />
+      {/* ── 1. KREVER HANDLING — Hero section ── */}
+      <div className="rounded-2xl bg-destructive/[0.04] border border-destructive/10 p-5 sm:p-7">
+        <div className="flex items-center justify-between mb-5">
+          <div className="flex items-center gap-3">
+            <div className="h-9 w-9 rounded-full bg-destructive/10 flex items-center justify-center">
+              <AlertTriangle className="h-[18px] w-[18px] text-destructive" />
             </div>
-            <h2 className="text-base font-bold text-foreground tracking-tight">Krever handling</h2>
+            <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Krever handling</h2>
             {actions.length > 0 && (
-              <Badge variant="destructive" className="text-[10px] font-mono rounded-full px-2 ml-1">
+              <Badge variant="destructive" className="text-xs font-mono rounded-full px-2.5 py-0.5 ml-1 font-bold">
                 {actions.reduce((s, a) => s + a.count, 0)}
               </Badge>
             )}
           </div>
         </div>
+
         {actions.length > 0 ? (
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2.5">
             {actions.slice(0, 9).map((a, i) => (
               <button
                 key={i}
                 onClick={() => navigate(a.href)}
-                className="flex items-center gap-3 w-full rounded-xl px-3.5 py-3 text-left bg-card border border-border/30 hover:shadow-md hover:border-primary/20 active:scale-[0.99] transition-all duration-150 group"
+                className="flex items-center gap-3 w-full rounded-xl px-4 py-3.5 text-left bg-card border border-border/30 hover:shadow-md hover:border-primary/20 active:scale-[0.99] transition-all duration-150 group"
               >
                 <div className={`flex items-center justify-center h-9 w-9 rounded-full shrink-0 ${
                   a.severity === "critical" ? "bg-destructive/10" : a.severity === "warning" ? "bg-accent/10" : "bg-muted"
@@ -401,13 +411,13 @@ export default function OverviewPage() {
                   }`} />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <p className="text-sm font-medium text-foreground truncate group-hover:text-primary transition-colors">{a.label}</p>
-                  <div className="flex items-center gap-2 mt-0.5">
-                    <span className="text-[10px] text-muted-foreground">{a.module}</span>
+                  <p className="text-[15px] sm:text-base font-medium text-foreground truncate group-hover:text-primary transition-colors leading-snug">{a.label}</p>
+                  <div className="flex items-center gap-2 mt-1">
+                    <ModuleBadge module={a.module} />
                     <UrgencyBadge urgency={a.urgency} />
                   </div>
                 </div>
-                <Badge variant="secondary" className="text-xs font-mono rounded-full px-2.5 py-0.5 font-bold">
+                <Badge variant="secondary" className="text-sm font-mono rounded-full px-3 py-0.5 font-bold">
                   {a.count}
                 </Badge>
                 <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-primary/60 transition-colors shrink-0" />
@@ -415,155 +425,158 @@ export default function OverviewPage() {
             ))}
           </div>
         ) : (
-          <div className="flex items-center gap-3 py-4 px-2">
-            <div className="h-10 w-10 rounded-full bg-success/10 flex items-center justify-center">
-              <Activity className="h-5 w-5 text-success" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-foreground">Alt i balanse</p>
-              <p className="text-xs text-muted-foreground/70">Ingen kritiske oppgaver akkurat nå</p>
-            </div>
+          <div className="space-y-3 py-2">
+            {[
+              { icon: <Activity className="h-4 w-4 text-muted-foreground/40" />, text: "Ingen forfalte oppfølginger" },
+              { icon: <ShieldAlert className="h-4 w-4 text-muted-foreground/40" />, text: "Ingen kritiske risikoer" },
+              { icon: <Clock className="h-4 w-4 text-muted-foreground/40" />, text: "Ingen ventende handlinger" },
+            ].map((cp, i) => (
+              <div key={i} className="flex items-center gap-3 px-2 py-1.5">
+                <div className="h-8 w-8 rounded-full bg-muted/60 flex items-center justify-center">{cp.icon}</div>
+                <span className="text-sm text-muted-foreground/60">{cp.text}</span>
+              </div>
+            ))}
           </div>
         )}
       </div>
 
-      {/* ── 2. KPI CARDS — Compact secondary row ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <button onClick={() => navigate("/projects")}
-          className="flex items-center gap-3 rounded-xl bg-card border border-border/40 px-4 py-3 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all">
-          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-            <Briefcase className="h-4 w-4 text-primary" />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-xl font-bold font-mono text-foreground leading-none">{today.activeProjects}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Prosjekter</p>
-          </div>
-          {deltas.activeProjects !== null && deltas.activeProjects !== 0 && (
-            <span className={`text-[10px] font-mono font-medium ml-auto ${deltas.activeProjects > 0 ? "text-success" : "text-destructive"}`}>
-              {deltas.activeProjects > 0 ? "+" : ""}{deltas.activeProjects}
-            </span>
-          )}
-        </button>
-        <button onClick={() => navigate("/sales/leads")}
-          className="flex items-center gap-3 rounded-xl bg-card border border-border/40 px-4 py-3 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all">
-          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-            <CalendarDays className="h-4 w-4 text-primary" />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-xl font-bold font-mono text-foreground leading-none">{today.meetingsToday}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">
-              {todayCtx.nextMeetingTime ? `Neste kl ${todayCtx.nextMeetingTime}` : "Møter i dag"}
-            </p>
-          </div>
-        </button>
-        <button onClick={() => navigate("/sales/leads")}
-          className="flex items-center gap-3 rounded-xl bg-card border border-border/40 px-4 py-3 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all">
-          <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${today.overdueFollowups > 0 ? "bg-accent/10" : "bg-muted"}`}>
-            <Clock className={`h-4 w-4 ${today.overdueFollowups > 0 ? "text-accent" : "text-muted-foreground"}`} />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-xl font-bold font-mono text-foreground leading-none">{today.overdueFollowups}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Oppfølginger</p>
-          </div>
-          {deltas.overdueFollowups !== null && deltas.overdueFollowups !== 0 && (
-            <span className={`text-[10px] font-mono font-medium ml-auto ${deltas.overdueFollowups > 0 ? "text-destructive" : "text-success"}`}>
-              {deltas.overdueFollowups > 0 ? "+" : ""}{deltas.overdueFollowups}
-            </span>
-          )}
-        </button>
-        <button onClick={() => navigate("/projects")}
-          className="flex items-center gap-3 rounded-xl bg-card border border-border/40 px-4 py-3 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all">
-          <div className={`h-9 w-9 rounded-full flex items-center justify-center shrink-0 ${today.criticalRisks > 0 ? "bg-destructive/10" : "bg-muted"}`}>
-            <ShieldAlert className={`h-4 w-4 ${today.criticalRisks > 0 ? "text-destructive" : "text-muted-foreground"}`} />
-          </div>
-          <div className="text-left min-w-0">
-            <p className="text-xl font-bold font-mono text-foreground leading-none">{today.criticalRisks}</p>
-            <p className="text-[10px] text-muted-foreground mt-0.5">Kritiske risikoer</p>
-          </div>
-          {deltas.criticalRisks !== null && deltas.criticalRisks !== 0 && (
-            <span className={`text-[10px] font-mono font-medium ml-auto ${deltas.criticalRisks > 0 ? "text-destructive" : "text-success"}`}>
-              {deltas.criticalRisks > 0 ? "+" : ""}{deltas.criticalRisks}
-            </span>
-          )}
-        </button>
+      {/* ── 2. DRIFTSTEMPERATUR — 4 compact KPI cards ── */}
+      <div>
+        <SectionHeader title="Driftstemperatur" />
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {([
+            {
+              label: "Aktive prosjekter",
+              value: today.activeProjects,
+              delta: deltas.activeProjects,
+              icon: <Briefcase className="h-4 w-4 text-primary" />,
+              href: "/projects",
+              context: today.activeProjects === 0 ? "Ingen aktive" : `${today.activeProjects} under arbeid`,
+              invertDelta: false,
+            },
+            {
+              label: "Møter i dag",
+              value: today.meetingsToday,
+              delta: null as number | null,
+              icon: <CalendarDays className="h-4 w-4 text-primary" />,
+              href: "/sales/leads",
+              context: todayCtx.nextMeetingTime ? `Neste kl ${todayCtx.nextMeetingTime}` : "Ingen møter i dag",
+              invertDelta: false,
+            },
+            {
+              label: "Oppfølginger",
+              value: today.overdueFollowups,
+              delta: deltas.overdueFollowups,
+              icon: <Clock className={`h-4 w-4 ${today.overdueFollowups > 0 ? "text-accent" : "text-muted-foreground"}`} />,
+              href: "/sales/leads",
+              context: today.overdueFollowups > 0 ? `${today.overdueFollowups} venter` : "Alle håndtert",
+              invertDelta: true,
+            },
+            {
+              label: "Kritiske risikoer",
+              value: today.criticalRisks,
+              delta: deltas.criticalRisks,
+              icon: <ShieldAlert className={`h-4 w-4 ${today.criticalRisks > 0 ? "text-destructive" : "text-muted-foreground"}`} />,
+              href: "/projects",
+              context: today.criticalRisks > 0 ? "Krever oppmerksomhet" : "Ingen kritiske",
+              invertDelta: true,
+            },
+          ] as const).map((kpi, i) => (
+            <button
+              key={i}
+              onClick={() => navigate(kpi.href)}
+              className="flex flex-col rounded-xl bg-card border border-border/40 px-4 py-4 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all text-left"
+            >
+              <div className="flex items-center justify-between w-full mb-2">
+                <div className="h-8 w-8 rounded-full bg-primary/8 flex items-center justify-center shrink-0">{kpi.icon}</div>
+                {kpi.delta !== null && kpi.delta !== 0 && (
+                  <span className={`text-xs font-mono font-semibold flex items-center gap-0.5 ${
+                    (kpi.invertDelta ? kpi.delta < 0 : kpi.delta > 0) ? "text-success" : "text-destructive"
+                  }`}>
+                    <TrendingUp className={`h-3 w-3 ${kpi.delta < 0 ? "rotate-180" : ""}`} />
+                    {kpi.delta > 0 ? "+" : ""}{kpi.delta}
+                  </span>
+                )}
+              </div>
+              <p className="text-[28px] sm:text-[32px] font-bold font-mono text-foreground leading-none tracking-tight">{kpi.value}</p>
+              <p className="text-[11px] text-muted-foreground/60 mt-1 uppercase tracking-wider font-medium">{kpi.label}</p>
+              <p className="text-xs text-muted-foreground mt-1.5">{kpi.context}</p>
+            </button>
+          ))}
+        </div>
       </div>
 
-      {/* ── 3. BEVEGELSE + AKTIVITET — Two columns ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        {/* Bevegelse siste 7 dager */}
-        <div className="rounded-2xl bg-card border border-border/40 p-5">
-          <SectionHeader title="Bevegelse siste 7 dager" />
-          <div className="space-y-2.5">
-            {tempoLines.map(line => {
-              const isPositive = line.value > 0;
-              const isNegative = line.value < 0;
-              const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
-              const colorClass = isPositive ? "text-success" : isNegative ? "text-destructive" : "text-muted-foreground";
-              return (
-                <div key={line.label} className="flex items-center justify-between">
-                  <span className="text-xs text-muted-foreground">{line.label}</span>
-                  <span className={`text-sm font-mono font-semibold ${colorClass}`}>
-                    {line.value === 0 ? "—" : `${arrow} ${Math.abs(line.value)}${line.suffix || ""}`}
-                  </span>
+      {/* ── 3. AKTIVITET SISTE 24 TIMER — Full width log ── */}
+      <div className="rounded-2xl bg-card border border-border/40 p-5 sm:p-6">
+        <SectionHeader
+          title="Aktivitet siste 24 timer"
+          action={<span className="text-[11px] text-muted-foreground/50 uppercase tracking-wider">Live</span>}
+        />
+        {activityFeed.length > 0 ? (
+          <div className="space-y-0.5">
+            {activityFeed.map(item => (
+              <button
+                key={item.id}
+                onClick={() => navigate(item.href)}
+                className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-secondary/50 active:scale-[0.995] transition-all group"
+              >
+                <ActivityIcon type={item.type} />
+                <div className="min-w-0 flex-1">
+                  <span className="text-[15px] sm:text-base text-foreground truncate block leading-snug group-hover:text-primary transition-colors">{item.description}</span>
                 </div>
-              );
-            })}
+                <span className="text-[11px] text-muted-foreground/50 shrink-0">
+                  {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: nb })}
+                </span>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors shrink-0" />
+              </button>
+            ))}
           </div>
+        ) : (
+          <p className="text-sm text-muted-foreground/50 py-8 text-center">Ingen ny aktivitet siste 24 timer</p>
+        )}
+      </div>
 
-          {weekResources.length > 0 && (
-            <div className="mt-5 pt-4 border-t border-border/30">
-              <div className="flex items-center justify-between mb-3">
-                <span className="text-xs font-medium text-muted-foreground">Ressursbelastning denne uken</span>
-                <button onClick={() => navigate("/projects/plan")} className="text-[10px] text-primary hover:underline flex items-center gap-0.5">
-                  Plan <ArrowRight className="h-2.5 w-2.5" />
-                </button>
+      {/* ── 4. BEVEGELSE SISTE 7 DAGER — Compact bottom section ── */}
+      <div className="rounded-2xl bg-card border border-border/40 p-5">
+        <SectionHeader title="Bevegelse siste 7 dager" />
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-x-6 gap-y-3">
+          {tempoLines.map(line => {
+            const isPositive = line.value > 0;
+            const isNegative = line.value < 0;
+            const arrow = isPositive ? "↑" : isNegative ? "↓" : "";
+            const colorClass = isPositive ? "text-success" : isNegative ? "text-destructive" : "text-muted-foreground";
+            return (
+              <div key={line.label} className="flex flex-col">
+                <span className={`text-lg font-mono font-bold ${colorClass} leading-none`}>
+                  {line.value === 0 ? "—" : `${arrow} ${Math.abs(line.value)}${line.suffix || ""}`}
+                </span>
+                <span className="text-[11px] text-muted-foreground/60 mt-1">{line.label}</span>
               </div>
-              <div className="space-y-2">
-                {weekResources.map(r => (
-                  <div key={r.name} className="flex items-center gap-2">
-                    <span className="text-xs text-foreground w-20 truncate">{r.name}</span>
-                    <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
-                      <div
-                        className="h-full rounded-full bg-primary/60 transition-all"
-                        style={{ width: `${Math.min(100, (r.hours / 40) * 100)}%` }}
-                      />
-                    </div>
-                    <span className="text-[10px] text-muted-foreground font-mono w-8 text-right">{r.hours}t</span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
+            );
+          })}
         </div>
 
-        {/* Aktivitet siste 24 timer */}
-        <div className="rounded-2xl bg-card border border-border/40 p-5">
-          <SectionHeader
-            title="Aktivitet siste 24 timer"
-            action={<span className="text-xs text-muted-foreground/70">Siste hendelser</span>}
-          />
-          {activityFeed.length > 0 ? (
-            <div className="space-y-1">
-              {activityFeed.map(item => (
-                <button
-                  key={item.id}
-                  onClick={() => navigate(item.href)}
-                  className="flex items-center gap-3 w-full rounded-xl px-2 py-2 text-left hover:bg-secondary/50 transition-colors group"
-                >
-                  <ActivityIcon type={item.type} />
-                  <div className="min-w-0 flex-1">
-                    <span className="text-xs text-foreground truncate block">{item.description}</span>
+        {weekResources.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-border/30">
+            <div className="flex items-center justify-between mb-3">
+              <span className="text-xs font-medium text-muted-foreground">Ressursbelastning denne uken</span>
+              <button onClick={() => navigate("/projects/plan")} className="text-[11px] text-primary hover:underline flex items-center gap-0.5">
+                Plan <ArrowRight className="h-2.5 w-2.5" />
+              </button>
+            </div>
+            <div className="space-y-2">
+              {weekResources.map(r => (
+                <div key={r.name} className="flex items-center gap-2">
+                  <span className="text-xs text-foreground w-20 truncate">{r.name}</span>
+                  <div className="flex-1 h-2 rounded-full bg-secondary overflow-hidden">
+                    <div className="h-full rounded-full bg-primary/60 transition-all" style={{ width: `${Math.min(100, (r.hours / 40) * 100)}%` }} />
                   </div>
-                  <span className="text-[10px] text-muted-foreground shrink-0">
-                    {formatDistanceToNow(new Date(item.created_at), { addSuffix: true, locale: nb })}
-                  </span>
-                </button>
+                  <span className="text-[10px] text-muted-foreground font-mono w-8 text-right">{r.hours}t</span>
+                </div>
               ))}
             </div>
-          ) : (
-            <p className="text-xs text-muted-foreground/60 py-6 text-center">Ingen ny aktivitet siste 24 timer</p>
-          )}
-        </div>
+          </div>
+        )}
       </div>
     </div>
   );
