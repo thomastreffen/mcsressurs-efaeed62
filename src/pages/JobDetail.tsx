@@ -694,19 +694,42 @@ export default function JobDetail() {
           </div>
 
           {/* Tabbed Navigation */}
-          <Tabs defaultValue="oversikt" className="mt-6">
-            <TabsList className="h-9 w-full justify-start overflow-x-auto bg-muted/50 rounded-xl">
-              <TabsTrigger value="oversikt" className="text-xs px-3 py-1.5 rounded-lg">Oversikt</TabsTrigger>
-              <TabsTrigger value="okonomi" className="text-xs px-3 py-1.5 rounded-lg">Økonomi</TabsTrigger>
-              <TabsTrigger value="dokumenter" className="text-xs px-3 py-1.5 rounded-lg">Dokumenter</TabsTrigger>
-              <TabsTrigger value="plan" className="text-xs px-3 py-1.5 rounded-lg">Plan</TabsTrigger>
-              <TabsTrigger value="epost" className="text-xs px-3 py-1.5 rounded-lg">E-post</TabsTrigger>
-              <TabsTrigger value="risiko" className="text-xs px-3 py-1.5 rounded-lg">Risiko</TabsTrigger>
-              <TabsTrigger value="tillegg" className="text-xs px-3 py-1.5 rounded-lg">Tillegg</TabsTrigger>
-            </TabsList>
+          <Tabs defaultValue="oversikt" className="mt-8">
+            <div className="sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 bg-card/95 backdrop-blur-md pb-1 pt-2 border-b border-border/40">
+              <TabsList className="h-11 w-full justify-start gap-1 bg-transparent p-0 overflow-x-auto">
+                <TabsTrigger value="oversikt" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <FileText className="h-4 w-4" />
+                  Oversikt
+                </TabsTrigger>
+                <TabsTrigger value="okonomi" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <span className="text-base leading-none">💰</span>
+                  Økonomi
+                </TabsTrigger>
+                <TabsTrigger value="dokumenter" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <Download className="h-4 w-4" />
+                  Dokumenter
+                </TabsTrigger>
+                <TabsTrigger value="plan" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <CalendarCheck className="h-4 w-4" />
+                  Plan
+                </TabsTrigger>
+                <TabsTrigger value="epost" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <Mail className="h-4 w-4" />
+                  E-post
+                </TabsTrigger>
+                <TabsTrigger value="risiko" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <span className="text-base leading-none">⚠️</span>
+                  Risiko
+                </TabsTrigger>
+                <TabsTrigger value="tillegg" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <FileSignature className="h-4 w-4" />
+                  Tillegg
+                </TabsTrigger>
+              </TabsList>
+            </div>
 
             {/* ── OVERSIKT ── */}
-            <TabsContent value="oversikt" className="mt-5 space-y-6">
+            <TabsContent value="oversikt" className="mt-6 min-h-[400px] space-y-6">
               {/* Action section */}
               <ProjectPulseActions jobId={id!} />
 
@@ -805,7 +828,7 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── ØKONOMI ── */}
-            <TabsContent value="okonomi" className="mt-5 space-y-6">
+            <TabsContent value="okonomi" className="mt-6 min-h-[400px] space-y-6">
               {/* KPI Cards */}
               {econData.totalAmount != null ? (
                 <>
@@ -895,14 +918,14 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── DOKUMENTER ── */}
-            <TabsContent value="dokumenter" className="mt-5">
+            <TabsContent value="dokumenter" className="mt-6 min-h-[400px]">
               <SectionCard>
                 <DocumentCenter jobId={id!} companyId={null} />
               </SectionCard>
             </TabsContent>
 
             {/* ── PLAN ── */}
-            <TabsContent value="plan" className="mt-5 space-y-6">
+            <TabsContent value="plan" className="mt-6 min-h-[400px] space-y-6">
               <SectionCard accent="blue">
                 <SectionTitle icon={<Clock className="h-4 w-4 text-primary" />}>Planlegging</SectionTitle>
                 <div className="space-y-3">
@@ -961,7 +984,7 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── E-POST ── */}
-            <TabsContent value="epost" className="mt-5">
+            <TabsContent value="epost" className="mt-6 min-h-[400px]">
               <div ref={emailRef}>
                 <SectionCard accent="orange">
                   <EmailComposer
@@ -976,7 +999,7 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── RISIKO ── */}
-            <TabsContent value="risiko" className="mt-5">
+            <TabsContent value="risiko" className="mt-6 min-h-[400px]">
               <SectionCard>
                 <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Risikooversikt</SectionTitle>
                 <JobRiskPanel jobId={id!} companyId={undefined} />
@@ -984,7 +1007,7 @@ export default function JobDetail() {
             </TabsContent>
 
             {/* ── TILLEGG ── */}
-            <TabsContent value="tillegg" className="mt-5">
+            <TabsContent value="tillegg" className="mt-6 min-h-[400px]">
               <SectionCard>
                 <ChangeOrderTab
                   jobId={id!}
