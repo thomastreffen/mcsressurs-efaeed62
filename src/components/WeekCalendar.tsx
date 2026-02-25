@@ -12,6 +12,7 @@ import type { ExternalBusySlot } from "@/hooks/useExternalBusy";
 interface WeekCalendarProps {
   technicianId: string | null;
   onJobClick?: (job: CalendarEvent) => void;
+  onDayClick?: (date: Date) => void;
   getBusySlotsForDay?: (date: Date) => ExternalBusySlot[];
   getExternalBusyMinutesForDay?: (date: Date) => number;
 }
@@ -84,7 +85,7 @@ const BusyBlock = memo(function BusyBlock({ slot }: { slot: ExternalBusySlot }) 
   );
 });
 
-export function WeekCalendar({ technicianId, onJobClick, getBusySlotsForDay, getExternalBusyMinutesForDay }: WeekCalendarProps) {
+export function WeekCalendar({ technicianId, onJobClick, onDayClick, getBusySlotsForDay, getExternalBusyMinutesForDay }: WeekCalendarProps) {
   const { getJobsForDay, getBookedMinutesForDay, loading } = useCalendarEvents(technicianId);
   const isMobile = useIsMobile();
   const weekStart = useMemo(() => startOfWeek(new Date(), { weekStartsOn: 1 }), []);
@@ -167,7 +168,14 @@ export function WeekCalendar({ technicianId, onJobClick, getBusySlotsForDay, get
               </div>
             )}
 
-            <div className="flex-1 p-1.5 space-y-1">
+            <div
+              className={cn("flex-1 p-1.5 space-y-1", onDayClick && "cursor-pointer hover:bg-accent/30 transition-colors")}
+              onClick={(e) => {
+                // Only fire if clicking empty space, not a card
+                if ((e.target as HTMLElement).closest("button")) return;
+                onDayClick?.(day);
+              }}
+            >
               {dayBusySlots.map((slot, i) => (
                 <BusyBlock key={`busy-${i}`} slot={slot} />
               ))}
@@ -179,6 +187,11 @@ export function WeekCalendar({ technicianId, onJobClick, getBusySlotsForDay, get
                   onClick={onJobClick}
                 />
               ))}
+              {dayJobs.length === 0 && dayBusySlots.length === 0 && onDayClick && (
+                <div className="flex items-center justify-center h-full min-h-[40px] opacity-0 hover:opacity-40 transition-opacity">
+                  <span className="text-xs text-muted-foreground">+ Klikk for å legge til</span>
+                </div>
+              )}
             </div>
           </div>
         );

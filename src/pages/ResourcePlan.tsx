@@ -3,7 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { WeekCalendar } from "@/components/WeekCalendar";
 import { TechnicianList } from "@/components/TechnicianList";
 import { StatusLegend } from "@/components/StatusLegend";
-import { CreateJobDialog } from "@/components/CreateJobDialog";
+import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { format } from "date-fns";
@@ -22,10 +22,17 @@ export default function ResourcePlan() {
   const { technicians } = useTechnicians();
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const { getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
-  const [createOpen, setCreateOpen] = useState(false);
+  const [assignOpen, setAssignOpen] = useState(false);
+  const [clickedDate, setClickedDate] = useState<Date | null>(null);
 
   const handleJobClick = (job: CalendarEvent) => {
     navigate(`/projects/${job.id}`);
+  };
+
+  const handleDayClick = (date: Date) => {
+    if (!isAdmin) return;
+    setClickedDate(date);
+    setAssignOpen(true);
   };
 
   return (
@@ -84,9 +91,9 @@ export default function ResourcePlan() {
             <StatusLegend />
 
             {isAdmin && (
-              <Button onClick={() => setCreateOpen(true)} size="sm" className="gap-1.5 rounded-xl">
+              <Button onClick={() => { setClickedDate(null); setAssignOpen(true); }} size="sm" className="gap-1.5 rounded-xl">
                 <Plus className="h-4 w-4" />
-                Ny jobb
+                Tildel ressurs
               </Button>
             )}
           </div>
@@ -95,14 +102,16 @@ export default function ResourcePlan() {
         <WeekCalendar
           technicianId={selectedTechId}
           onJobClick={handleJobClick}
+          onDayClick={isAdmin ? handleDayClick : undefined}
           getBusySlotsForDay={getBusySlotsForDay}
           getExternalBusyMinutesForDay={getExternalBusyMinutesForDay}
         />
       </div>
 
-      <CreateJobDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
+      <ResourceAssignDialog
+        open={assignOpen}
+        onOpenChange={setAssignOpen}
+        preselectedDate={clickedDate}
         preselectedTechId={selectedTechId}
       />
     </div>
