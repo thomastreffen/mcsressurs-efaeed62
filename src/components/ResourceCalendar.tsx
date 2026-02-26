@@ -119,6 +119,7 @@ export function ResourceCalendar({
     });
 
     // External busy slots – merged and solid
+    let missingNameCount = 0;
     if (getBusySlotsForDay) {
       const weekStart = new Date(referenceDate);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
@@ -137,9 +138,17 @@ export function ResourceCalendar({
           const merged = mergeExternalSlots(techSlots);
           const tech = technicianMap.get(techId);
           for (const slot of merged) {
+            const techName = tech?.name?.trim();
+            const displayName = techName
+              ? techName.split(" ")[0]
+              : "Ukjent montør";
+            if (!techName) {
+              missingNameCount++;
+              console.warn(`[ResourceCalendar] Busy slot missing technician name – techId=${techId}, slot=${slot.start.toISOString()}`);
+            }
             result.push({
               id: `busy-${techId}-${slot.start.getTime()}`,
-              title: tech?.name ? `${tech.name.split(" ")[0]} – opptatt` : "Opptatt (ekstern)",
+              title: `${displayName} – opptatt`,
               start: slot.start,
               end: slot.end,
               backgroundColor: "#D1D5DB",
@@ -148,12 +157,16 @@ export function ResourceCalendar({
               editable: false,
               extendedProps: {
                 isBusy: true,
-                techName: tech?.name?.split(" ")[0] || null,
+                techName: displayName,
               },
             });
           }
         }
       }
+    }
+
+    if (missingNameCount > 0) {
+      console.warn(`[ResourceCalendar] ${missingNameCount} busy slot(s) rendered with missing technician displayName`);
     }
 
     return result;
@@ -220,8 +233,8 @@ export function ResourceCalendar({
             if (props.isBusy) {
               return (
                 <div className="flex items-center gap-1 px-1 py-0.5 text-[10px] truncate">
-                  <Lock className="h-2.5 w-2.5 opacity-50 shrink-0" />
-                  <span className="truncate">{props.techName || "Opptatt"}</span>
+                   <Lock className="h-2.5 w-2.5 opacity-50 shrink-0" />
+                   <span className="truncate">{props.techName || "Ukjent montør"}</span>
                 </div>
               );
             }
@@ -242,7 +255,7 @@ export function ResourceCalendar({
                   {props.techName && (
                     <p className="text-[11px] font-bold truncate">{props.techName}</p>
                   )}
-                  <span className="text-[10px] font-medium truncate block">Opptatt (ekstern)</span>
+                  <span className="text-[10px] font-medium truncate block">Opptatt – ekstern</span>
                   <span className="text-[9px] opacity-70">{arg.timeText}</span>
                 </div>
               </div>
