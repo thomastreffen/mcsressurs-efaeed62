@@ -147,6 +147,10 @@ export default function ResourcePlan() {
         performed_by: userId || null,
         change_summary: `Flyttet fra ${oldEvent ? format(oldEvent.start, "dd.MM HH:mm") + "–" + format(oldEvent.end, "HH:mm") : "ukjent"} til ${format(newStart, "dd.MM HH:mm")}–${format(newEnd, "HH:mm")}`,
       });
+      // Sync linked work_orders
+      await supabase.from("work_orders")
+        .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() } as any)
+        .eq("project_id", eventId);
       const result = await syncUpdate(eventId);
       if (result === "synced") {
         toast.success("Tidspunkt oppdatert. Outlook synkronisert ✓");
@@ -172,6 +176,10 @@ export default function ResourcePlan() {
         performed_by: userId || null,
         change_summary: `Varighet endret fra ${oldEvent ? format(oldEvent.start, "HH:mm") + "–" + format(oldEvent.end, "HH:mm") : "ukjent"} til ${format(newStart, "HH:mm")}–${format(newEnd, "HH:mm")}`,
       });
+      // Sync linked work_orders
+      await supabase.from("work_orders")
+        .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() } as any)
+        .eq("project_id", eventId);
       const result = await syncUpdate(eventId);
       if (result === "synced") {
         toast.success("Varighet oppdatert. Outlook synkronisert ✓");

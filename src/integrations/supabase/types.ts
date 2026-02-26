@@ -354,6 +354,7 @@ export type Database = {
           thread_id: string | null
           title: string
           updated_at: string
+          work_order_id: string | null
         }
         Insert: {
           company_id: string
@@ -374,6 +375,7 @@ export type Database = {
           thread_id?: string | null
           title?: string
           updated_at?: string
+          work_order_id?: string | null
         }
         Update: {
           company_id?: string
@@ -394,6 +396,7 @@ export type Database = {
           thread_id?: string | null
           title?: string
           updated_at?: string
+          work_order_id?: string | null
         }
         Relationships: [
           {
@@ -429,6 +432,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_work_order_id_fkey"
+            columns: ["work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders"
             referencedColumns: ["id"]
           },
         ]
@@ -3328,6 +3338,83 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      work_orders: {
+        Row: {
+          case_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ends_at: string
+          id: string
+          project_id: string | null
+          starts_at: string
+          status: string
+          technician_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          case_id?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at: string
+          id?: string
+          project_id?: string | null
+          starts_at: string
+          status?: string
+          technician_id: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          case_id?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string
+          id?: string
+          project_id?: string | null
+          starts_at?: string
+          status?: string
+          technician_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "work_orders_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "work_orders_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {

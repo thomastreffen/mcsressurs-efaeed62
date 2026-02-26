@@ -36,7 +36,9 @@ import {
   AlertTriangle,
   Timer,
   ReceiptText,
+  Hammer,
 } from "lucide-react";
+import { PlanJobDialog } from "@/components/PlanJobDialog";
 import { format, formatDistanceToNow, isPast, differenceInHours } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -72,6 +74,7 @@ type Case = {
   lead_id: string | null;
   project_id: string | null;
   offer_id: string | null;
+  work_order_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -501,6 +504,7 @@ export default function InboxPage() {
               onUpdateField={(updates) => updateCaseField(selectedCase, updates)}
               onConvertProject={() => convertToProject(selectedCase)}
               onConvertLead={() => convertToLead(selectedCase)}
+              onCaseUpdated={() => fetchCases()}
               companyUsers={companyUsers}
               currentUserId={user?.id || ""}
               isAdmin={isAdmin}
@@ -551,6 +555,7 @@ function CaseDetail({
   onUpdateField,
   onConvertProject,
   onConvertLead,
+  onCaseUpdated,
   companyUsers,
   currentUserId,
   isAdmin,
@@ -563,6 +568,7 @@ function CaseDetail({
   onUpdateField: (updates: Partial<Case>) => void;
   onConvertProject: () => void;
   onConvertLead: () => void;
+  onCaseUpdated: () => void;
   companyUsers: { id: string; name: string }[];
   currentUserId: string;
   isAdmin: boolean;
@@ -570,6 +576,7 @@ function CaseDetail({
 }) {
   const navigate = useNavigate();
   const [showAssignPicker, setShowAssignPicker] = useState(false);
+  const [planJobOpen, setPlanJobOpen] = useState(false);
 
   return (
     <ScrollArea className="flex-1">
@@ -686,11 +693,17 @@ function CaseDetail({
               <CheckCircle2 className="h-5 w-5" />
               <span className="font-medium text-sm">Opprettet jobb</span>
             </div>
-            <div className="flex gap-2 mt-2">
+            <div className="flex gap-2 mt-2 flex-wrap">
               {caseData.project_id && (
                 <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${caseData.project_id}`)}>
                   <FolderKanban className="h-4 w-4 mr-1" />
                   Gå til prosjekt
+                </Button>
+              )}
+              {caseData.project_id && (
+                <Button variant="outline" size="sm" onClick={() => navigate("/resource-plan")}>
+                  <CalendarDays className="h-4 w-4 mr-1" />
+                  Se i ressursplan
                 </Button>
               )}
               {caseData.lead_id && (
@@ -708,11 +721,15 @@ function CaseDetail({
           <Card className="p-4">
             <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Konverter</p>
             <div className="flex flex-wrap gap-2">
-              <Button size="sm" onClick={onConvertLead} className="gap-1.5">
+              <Button size="sm" onClick={() => setPlanJobOpen(true)} className="gap-1.5">
+                <Hammer className="h-4 w-4" />
+                Planlegg jobb
+              </Button>
+              <Button size="sm" variant="secondary" onClick={onConvertLead} className="gap-1.5">
                 <UserPlus className="h-4 w-4" />
                 Opprett lead
               </Button>
-              <Button size="sm" variant="secondary" onClick={onConvertProject} className="gap-1.5">
+              <Button size="sm" variant="outline" onClick={onConvertProject} className="gap-1.5">
                 <FolderKanban className="h-4 w-4" />
                 Opprett prosjekt
               </Button>
@@ -720,13 +737,21 @@ function CaseDetail({
                 <ReceiptText className="h-4 w-4" />
                 Opprett tilbud
               </Button>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled>
-                <Wrench className="h-4 w-4" />
-                Opprett serviceoppdrag
-              </Button>
             </div>
           </Card>
         )}
+
+        <PlanJobDialog
+          open={planJobOpen}
+          onOpenChange={setPlanJobOpen}
+          caseId={caseData.id}
+          caseTitle={caseData.title}
+          companyId={caseData.company_id}
+          existingProjectId={caseData.project_id}
+          onPlanned={(projectId, workOrderId) => {
+            onCaseUpdated();
+          }}
+        />
 
         {/* Timeline */}
         <div>
