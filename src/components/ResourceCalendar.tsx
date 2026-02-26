@@ -7,6 +7,7 @@ import type { EventInput, EventDropArg, DateSelectArg, EventClickArg } from "@fu
 import { nb } from "date-fns/locale";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import type { ExternalBusySlot } from "@/hooks/useExternalBusy";
+import type { DayCapacity } from "@/hooks/useCapacity";
 
 interface TechLookup {
   name: string;
@@ -18,6 +19,7 @@ interface ResourceCalendarProps {
   referenceDate: Date;
   technicianMap: Map<string, TechLookup>;
   getBusySlotsForDay?: (date: Date) => ExternalBusySlot[];
+  dayCapacities?: DayCapacity[];
   onEventClick?: (event: CalendarEvent) => void;
   onDateSelect?: (start: Date, end: Date) => void;
   onEventDrop?: (eventId: string, newStart: Date, newEnd: Date) => void;
@@ -30,6 +32,7 @@ export function ResourceCalendar({
   referenceDate,
   technicianMap,
   getBusySlotsForDay,
+  dayCapacities,
   onEventClick,
   onDateSelect,
   onEventDrop,
@@ -207,14 +210,36 @@ export function ResourceCalendar({
         }}
         dayHeaderContent={(arg) => {
           const isToday = new Date().toDateString() === arg.date.toDateString();
+          const dayCap = dayCapacities?.find(
+            (d) => d.date.toDateString() === arg.date.toDateString()
+          );
           return (
-            <div className={`py-2.5 text-center ${isToday ? "text-primary font-bold" : ""}`}>
+            <div className={`py-2 text-center ${isToday ? "text-primary font-bold" : ""}`}>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 {arg.date.toLocaleDateString("nb-NO", { weekday: "short" })}
               </div>
               <div className={`text-lg font-bold ${isToday ? "text-primary" : ""}`}>
                 {arg.date.getDate()}
               </div>
+              {dayCap && (
+                <div className="mt-1 flex flex-col items-center gap-0.5">
+                  <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden">
+                    <div
+                      className="h-full rounded-full transition-all"
+                      style={{
+                        width: `${Math.min(dayCap.percent, 100)}%`,
+                        backgroundColor: dayCap.color,
+                      }}
+                    />
+                  </div>
+                  <span
+                    className="text-[9px] font-semibold"
+                    style={{ color: dayCap.color }}
+                  >
+                    {dayCap.label}
+                  </span>
+                </div>
+              )}
             </div>
           );
         }}
