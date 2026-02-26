@@ -1521,6 +1521,7 @@ export type Database = {
         Row: {
           ai_category: string | null
           ai_confidence: number | null
+          assigned_at: string | null
           assigned_user_id: string | null
           body_full: string | null
           body_preview: string | null
@@ -1534,13 +1535,18 @@ export type Database = {
           id: string
           linked_lead_id: string | null
           linked_project_id: string | null
+          mailbox_address: string | null
+          owner_user_id: string | null
+          participant_user_ids: string[] | null
           received_at: string
           status: string
           subject: string
+          visibility: string
         }
         Insert: {
           ai_category?: string | null
           ai_confidence?: number | null
+          assigned_at?: string | null
           assigned_user_id?: string | null
           body_full?: string | null
           body_preview?: string | null
@@ -1554,13 +1560,18 @@ export type Database = {
           id?: string
           linked_lead_id?: string | null
           linked_project_id?: string | null
+          mailbox_address?: string | null
+          owner_user_id?: string | null
+          participant_user_ids?: string[] | null
           received_at?: string
           status?: string
           subject?: string
+          visibility?: string
         }
         Update: {
           ai_category?: string | null
           ai_confidence?: number | null
+          assigned_at?: string | null
           assigned_user_id?: string | null
           body_full?: string | null
           body_preview?: string | null
@@ -1574,9 +1585,13 @@ export type Database = {
           id?: string
           linked_lead_id?: string | null
           linked_project_id?: string | null
+          mailbox_address?: string | null
+          owner_user_id?: string | null
+          participant_user_ids?: string[] | null
           received_at?: string
           status?: string
           subject?: string
+          visibility?: string
         }
         Relationships: [
           {
@@ -2431,6 +2446,30 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      mailboxes: {
+        Row: {
+          address: string
+          created_at: string
+          display_name: string
+          id: string
+          is_enabled: boolean
+        }
+        Insert: {
+          address: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_enabled?: boolean
+        }
+        Update: {
+          address?: string
+          created_at?: string
+          display_name?: string
+          id?: string
+          is_enabled?: boolean
+        }
+        Relationships: []
       }
       microsoft_tokens: {
         Row: {
