@@ -717,6 +717,100 @@ export type Database = {
           },
         ]
       }
+      customer_contacts: {
+        Row: {
+          created_at: string
+          customer_id: string
+          email: string | null
+          id: string
+          name: string
+          phone: string | null
+          role: string | null
+        }
+        Insert: {
+          created_at?: string
+          customer_id: string
+          email?: string | null
+          id?: string
+          name: string
+          phone?: string | null
+          role?: string | null
+        }
+        Update: {
+          created_at?: string
+          customer_id?: string
+          email?: string | null
+          id?: string
+          name?: string
+          phone?: string | null
+          role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customer_contacts_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      customers: {
+        Row: {
+          billing_address: string | null
+          billing_city: string | null
+          billing_zip: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string | null
+          id: string
+          main_email: string | null
+          main_phone: string | null
+          name: string
+          notes: string | null
+          org_number: string | null
+          updated_at: string
+        }
+        Insert: {
+          billing_address?: string | null
+          billing_city?: string | null
+          billing_zip?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          main_email?: string | null
+          main_phone?: string | null
+          name: string
+          notes?: string | null
+          org_number?: string | null
+          updated_at?: string
+        }
+        Update: {
+          billing_address?: string | null
+          billing_city?: string | null
+          billing_zip?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          main_email?: string | null
+          main_phone?: string | null
+          name?: string
+          notes?: string | null
+          org_number?: string | null
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "customers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       departments: {
         Row: {
           company_id: string
@@ -965,6 +1059,7 @@ export type Database = {
           created_at: string
           created_by: string | null
           customer: string | null
+          customer_id: string | null
           delete_reason: string | null
           deleted_at: string | null
           deleted_by: string | null
@@ -987,6 +1082,9 @@ export type Database = {
           outlook_deleted_at: string | null
           outlook_last_synced_at: string | null
           outlook_sync_status: string
+          parent_project_id: string | null
+          project_number: string | null
+          project_type: string
           proposed_end: string | null
           proposed_start: string | null
           start_time: string
@@ -1012,6 +1110,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           customer?: string | null
+          customer_id?: string | null
           delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
@@ -1034,6 +1133,9 @@ export type Database = {
           outlook_deleted_at?: string | null
           outlook_last_synced_at?: string | null
           outlook_sync_status?: string
+          parent_project_id?: string | null
+          project_number?: string | null
+          project_type?: string
           proposed_end?: string | null
           proposed_start?: string | null
           start_time: string
@@ -1059,6 +1161,7 @@ export type Database = {
           created_at?: string
           created_by?: string | null
           customer?: string | null
+          customer_id?: string | null
           delete_reason?: string | null
           deleted_at?: string | null
           deleted_by?: string | null
@@ -1081,6 +1184,9 @@ export type Database = {
           outlook_deleted_at?: string | null
           outlook_last_synced_at?: string | null
           outlook_sync_status?: string
+          parent_project_id?: string | null
+          project_number?: string | null
+          project_type?: string
           proposed_end?: string | null
           proposed_start?: string | null
           start_time?: string
@@ -1100,6 +1206,13 @@ export type Database = {
             referencedColumns: ["id"]
           },
           {
+            foreignKeyName: "events_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
             foreignKeyName: "events_department_id_fkey"
             columns: ["department_id"]
             isOneToOne: false
@@ -1111,6 +1224,13 @@ export type Database = {
             columns: ["offer_id"]
             isOneToOne: false
             referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_parent_project_id_fkey"
+            columns: ["parent_project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
           {

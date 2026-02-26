@@ -150,7 +150,7 @@ export default function JobsPage() {
           <p className="text-sm text-muted-foreground/70">{filtered.length} prosjekter totalt</p>
         </div>
         {isAdmin && (
-          <Button onClick={() => setCreateOpen(true)} className="gap-1.5 self-start rounded-xl">
+          <Button onClick={() => navigate("/projects/new")} className="gap-1.5 self-start rounded-xl">
             <Plus className="h-4 w-4" />
             Nytt prosjekt
           </Button>
