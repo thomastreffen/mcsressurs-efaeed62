@@ -166,72 +166,87 @@
   animation: checkmark-draw 0.4s ease-out 0.15s forwards;
 }
 
-/* FullCalendar theme overrides */
+/* FullCalendar – Google Calendar theme */
 .fc-wrapper .fc {
-  --fc-border-color: hsl(var(--border) / 0.15);
-  --fc-today-bg-color: hsl(var(--primary) / 0.02);
-  --fc-neutral-bg-color: hsl(var(--muted) / 0.04);
+  --fc-border-color: hsl(220 14% 90%);
+  --fc-today-bg-color: hsl(213 56% 96%);
+  --fc-neutral-bg-color: transparent;
   --fc-page-bg-color: hsl(var(--card));
-  --fc-now-indicator-color: hsl(var(--primary));
+  --fc-now-indicator-color: hsl(0 68% 50%);
   --fc-event-border-color: transparent;
   font-family: inherit;
 }
 .fc-wrapper .fc .fc-timegrid-slot {
-  height: 2.75rem;
-  border-color: hsl(var(--border) / 0.15);
+  height: 3rem;
+  border-color: hsl(220 14% 92%);
+}
+.fc-wrapper .fc .fc-timegrid-slot-minor {
+  border-top-style: dotted;
+  border-color: hsl(220 14% 94%);
 }
 .fc-wrapper .fc td,
 .fc-wrapper .fc th {
-  border-color: hsl(var(--border) / 0.15);
-  border-width: 0.5px;
+  border-color: hsl(220 14% 92%);
+  border-width: 1px;
 }
 .fc-wrapper .fc .fc-col-header-cell {
   background: hsl(var(--card));
-  border-bottom: 1px solid hsl(var(--border) / 0.2);
+  border-bottom: 1px solid hsl(220 14% 90%);
   padding: 0;
 }
+/* Event chip – Google Calendar rounded pill style */
 .fc-wrapper .fc .fc-timegrid-event {
-  border-radius: 8px;
+  border-radius: 6px;
   border-width: 0;
-  border-left-width: 3px;
-  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.04);
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
-  cursor: grab;
-  min-height: 36px;
-  margin: 2px 3px;
+  border-left-width: 4px;
+  border-left-style: solid;
+  box-shadow: 0 1px 2px hsl(220 20% 20% / 0.06);
+  transition: box-shadow 0.15s ease, transform 0.1s ease;
+  cursor: pointer;
+  min-height: 28px;
+  margin: 1px 2px;
+  overflow: hidden;
 }
 .fc-wrapper .fc .fc-timegrid-event:hover {
-  transform: scale(1.01);
-  box-shadow: 0 4px 16px hsl(var(--foreground) / 0.08);
+  box-shadow: 0 2px 8px hsl(220 20% 20% / 0.12);
+  transform: translateY(-1px);
   z-index: 10;
 }
 .fc-wrapper .fc .fc-timegrid-event:active {
   cursor: grabbing;
+  transform: translateY(0);
 }
 .fc-wrapper .fc .fc-timegrid-event .fc-event-main {
   padding: 0;
 }
-/* External / busy event — solid gray, no stripes */
+/* Side-by-side overlapping events */
+.fc-wrapper .fc .fc-timegrid-event-harness {
+  margin-right: 2px;
+}
+/* External / busy event — subtle gray chip */
 .fc-wrapper .fc .fc-timegrid-event:has(.fc-event-external) {
   border-style: solid;
   border-width: 1px;
-  border-left-width: 1px;
-  border-color: hsl(220 10% 70%);
+  border-left-width: 4px;
+  border-color: hsl(220 10% 80%);
+  border-left-color: hsl(220 10% 70%);
   cursor: default;
   box-shadow: none;
-  opacity: 1;
-  background: hsl(220 14% 82% / 0.7) !important;
+  background: hsl(220 14% 94%) !important;
 }
 .fc-wrapper .fc .fc-timegrid-event:has(.fc-event-external):hover {
   transform: none;
   box-shadow: none;
 }
+/* Now indicator – red line like Google */
 .fc-wrapper .fc .fc-timegrid-now-indicator-line {
-  border-color: hsl(var(--primary));
+  border-color: hsl(0 68% 50%);
   border-width: 2px;
 }
 .fc-wrapper .fc .fc-timegrid-now-indicator-arrow {
-  border-color: hsl(var(--primary));
+  border-top-color: hsl(0 68% 50%);
+  border-width: 6px;
+  margin-top: -5px;
 }
 .fc-wrapper .fc .fc-scrollgrid {
   border: none;
@@ -239,11 +254,27 @@
 .fc-wrapper .fc .fc-timegrid-slot-label {
   font-size: 0.7rem;
   color: hsl(var(--muted-foreground));
+  font-weight: 500;
 }
 .fc-wrapper .fc .fc-bg-event {
   border-radius: 6px;
   border: 1px solid hsl(var(--border) / 0.2);
 }
 .fc-wrapper .fc .fc-highlight {
-  background: hsl(var(--primary) / 0.06);
+  background: hsl(var(--primary) / 0.08);
+  border-radius: 4px;
+}
+/* Day grid (month view) event chips */
+.fc-wrapper .fc .fc-daygrid-event {
+  border-radius: 4px;
+  border-width: 0;
+  border-left-width: 3px;
+  border-left-style: solid;
+  font-size: 11px;
+  padding: 1px 4px;
+  margin-bottom: 1px;
+}
+/* List view */
+.fc-wrapper .fc .fc-list-event td {
+  border-color: hsl(220 14% 92%);
 }
