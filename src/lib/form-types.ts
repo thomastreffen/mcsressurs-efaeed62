@@ -19,6 +19,19 @@ export interface FormField {
   required?: boolean;
   options?: string[]; // for checkbox_list
   order: number;
+  // Checklist-specific options
+  require_photo_on_deviation?: boolean;
+  enable_risk_grading?: boolean;
+}
+
+export type ChecklistItemStatus = "ok" | "avvik" | "ikke_relevant";
+export type RiskGrade = "lav" | "middels" | "hoy" | "kritisk";
+
+export interface ChecklistItemAnswer {
+  status: ChecklistItemStatus;
+  comment?: string;
+  risk_grade?: RiskGrade;
+  photo_count?: number;
 }
 
 export interface FormRule {

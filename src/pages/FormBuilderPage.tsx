@@ -35,6 +35,7 @@ import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import type { FormField, FormFieldType, FormRule } from "@/lib/form-types";
 import { FIELD_TYPE_LABELS } from "@/lib/form-types";
+import { Switch } from "@/components/ui/switch";
 
 const FIELD_ICONS: Record<FormFieldType, React.ElementType> = {
   section_header: Heading,
@@ -388,16 +389,66 @@ export default function FormBuilderPage() {
                     placeholder="Feltnavn..."
                   />
                   {field.type === "checkbox_list" && (
-                    <div className="space-y-1.5 pl-1">
-                      <p className="text-[10px] text-muted-foreground">Alternativer (ett per linje)</p>
-                      <Textarea
-                        value={(field.options || []).join("\n")}
-                        onChange={(e) =>
-                          updateField(field.id, { options: e.target.value.split("\n") })
-                        }
-                        rows={3}
-                        className="rounded-lg text-xs"
-                      />
+                    <div className="space-y-3 pl-1">
+                      {/* Checklist items */}
+                      <div className="space-y-1">
+                        <p className="text-[10px] text-muted-foreground font-medium">Sjekkpunkter</p>
+                        {(field.options || []).map((opt, optIdx) => (
+                          <div key={optIdx} className="flex items-center gap-1.5 group/item">
+                            <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
+                            <Input
+                              value={opt}
+                              onChange={(e) => {
+                                const newOpts = [...(field.options || [])];
+                                newOpts[optIdx] = e.target.value;
+                                updateField(field.id, { options: newOpts });
+                              }}
+                              className="rounded-lg h-7 text-xs flex-1"
+                              placeholder="Sjekkpunkt..."
+                            />
+                            <button
+                              className="text-muted-foreground hover:text-destructive opacity-0 group-hover/item:opacity-100 transition-opacity p-0.5"
+                              onClick={() => {
+                                const newOpts = (field.options || []).filter((_, i) => i !== optIdx);
+                                updateField(field.id, { options: newOpts });
+                              }}
+                            >
+                              <Trash2 className="h-3 w-3" />
+                            </button>
+                          </div>
+                        ))}
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          className="rounded-lg gap-1 text-[10px] h-6 px-2 text-muted-foreground"
+                          onClick={() => {
+                            const newOpts = [...(field.options || []), `Punkt ${(field.options || []).length + 1}`];
+                            updateField(field.id, { options: newOpts });
+                          }}
+                        >
+                          <Plus className="h-3 w-3" />
+                          Legg til punkt
+                        </Button>
+                      </div>
+
+                      {/* Checklist options */}
+                      <div className="space-y-2 border-t border-border pt-2">
+                        <p className="text-[10px] text-muted-foreground font-medium">Innstillinger</p>
+                        <label className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">Krev bilde ved Avvik</span>
+                          <Switch
+                            checked={!!field.require_photo_on_deviation}
+                            onCheckedChange={(v) => updateField(field.id, { require_photo_on_deviation: v })}
+                          />
+                        </label>
+                        <label className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">Aktiver risiko-gradering</span>
+                          <Switch
+                            checked={!!field.enable_risk_grading}
+                            onCheckedChange={(v) => updateField(field.id, { enable_risk_grading: v })}
+                          />
+                        </label>
+                      </div>
                     </div>
                   )}
                   {field.type === "checkbox_yes_no" && (

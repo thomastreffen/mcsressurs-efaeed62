@@ -4,19 +4,44 @@ import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
-import { Badge } from "@/components/ui/badge";
 import {
   ArrowLeft,
   Loader2,
   Lock,
   CheckCircle2,
-  Save,
   PenTool,
+  Camera,
+  MessageSquare,
+  ChevronDown,
+  ChevronUp,
+  AlertTriangle,
+  Check,
+  Minus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
-import type { FormField, FormRule, FormInstanceStatus } from "@/lib/form-types";
+import type {
+  FormField,
+  FormRule,
+  FormInstanceStatus,
+  ChecklistItemAnswer,
+  ChecklistItemStatus,
+  RiskGrade,
+} from "@/lib/form-types";
 import { FORM_STATUS_CONFIG } from "@/lib/form-types";
+
+const STATUS_OPTIONS: { val: ChecklistItemStatus; label: string; icon: React.ElementType; color: string }[] = [
+  { val: "ok", label: "OK", icon: Check, color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" },
+  { val: "avvik", label: "Avvik", icon: AlertTriangle, color: "bg-destructive/10 text-destructive border-destructive/20" },
+  { val: "ikke_relevant", label: "N/A", icon: Minus, color: "bg-muted text-muted-foreground border-border" },
+];
+
+const RISK_OPTIONS: { val: RiskGrade; label: string; color: string }[] = [
+  { val: "lav", label: "Lav", color: "bg-emerald-500/10 text-emerald-600" },
+  { val: "middels", label: "Middels", color: "bg-amber-500/10 text-amber-600" },
+  { val: "hoy", label: "Høy", color: "bg-orange-500/10 text-orange-600" },
+  { val: "kritisk", label: "Kritisk", color: "bg-destructive/10 text-destructive" },
+];
 
 export default function FormFillPage() {
   const { id } = useParams<{ id: string }>();
@@ -33,6 +58,7 @@ export default function FormFillPage() {
   const [signing, setSigning] = useState(false);
   const [signerName, setSignerName] = useState("");
   const [showSignDialog, setShowSignDialog] = useState(false);
+  const [expandedComments, setExpandedComments] = useState<Set<string>>(new Set());
 
   const autosaveTimer = useRef<ReturnType<typeof setTimeout>>();
 
@@ -52,7 +78,6 @@ export default function FormFillPage() {
     setInstance(data);
     setAnswers(((data as any).answers as Record<string, any>) || {});
 
-    // Load version fields
     const { data: ver } = await supabase
       .from("form_template_versions")
       .select("fields, rules")
@@ -64,7 +89,6 @@ export default function FormFillPage() {
       setRules(((ver as any).rules || []) as FormRule[]);
     }
 
-    // Load template title
     const { data: tpl } = await supabase
       .from("form_templates")
       .select("title")
@@ -97,14 +121,63 @@ export default function FormFillPage() {
   const handleAnswerChange = (fieldId: string, value: any) => {
     const updated = { ...answers, [fieldId]: value };
     setAnswers(updated);
-
-    // Debounced autosave
     clearTimeout(autosaveTimer.current);
     autosaveTimer.current = setTimeout(() => saveAnswers(updated), 1500);
   };
 
+  const toggleComment = (key: string) => {
+    setExpandedComments((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  };
+
+  // Checklist helpers
+  const getChecklistAnswers = (fieldId: string): Record<string, ChecklistItemAnswer> => {
+    return (answers[fieldId] as Record<string, ChecklistItemAnswer>) || {};
+  };
+
+  const updateChecklistItem = (fieldId: string, itemIdx: number, patch: Partial<ChecklistItemAnswer>) => {
+    const current = getChecklistAnswers(fieldId);
+    const key = String(itemIdx);
+    const updated = {
+      ...current,
+      [key]: { ...(current[key] || { status: "ok" as const }), ...patch },
+    };
+    handleAnswerChange(fieldId, updated);
+  };
+
+  const canComplete = (): boolean => {
+    for (const field of fields) {
+      if (field.type !== "checkbox_list" || !field.require_photo_on_deviation) continue;
+      const items = getChecklistAnswers(field.id);
+      for (const [, item] of Object.entries(items)) {
+        if (item.status === "avvik" && (!item.photo_count || item.photo_count < 1)) {
+          return false;
+        }
+      }
+      // Check risk grading critical requires comment
+      if (field.enable_risk_grading) {
+        for (const [, item] of Object.entries(items)) {
+          if (item.risk_grade === "kritisk" && !item.comment?.trim()) {
+            return false;
+          }
+        }
+      }
+    }
+    return true;
+  };
+
   const handleComplete = async () => {
     if (!id) return;
+    if (!canComplete()) {
+      toast.error("Kan ikke fullføre", {
+        description: "Sjekk at alle avvik har bilde og kritiske punkter har kommentar.",
+      });
+      return;
+    }
     setSaving(true);
     await supabase
       .from("form_instances")
@@ -118,22 +191,17 @@ export default function FormFillPage() {
   const handleSign = async () => {
     if (!id || !signerName.trim()) return;
     setSigning(true);
-
-    // Insert signature
     const { error } = await supabase.from("form_signatures").insert({
       instance_id: id,
       signer_name: signerName,
       signer_role: isAdmin ? "admin" : "user",
       signature_data: `Signert av ${signerName} den ${new Date().toISOString()}`,
     });
-
     if (error) {
       toast.error("Kunne ikke signere", { description: error.message });
       setSigning(false);
       return;
     }
-
-    // Lock and set status
     await supabase
       .from("form_instances")
       .update({
@@ -142,7 +210,6 @@ export default function FormFillPage() {
         locked_by: user?.id,
       })
       .eq("id", id);
-
     toast.success("Skjema signert og låst");
     setShowSignDialog(false);
     fetchInstance();
@@ -153,17 +220,10 @@ export default function FormFillPage() {
     if (!id || !isAdmin) return;
     const reason = prompt("Begrunnelse for opplåsing:");
     if (!reason) return;
-
     await supabase
       .from("form_instances")
-      .update({
-        locked_at: null,
-        locked_by: null,
-        unlock_reason: reason,
-        status: "completed",
-      })
+      .update({ locked_at: null, locked_by: null, unlock_reason: reason, status: "completed" })
       .eq("id", id);
-
     toast.success("Skjema låst opp");
     fetchInstance();
   };
@@ -188,6 +248,116 @@ export default function FormFillPage() {
   }
 
   const statusCfg = FORM_STATUS_CONFIG[status];
+
+  const renderChecklistField = (field: FormField) => {
+    const items = getChecklistAnswers(field.id);
+
+    return (
+      <div className="space-y-1">
+        {(field.options || []).map((opt, idx) => {
+          const key = String(idx);
+          const item: ChecklistItemAnswer = items[key] || { status: "ok" as const };
+          const commentKey = `${field.id}_${idx}`;
+          const hasComment = !!item.comment?.trim();
+          const isCommentOpen = expandedComments.has(commentKey);
+          const showComment = !isLocked ? isCommentOpen : hasComment;
+
+          return (
+            <div
+              key={idx}
+              className="rounded-lg border border-border bg-background p-3 space-y-2"
+            >
+              {/* Item header: label + status buttons */}
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm font-medium flex-1 min-w-0 truncate">{opt}</span>
+                <div className="flex gap-1 shrink-0">
+                  {STATUS_OPTIONS.map((so) => {
+                    const Icon = so.icon;
+                    const isActive = item.status === so.val;
+                    return (
+                      <button
+                        key={so.val}
+                        disabled={isLocked}
+                        onClick={() => updateChecklistItem(field.id, idx, { status: so.val })}
+                        className={`inline-flex items-center gap-1 rounded-md border px-2 py-1 text-[11px] font-medium transition-colors ${
+                          isActive ? so.color : "bg-transparent text-muted-foreground border-transparent hover:bg-muted"
+                        }`}
+                      >
+                        <Icon className="h-3 w-3" />
+                        {so.label}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {/* Risk grading */}
+              {field.enable_risk_grading && item.status === "avvik" && (
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[10px] text-muted-foreground shrink-0">Risiko:</span>
+                  {RISK_OPTIONS.map((ro) => (
+                    <button
+                      key={ro.val}
+                      disabled={isLocked}
+                      onClick={() => updateChecklistItem(field.id, idx, { risk_grade: ro.val })}
+                      className={`rounded-md px-2 py-0.5 text-[10px] font-medium transition-colors ${
+                        item.risk_grade === ro.val ? ro.color : "text-muted-foreground hover:bg-muted"
+                      }`}
+                    >
+                      {ro.label}
+                    </button>
+                  ))}
+                </div>
+              )}
+
+              {/* Actions row: comment toggle + photo */}
+              {!isLocked && (
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => toggleComment(commentKey)}
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <MessageSquare className="h-3 w-3" />
+                    {hasComment ? "Vis kommentar" : "Kommentar"}
+                    {isCommentOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                  </button>
+                  <button
+                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                  >
+                    <Camera className="h-3 w-3" />
+                    Bilde {item.photo_count ? `(${item.photo_count})` : ""}
+                  </button>
+                  {field.require_photo_on_deviation && item.status === "avvik" && !item.photo_count && (
+                    <span className="text-[10px] text-destructive">Bilde påkrevd</span>
+                  )}
+                </div>
+              )}
+
+              {/* Comment field */}
+              {showComment && (
+                <Textarea
+                  value={item.comment || ""}
+                  onChange={(e) => updateChecklistItem(field.id, idx, { comment: e.target.value })}
+                  disabled={isLocked}
+                  className="rounded-lg text-xs"
+                  rows={2}
+                  placeholder="Legg til kommentar..."
+                />
+              )}
+
+              {/* Critical risk requires comment warning */}
+              {field.enable_risk_grading && item.risk_grade === "kritisk" && !item.comment?.trim() && !isLocked && (
+                <p className="text-[10px] text-destructive flex items-center gap-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  Kommentar påkrevd ved kritisk risiko
+                </p>
+              )}
+            </div>
+          );
+        })}
+      </div>
+    );
+  };
 
   return (
     <div className="mx-auto max-w-2xl px-4 sm:px-6 py-6 pb-28">
@@ -265,32 +435,7 @@ export default function FormFillPage() {
                   </div>
                 )}
 
-                {field.type === "checkbox_list" && (
-                  <div className="space-y-1.5">
-                    {(field.options || []).map((opt, i) => (
-                      <label key={i} className="flex items-center gap-2 text-sm cursor-pointer">
-                        <input
-                          type="checkbox"
-                          checked={Array.isArray(value) ? value.includes(opt) : false}
-                          disabled={isLocked}
-                          onChange={(e) => {
-                            const current = Array.isArray(value) ? [...value] : [];
-                            if (e.target.checked) {
-                              handleAnswerChange(field.id, [...current, opt]);
-                            } else {
-                              handleAnswerChange(
-                                field.id,
-                                current.filter((v: string) => v !== opt)
-                              );
-                            }
-                          }}
-                          className="rounded"
-                        />
-                        {opt}
-                      </label>
-                    ))}
-                  </div>
-                )}
+                {field.type === "checkbox_list" && renderChecklistField(field)}
 
                 {field.type === "text" && (
                   <Input
@@ -349,7 +494,6 @@ export default function FormFillPage() {
                   </div>
                 )}
 
-                {/* Require comment rule */}
                 {needsComment && (
                   <div className="space-y-1.5 pt-1">
                     <label className="text-xs font-medium text-destructive">
@@ -357,9 +501,7 @@ export default function FormFillPage() {
                     </label>
                     <Textarea
                       value={answers[`${field.id}_comment`] || ""}
-                      onChange={(e) =>
-                        handleAnswerChange(`${field.id}_comment`, e.target.value)
-                      }
+                      onChange={(e) => handleAnswerChange(`${field.id}_comment`, e.target.value)}
                       disabled={isLocked}
                       className="rounded-xl"
                       rows={2}
@@ -414,7 +556,7 @@ export default function FormFillPage() {
         </div>
       )}
 
-      {/* Sign dialog (inline, no modal) */}
+      {/* Sign dialog */}
       {showSignDialog && (
         <div className="fixed inset-0 bg-background/80 backdrop-blur-sm z-50 flex items-center justify-center p-4">
           <div className="bg-card rounded-2xl border border-border shadow-xl p-6 w-full max-w-sm space-y-4">
@@ -429,12 +571,7 @@ export default function FormFillPage() {
               className="rounded-xl"
             />
             <div className="flex gap-2 justify-end">
-              <Button
-                variant="outline"
-                size="sm"
-                className="rounded-xl"
-                onClick={() => setShowSignDialog(false)}
-              >
+              <Button variant="outline" size="sm" className="rounded-xl" onClick={() => setShowSignDialog(false)}>
                 Avbryt
               </Button>
               <Button
