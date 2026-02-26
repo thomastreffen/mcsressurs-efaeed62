@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { supabase } from "@/integrations/supabase/client";
 import { format } from "date-fns";
 import { AlertTriangle } from "lucide-react";
+import { useCalendarSync } from "@/hooks/useCalendarSync";
 
 interface CreateJobDialogProps {
   open: boolean;
@@ -75,6 +76,7 @@ function CreateJobDialogInner({
   const [files, setFiles] = useState<File[]>([]);
   const [submitting, setSubmitting] = useState(false);
   const [conflicts, setConflicts] = useState<ConflictInfo[]>([]);
+  const { syncCreate } = useCalendarSync();
 
   // DB-based conflict check
   const checkConflicts = useCallback(async () => {
@@ -235,6 +237,8 @@ function CreateJobDialogInner({
         toast.success("Jobb opprettet og godkjenning sendt", {
           description: `SERVICE – ${title} er sendt til ${safeTechIds.length} montør(er).`,
         });
+        // Sync to Outlook
+        syncCreate(createdEvent.id);
       }
 
       onOpenChange(false);

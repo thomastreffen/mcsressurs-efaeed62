@@ -77,3 +77,6 @@ verify_jwt = false
 
 [functions.inbox-scan]
 verify_jwt = false
+
+[functions.calendar-write-sync]
+verify_jwt = false

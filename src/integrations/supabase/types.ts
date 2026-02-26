@@ -980,6 +980,7 @@ export type Database = {
           meeting_created_by: string | null
           meeting_id: string | null
           meeting_join_url: string | null
+          microsoft_etag: string | null
           microsoft_event_id: string | null
           next_contract_deadline: string | null
           offer_id: string | null
@@ -1026,6 +1027,7 @@ export type Database = {
           meeting_created_by?: string | null
           meeting_id?: string | null
           meeting_join_url?: string | null
+          microsoft_etag?: string | null
           microsoft_event_id?: string | null
           next_contract_deadline?: string | null
           offer_id?: string | null
@@ -1072,6 +1074,7 @@ export type Database = {
           meeting_created_by?: string | null
           meeting_id?: string | null
           meeting_join_url?: string | null
+          microsoft_etag?: string | null
           microsoft_event_id?: string | null
           next_contract_deadline?: string | null
           offer_id?: string | null

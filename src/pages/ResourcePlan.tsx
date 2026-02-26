@@ -18,6 +18,8 @@ import { useExternalBusy } from "@/hooks/useExternalBusy";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import { useCapacity } from "@/hooks/useCapacity";
 import { useTechnicianNowStatus, getContiguousFreeMinutes } from "@/hooks/useTechnicianNowStatus";
+import { useCalendarSync } from "@/hooks/useCalendarSync";
+import { OutlookConflictDialog } from "@/components/OutlookConflictDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -30,6 +32,7 @@ export default function ResourcePlan() {
   const [externalBlocksCapacity, setExternalBlocksCapacity] = useState(true);
   const [minFreeMinutes, setMinFreeMinutes] = useState<number | null>(null);
   const { busySlots, getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
+  const { syncUpdate, syncCreate, forceUpdate, acceptGraphVersion, conflict, dismissConflict } = useCalendarSync();
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -74,18 +77,24 @@ export default function ResourcePlan() {
       .update({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() })
       .eq("id", eventId);
     if (error) toast.error("Kunne ikke flytte hendelsen");
-    else toast.success("Hendelse flyttet");
+    else {
+      toast.success("Hendelse flyttet");
+      syncUpdate(eventId);
+    }
     setRefreshKey((k) => k + 1);
-  }, []);
+  }, [syncUpdate]);
 
   const handleEventResize = useCallback(async (eventId: string, newStart: Date, newEnd: Date) => {
     const { error } = await supabase.from("events")
       .update({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() })
       .eq("id", eventId);
     if (error) toast.error("Kunne ikke endre varighet");
-    else toast.success("Varighet oppdatert");
+    else {
+      toast.success("Varighet oppdatert");
+      syncUpdate(eventId);
+    }
     setRefreshKey((k) => k + 1);
-  }, []);
+  }, [syncUpdate]);
 
   const selectedTech = selectedTechId ? technicians.find((t) => t.id === selectedTechId) : null;
 
@@ -286,7 +295,25 @@ export default function ResourcePlan() {
         preselectedStart={preselectedStart}
         preselectedEnd={preselectedEnd}
         preselectedTechId={selectedTechId}
-        onSaved={() => setRefreshKey((k) => k + 1)}
+        onSaved={(eventId) => {
+          setRefreshKey((k) => k + 1);
+          if (eventId) {
+            if (editEvent) syncUpdate(eventId);
+            else syncCreate(eventId);
+          }
+        }}
+      />
+
+      <OutlookConflictDialog
+        conflict={conflict}
+        onUseSystem={() => conflict && forceUpdate(conflict.eventId)}
+        onUseOutlook={() => {
+          if (conflict?.graphVersion) {
+            acceptGraphVersion(conflict.eventId, conflict.graphVersion.start, conflict.graphVersion.end);
+            setRefreshKey((k) => k + 1);
+          }
+        }}
+        onDismiss={dismissConflict}
       />
     </div>
   );
