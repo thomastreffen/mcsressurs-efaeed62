@@ -45,32 +45,15 @@ function mergeExternalSlots(slots: ExternalBusySlot[]): ExternalBusySlot[] {
   return merged;
 }
 
-/** Google Calendar-style palette – each technician gets a vivid base color.
- *  Events use a light tinted background with the base as left-border accent. */
+/** Vivid, distinct colors for each technician – Google Calendar style */
 const GCAL_PALETTE = [
-  "#039BE5", "#7986CB", "#33B679", "#8E24AA", "#E67C73",
-  "#F6BF26", "#F4511E", "#0B8043", "#3F51B5", "#D50000",
-  "#616161", "#009688", "#795548", "#C0CA33",
+  "#D50000", "#F4511E", "#E67C73", "#F09300",
+  "#009688", "#0B8043", "#33B679", "#7CB342",
+  "#039BE5", "#3F51B5", "#7986CB", "#8E24AA",
+  "#616161", "#795548",
 ];
 
-function hexToRgb(hex: string): [number, number, number] {
-  const h = hex.replace("#", "");
-  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
-}
-
-/** Create a light tinted background from a base color (Google Calendar style) */
-function tintedBg(hex: string, alpha = 0.15): string {
-  const [r, g, b] = hexToRgb(hex);
-  return `rgba(${r},${g},${b},${alpha})`;
-}
-
-/** Derive readable dark text from a base color */
-function darkenColor(hex: string): string {
-  const [r, g, b] = hexToRgb(hex);
-  return `rgb(${Math.round(r * 0.35)},${Math.round(g * 0.35)},${Math.round(b * 0.35)})`;
-}
-
-/** Status badge colors – small dot only, not the event fill */
+/** Status indicator dot colors */
 const statusDotColors: Record<string, string> = {
   planned: "#1E3A8A",
   requested: "#D97706",
@@ -139,16 +122,16 @@ export function ResourceCalendar({
         title: ev.title.replace("SERVICE – ", ""),
         start: ev.start,
         end: ev.end,
-        backgroundColor: tintedBg(baseColor, 0.18),
+        backgroundColor: baseColor,
         borderColor: baseColor,
-        textColor: darkenColor(baseColor),
+        textColor: "#FFFFFF",
         extendedProps: {
           calendarEvent: ev,
           customer: ev.customer,
           status: ev.status,
           techNames,
           baseColor,
-          statusDot: statusDotColors[ev.status] || "#6B7280",
+          statusDot: statusDotColors[ev.status] || "#FFFFFF",
         },
         editable: isAdmin,
       };
@@ -288,9 +271,7 @@ export function ResourceCalendar({
                   className="h-2 w-2 rounded-full shrink-0"
                   style={{ backgroundColor: props.baseColor }}
                 />
-                <span className="text-[10px] font-semibold truncate" style={{ color: darkenColor(props.baseColor) }}>
-                  {arg.event.title}
-                </span>
+                <span className="text-[10px] font-semibold truncate text-white">{arg.event.title}</span>
                 {props.techNames && <span className="text-[9px] opacity-60 truncate">· {props.techNames}</span>}
               </div>
             );
@@ -311,30 +292,28 @@ export function ResourceCalendar({
               </div>
             );
           }
-          const baseColor = props.baseColor as string;
-          const textColor = darkenColor(baseColor);
           return (
             <div
               className="fc-event-internal px-2 py-1.5 overflow-hidden h-full cursor-grab active:cursor-grabbing select-none"
             >
               <div className="flex items-center gap-1.5">
                 {props.techNames && (
-                  <p className="text-[12px] font-bold leading-tight truncate" style={{ color: baseColor }}>
+                  <p className="text-[12px] font-bold leading-tight truncate text-white/90">
                     {props.techNames}
                   </p>
                 )}
                 <span
-                  className="h-1.5 w-1.5 rounded-full shrink-0"
+                  className="h-1.5 w-1.5 rounded-full shrink-0 border border-white/30"
                   style={{ backgroundColor: props.statusDot }}
                 />
               </div>
-              <p className="text-[13px] font-semibold leading-tight truncate mt-0.5" style={{ color: textColor }}>
+              <p className="text-[13px] font-semibold leading-tight truncate mt-0.5 text-white">
                 {arg.event.title}
               </p>
               {props.customer && (
-                <p className="text-[11px] opacity-70 truncate mt-0.5" style={{ color: textColor }}>{props.customer}</p>
+                <p className="text-[11px] text-white/75 truncate mt-0.5">{props.customer}</p>
               )}
-              <span className="text-[10px] opacity-50 mt-0.5 block" style={{ color: textColor }}>{arg.timeText}</span>
+              <span className="text-[10px] text-white/60 mt-0.5 block">{arg.timeText}</span>
             </div>
           );
         }}

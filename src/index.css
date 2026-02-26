@@ -194,13 +194,12 @@
   border-bottom: 1px solid hsl(220 14% 90%);
   padding: 0;
 }
-/* Event chip – Google Calendar rounded pill style */
+/* Event chip – Google Calendar solid color pill */
 .fc-wrapper .fc .fc-timegrid-event {
-  border-radius: 6px;
+  border-radius: 8px;
   border-width: 0;
-  border-left-width: 4px;
-  border-left-style: solid;
-  box-shadow: 0 1px 2px hsl(220 20% 20% / 0.06);
+  border-left-width: 0;
+  box-shadow: 0 1px 3px hsl(220 20% 20% / 0.10);
   transition: box-shadow 0.15s ease, transform 0.1s ease;
   cursor: pointer;
   min-height: 28px;
