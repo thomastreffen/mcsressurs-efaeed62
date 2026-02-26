@@ -79,15 +79,33 @@ export default function FormFillPage() {
     setInstance(data);
     setAnswers(((data as any).answers as Record<string, any>) || {});
 
-    const { data: ver } = await supabase
+    // Try loading the version used at creation; fallback to latest version of the template
+    let ver: any = null;
+    const { data: primaryVer } = await supabase
       .from("form_template_versions")
       .select("fields, rules")
       .eq("id", (data as any).version_id)
       .single();
+    ver = primaryVer;
+
+    if (!ver) {
+      // Fallback: load latest version of the template
+      const { data: latestVer } = await supabase
+        .from("form_template_versions")
+        .select("fields, rules")
+        .eq("template_id", (data as any).template_id)
+        .order("version_number", { ascending: false })
+        .limit(1)
+        .single();
+      ver = latestVer;
+    }
 
     if (ver) {
       setFields(((ver as any).fields || []) as FormField[]);
       setRules(((ver as any).rules || []) as FormRule[]);
+    } else {
+      setFields([]);
+      setRules([]);
     }
 
     const { data: tpl } = await supabase
@@ -419,7 +437,13 @@ export default function FormFillPage() {
 
       {/* Fields */}
       <div className="space-y-4">
-        {fields
+        {fields.length === 0 ? (
+          <div className="rounded-xl border-2 border-dashed border-border bg-muted/20 p-8 text-center">
+            <p className="text-sm text-muted-foreground">
+              Ingen felt i dette skjemaet ennå.
+            </p>
+          </div>
+        ) : fields
           .sort((a, b) => a.order - b.order)
           .map((field) => {
             const value = answers[field.id];
