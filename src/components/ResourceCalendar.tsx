@@ -45,16 +45,41 @@ function mergeExternalSlots(slots: ExternalBusySlot[]): ExternalBusySlot[] {
   return merged;
 }
 
-const statusColors: Record<string, { bg: string; border: string; text: string }> = {
-  planned: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
-  requested: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
-  scheduled: { bg: "#1E3A8A", border: "#2563EB", text: "#FFFFFF" },
-  in_progress: { bg: "#065F46", border: "#065F46", text: "#FFFFFF" },
-  completed: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
-  done: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
-  invoiced: { bg: "#E5E7EB", border: "#D1D5DB", text: "#6B7280" },
+/** Google Calendar-style palette – each technician gets a vivid base color.
+ *  Events use a light tinted background with the base as left-border accent. */
+const GCAL_PALETTE = [
+  "#039BE5", "#7986CB", "#33B679", "#8E24AA", "#E67C73",
+  "#F6BF26", "#F4511E", "#0B8043", "#3F51B5", "#D50000",
+  "#616161", "#009688", "#795548", "#C0CA33",
+];
+
+function hexToRgb(hex: string): [number, number, number] {
+  const h = hex.replace("#", "");
+  return [parseInt(h.slice(0, 2), 16), parseInt(h.slice(2, 4), 16), parseInt(h.slice(4, 6), 16)];
+}
+
+/** Create a light tinted background from a base color (Google Calendar style) */
+function tintedBg(hex: string, alpha = 0.15): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
+/** Derive readable dark text from a base color */
+function darkenColor(hex: string): string {
+  const [r, g, b] = hexToRgb(hex);
+  return `rgb(${Math.round(r * 0.35)},${Math.round(g * 0.35)},${Math.round(b * 0.35)})`;
+}
+
+/** Status badge colors – small dot only, not the event fill */
+const statusDotColors: Record<string, string> = {
+  planned: "#1E3A8A",
+  requested: "#D97706",
+  scheduled: "#2563EB",
+  in_progress: "#059669",
+  completed: "#6B7280",
+  done: "#6B7280",
+  invoiced: "#9CA3AF",
 };
-const defaultStatusColor = { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" };
 
 export function ResourceCalendar({
   technicianId,
@@ -93,26 +118,37 @@ export function ResourceCalendar({
     }
   }, [isDayView, calendarView]);
 
+  // Build a stable color assignment per technician (Google Calendar style)
+  const techColorMap = useMemo(() => {
+    const map = new Map<string, string>();
+    let idx = 0;
+    for (const [techId, info] of technicianMap) {
+      map.set(techId, info.color || GCAL_PALETTE[idx % GCAL_PALETTE.length]);
+      idx++;
+    }
+    return map;
+  }, [technicianMap]);
+
   const fcEvents: EventInput[] = useMemo(() => {
     const result: EventInput[] = calendarEvents.map((ev) => {
       const techNames = ev.technicians.map((t) => t.name.split(" ")[0]).join(", ");
-      const colors = statusColors[ev.status] || defaultStatusColor;
-      const firstTechColor = ev.technicians[0]?.color || null;
+      const firstTechId = ev.technicians[0]?.id;
+      const baseColor = (firstTechId && techColorMap.get(firstTechId)) || GCAL_PALETTE[0];
       return {
         id: ev.id,
         title: ev.title.replace("SERVICE – ", ""),
         start: ev.start,
         end: ev.end,
-        backgroundColor: colors.bg,
-        borderColor: firstTechColor || colors.border,
-        textColor: colors.text,
+        backgroundColor: tintedBg(baseColor, 0.18),
+        borderColor: baseColor,
+        textColor: darkenColor(baseColor),
         extendedProps: {
           calendarEvent: ev,
           customer: ev.customer,
           status: ev.status,
           techNames,
-          statusColors: colors,
-          techColor: firstTechColor,
+          baseColor,
+          statusDot: statusDotColors[ev.status] || "#6B7280",
         },
         editable: isAdmin,
       };
@@ -175,7 +211,7 @@ export function ResourceCalendar({
     }
 
     return result;
-  }, [calendarEvents, getBusySlotsForDay, technicianMap, referenceDate, isAdmin, isMonthView]);
+  }, [calendarEvents, getBusySlotsForDay, technicianMap, techColorMap, referenceDate, isAdmin, isMonthView]);
 
   const handleEventClick = useCallback((info: EventClickArg) => {
     const calEvent = info.event.extendedProps.calendarEvent as CalendarEvent | undefined;
@@ -226,6 +262,9 @@ export function ResourceCalendar({
         select={handleDateSelect}
         eventDrop={handleEventDrop}
         eventResize={handleEventResize}
+        slotEventOverlap={false}
+        eventOverlap={false}
+        eventMaxStack={4}
         eventMinHeight={36}
         eventContent={(arg) => {
           const props = arg.event.extendedProps;
@@ -244,9 +283,15 @@ export function ResourceCalendar({
               );
             }
             return (
-              <div className="flex items-center gap-1 px-1 py-0.5 overflow-hidden" style={props.techColor ? { borderLeft: `3px solid ${props.techColor}` } : undefined}>
-                <span className="text-[10px] font-semibold truncate text-white">{arg.event.title}</span>
-                {props.techNames && <span className="text-[9px] opacity-70 truncate">· {props.techNames}</span>}
+              <div className="flex items-center gap-1 px-1 py-0.5 overflow-hidden">
+                <span
+                  className="h-2 w-2 rounded-full shrink-0"
+                  style={{ backgroundColor: props.baseColor }}
+                />
+                <span className="text-[10px] font-semibold truncate" style={{ color: darkenColor(props.baseColor) }}>
+                  {arg.event.title}
+                </span>
+                {props.techNames && <span className="text-[9px] opacity-60 truncate">· {props.techNames}</span>}
               </div>
             );
           }
@@ -266,24 +311,30 @@ export function ResourceCalendar({
               </div>
             );
           }
-          const techColor = props.techColor as string | null;
+          const baseColor = props.baseColor as string;
+          const textColor = darkenColor(baseColor);
           return (
             <div
               className="fc-event-internal px-2 py-1.5 overflow-hidden h-full cursor-grab active:cursor-grabbing select-none"
-              style={techColor ? { borderLeft: `4px solid ${techColor}` } : undefined}
             >
-              {props.techNames && (
-                <p className="text-[12px] font-bold leading-tight truncate text-white opacity-90">
-                  👤 {props.techNames}
-                </p>
-              )}
-              <p className="text-[14px] font-bold leading-tight truncate text-white mt-0.5">
+              <div className="flex items-center gap-1.5">
+                {props.techNames && (
+                  <p className="text-[12px] font-bold leading-tight truncate" style={{ color: baseColor }}>
+                    {props.techNames}
+                  </p>
+                )}
+                <span
+                  className="h-1.5 w-1.5 rounded-full shrink-0"
+                  style={{ backgroundColor: props.statusDot }}
+                />
+              </div>
+              <p className="text-[13px] font-semibold leading-tight truncate mt-0.5" style={{ color: textColor }}>
                 {arg.event.title}
               </p>
               {props.customer && (
-                <p className="text-[11px] opacity-80 truncate mt-0.5">{props.customer}</p>
+                <p className="text-[11px] opacity-70 truncate mt-0.5" style={{ color: textColor }}>{props.customer}</p>
               )}
-              <span className="text-[10px] opacity-70 mt-0.5 block">{arg.timeText}</span>
+              <span className="text-[10px] opacity-50 mt-0.5 block" style={{ color: textColor }}>{arg.timeText}</span>
             </div>
           );
         }}
