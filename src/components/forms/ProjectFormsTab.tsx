@@ -12,12 +12,18 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import {
   Plus,
   FileText,
   Upload,
   Search,
   ClipboardList,
   Loader2,
+  ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -55,7 +61,6 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
       .order("updated_at", { ascending: false });
 
     if (data) {
-      // Fetch template titles
       const templateIds = [...new Set(data.map((d: any) => d.template_id))];
       const { data: tpls } = await supabase
         .from("form_templates")
@@ -87,20 +92,85 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
     fetchTemplates();
   }, [projectId]);
 
-  const handleCreate = async () => {
-    if (!selectedTemplate) return;
-    const tpl = templates.find((t) => t.id === selectedTemplate);
-    if (!tpl?.active_version_id) {
-      toast.error("Malen har ingen aktiv versjon");
+  const handleCreateFromTemplate = async (templateId?: string) => {
+    const tpl = templateId ? templates.find((t) => t.id === templateId) : null;
+
+    if (tpl && !tpl.active_version_id) {
+      toast.error("Malen har ingen aktiv versjon", {
+        description: isAdmin ? "Åpne malen i skjemabyggeren for å publisere en versjon." : undefined,
+      });
       return;
     }
+
     setCreating(true);
     const { data: userData } = await supabase.auth.getUser();
+
+    if (!tpl) {
+      // Create blank ad-hoc template
+      const { data: blankTpl, error: tplErr } = await supabase
+        .from("form_templates")
+        .insert({ title: "Blankt skjema", created_by: userData.user!.id })
+        .select("id")
+        .single();
+
+      if (tplErr || !blankTpl) {
+        toast.error("Kunne ikke opprette skjema");
+        setCreating(false);
+        return;
+      }
+
+      // Create version with empty fields
+      const { data: ver, error: verErr } = await supabase
+        .from("form_template_versions")
+        .insert({
+          template_id: (blankTpl as any).id,
+          version_number: 1,
+          fields: [] as any,
+          rules: [] as any,
+          created_by: userData.user!.id,
+        })
+        .select("id")
+        .single();
+
+      if (verErr || !ver) {
+        toast.error("Kunne ikke opprette versjon");
+        setCreating(false);
+        return;
+      }
+
+      await supabase
+        .from("form_templates")
+        .update({ active_version_id: (ver as any).id })
+        .eq("id", (blankTpl as any).id);
+
+      const { data: inst, error: instErr } = await supabase
+        .from("form_instances")
+        .insert({
+          template_id: (blankTpl as any).id,
+          version_id: (ver as any).id,
+          project_id: projectId,
+          created_by: userData.user!.id,
+          status: "not_started",
+        })
+        .select("id")
+        .single();
+
+      if (instErr) {
+        toast.error("Kunne ikke opprette skjema", { description: instErr.message });
+      } else if (inst) {
+        toast.success("Blankt skjema opprettet");
+        navigate(`/forms/${(inst as any).id}`);
+      }
+      setCreating(false);
+      return;
+    }
+
+    // Create from selected template
     const { data, error } = await supabase
       .from("form_instances")
       .insert({
         template_id: tpl.id,
-        version_id: tpl.active_version_id,
+        version_id: tpl.active_version_id!,
         project_id: projectId,
         created_by: userData.user!.id,
         status: "not_started",
@@ -112,14 +182,19 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
       toast.error("Kunne ikke opprette skjema", { description: error.message });
     } else if (data) {
       toast.success("Skjema opprettet");
-      navigate(`/forms/${data.id}`);
+      navigate(`/forms/${(data as any).id}`);
     }
     setCreating(false);
   };
 
+  const handleCreate = () => handleCreateFromTemplate(selectedTemplate || undefined);
+
   const filtered = instances.filter((i) =>
     !search || i.template?.title?.toLowerCase().includes(search.toLowerCase())
   );
+
+  const activeTemplates = templates.filter((t) => t.active_version_id);
+  const inactiveTemplates = templates.filter((t) => !t.active_version_id);
 
   return (
     <div className="space-y-4">
@@ -139,39 +214,38 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
             size="sm"
             variant="outline"
             className="rounded-xl gap-1.5 text-xs"
-            onClick={() => setShowNewForm(!showNewForm)}
+            onClick={() => handleCreateFromTemplate()}
+            disabled={creating}
           >
-            <Plus className="h-3.5 w-3.5" />
+            {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
             Nytt skjema
           </Button>
+          <Button
+            size="sm"
+            variant="outline"
+            className="rounded-xl gap-1.5 text-xs"
+            onClick={() => setShowNewForm(!showNewForm)}
+          >
+            <FileText className="h-3.5 w-3.5" />
+            Fra mal
+          </Button>
           {isAdmin && (
-            <>
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-xl gap-1.5 text-xs"
-                onClick={() => navigate("/admin/forms")}
-              >
-                <FileText className="h-3.5 w-3.5" />
-                Fra mal
-              </Button>
-              <Button
-                size="sm"
-                variant="outline"
-                className="rounded-xl gap-1.5 text-xs"
-                onClick={() => navigate(`/admin/forms?import=true&project=${projectId}`)}
-              >
-                <Upload className="h-3.5 w-3.5" />
-                Importer PDF med AI
-              </Button>
-            </>
+            <Button
+              size="sm"
+              variant="outline"
+              className="rounded-xl gap-1.5 text-xs"
+              onClick={() => navigate(`/admin/forms?import=true&project=${projectId}`)}
+            >
+              <Upload className="h-3.5 w-3.5" />
+              Importer PDF med AI
+            </Button>
           )}
         </div>
       </div>
 
-      {/* New form selector */}
+      {/* Template selector */}
       {showNewForm && (
-        <div className="rounded-xl border border-border bg-card p-4 flex items-end gap-3">
+        <div className="rounded-xl border border-border bg-card p-4 space-y-3">
           <div className="flex-1 space-y-1.5">
             <label className="text-xs font-medium text-muted-foreground">Velg mal</label>
             <Select value={selectedTemplate} onValueChange={setSelectedTemplate}>
@@ -179,23 +253,48 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
                 <SelectValue placeholder="Velg skjemamal..." />
               </SelectTrigger>
               <SelectContent>
-                {templates.map((t) => (
+                {activeTemplates.map((t) => (
                   <SelectItem key={t.id} value={t.id}>
                     {t.title}
                   </SelectItem>
                 ))}
+                {inactiveTemplates.length > 0 && (
+                  <>
+                    <div className="px-2 py-1.5 text-[10px] text-muted-foreground font-medium">Uten aktiv versjon</div>
+                    {inactiveTemplates.map((t) => (
+                      <SelectItem key={t.id} value={t.id} disabled>
+                        {t.title} (ingen aktiv versjon)
+                      </SelectItem>
+                    ))}
+                  </>
+                )}
               </SelectContent>
             </Select>
           </div>
-          <Button
-            size="sm"
-            className="rounded-xl"
-            disabled={!selectedTemplate || creating}
-            onClick={handleCreate}
-          >
-            {creating && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
-            Opprett
-          </Button>
+          <div className="flex items-center justify-between">
+            <div>
+              {selectedTemplate && !templates.find(t => t.id === selectedTemplate)?.active_version_id && isAdmin && (
+                <Button
+                  variant="link"
+                  size="sm"
+                  className="text-xs p-0 h-auto gap-1"
+                  onClick={() => navigate("/admin/forms")}
+                >
+                  <ExternalLink className="h-3 w-3" />
+                  Åpne mal i skjemabygger
+                </Button>
+              )}
+            </div>
+            <Button
+              size="sm"
+              className="rounded-xl"
+              disabled={!selectedTemplate || creating || !templates.find(t => t.id === selectedTemplate)?.active_version_id}
+              onClick={handleCreate}
+            >
+              {creating && <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />}
+              Opprett
+            </Button>
+          </div>
         </div>
       )}
 
@@ -209,7 +308,7 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
           <ClipboardList className="h-10 w-10 text-muted-foreground/40 mb-3" />
           <p className="text-sm font-medium text-muted-foreground">Ingen skjemaer ennå</p>
           <p className="text-xs text-muted-foreground/70 mt-1">
-            Klikk "Nytt skjema" for å komme i gang
+            Klikk "Nytt skjema" eller "Fra mal" for å komme i gang
           </p>
         </div>
       ) : (

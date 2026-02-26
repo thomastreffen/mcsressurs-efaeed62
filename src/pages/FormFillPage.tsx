@@ -17,6 +17,7 @@ import {
   AlertTriangle,
   Check,
   Minus,
+  Plus,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
@@ -28,7 +29,7 @@ import type {
   ChecklistItemStatus,
   RiskGrade,
 } from "@/lib/form-types";
-import { FORM_STATUS_CONFIG } from "@/lib/form-types";
+import { FORM_STATUS_CONFIG, fieldSupportsComment } from "@/lib/form-types";
 
 const STATUS_OPTIONS: { val: ChecklistItemStatus; label: string; icon: React.ElementType; color: string }[] = [
   { val: "ok", label: "OK", icon: Check, color: "bg-emerald-500/10 text-emerald-600 border-emerald-500/20" },
@@ -99,9 +100,7 @@ export default function FormFillPage() {
     setLoading(false);
   }, [id]);
 
-  useEffect(() => {
-    fetchInstance();
-  }, [fetchInstance]);
+  useEffect(() => { fetchInstance(); }, [fetchInstance]);
 
   const isLocked = !!instance?.locked_at;
   const status = (instance?.status as FormInstanceStatus) || "not_started";
@@ -134,7 +133,6 @@ export default function FormFillPage() {
     });
   };
 
-  // Checklist helpers
   const getChecklistAnswers = (fieldId: string): Record<string, ChecklistItemAnswer> => {
     return (answers[fieldId] as Record<string, ChecklistItemAnswer>) || {};
   };
@@ -149,6 +147,11 @@ export default function FormFillPage() {
     handleAnswerChange(fieldId, updated);
   };
 
+  // Get field-level comment value (stored as fieldId_comment)
+  const getFieldComment = (fieldId: string): string => {
+    return (answers[`${fieldId}_comment`] as string) || "";
+  };
+
   const canComplete = (): boolean => {
     for (const field of fields) {
       if (field.type !== "checkbox_list" || !field.require_photo_on_deviation) continue;
@@ -158,7 +161,6 @@ export default function FormFillPage() {
           return false;
         }
       }
-      // Check risk grading critical requires comment
       if (field.enable_risk_grading) {
         for (const [, item] of Object.entries(items)) {
           if (item.risk_grade === "kritisk" && !item.comment?.trim()) {
@@ -249,8 +251,42 @@ export default function FormFillPage() {
 
   const statusCfg = FORM_STATUS_CONFIG[status];
 
+  /** Inline comment toggle button — only shown if field allows comments */
+  const CommentToggle = ({ fieldId, label }: { fieldId: string; label?: string }) => {
+    const commentKey = fieldId;
+    const hasComment = !!getFieldComment(fieldId);
+    const isOpen = expandedComments.has(commentKey) || hasComment;
+
+    if (isLocked && !hasComment) return null;
+
+    return (
+      <div className="space-y-1.5">
+        {!isOpen && !isLocked && (
+          <button
+            onClick={() => toggleComment(commentKey)}
+            className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+          >
+            <Plus className="h-3 w-3" />
+            {label || "kommentar"}
+          </button>
+        )}
+        {isOpen && (
+          <Textarea
+            value={getFieldComment(fieldId)}
+            onChange={(e) => handleAnswerChange(`${fieldId}_comment`, e.target.value)}
+            disabled={isLocked}
+            className="rounded-lg text-xs"
+            rows={2}
+            placeholder={label === "bildetekst" ? "Bildetekst..." : "Intern kommentar..."}
+          />
+        )}
+      </div>
+    );
+  };
+
   const renderChecklistField = (field: FormField) => {
     const items = getChecklistAnswers(field.id);
+    const allowComment = field.allow_comment !== false;
 
     return (
       <div className="space-y-1">
@@ -260,14 +296,13 @@ export default function FormFillPage() {
           const commentKey = `${field.id}_${idx}`;
           const hasComment = !!item.comment?.trim();
           const isCommentOpen = expandedComments.has(commentKey);
-          const showComment = !isLocked ? isCommentOpen : hasComment;
+          const showComment = !isLocked ? (isCommentOpen || hasComment) : hasComment;
 
           return (
             <div
               key={idx}
               className="rounded-lg border border-border bg-background p-3 space-y-2"
             >
-              {/* Item header: label + status buttons */}
               <div className="flex items-center justify-between gap-2">
                 <span className="text-sm font-medium flex-1 min-w-0 truncate">{opt}</span>
                 <div className="flex gap-1 shrink-0">
@@ -291,7 +326,6 @@ export default function FormFillPage() {
                 </div>
               </div>
 
-              {/* Risk grading */}
               {field.enable_risk_grading && item.status === "avvik" && (
                 <div className="flex items-center gap-1.5">
                   <span className="text-[10px] text-muted-foreground shrink-0">Risiko:</span>
@@ -310,17 +344,18 @@ export default function FormFillPage() {
                 </div>
               )}
 
-              {/* Actions row: comment toggle + photo */}
+              {/* Actions row */}
               {!isLocked && (
                 <div className="flex items-center gap-2">
-                  <button
-                    onClick={() => toggleComment(commentKey)}
-                    className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
-                  >
-                    <MessageSquare className="h-3 w-3" />
-                    {hasComment ? "Vis kommentar" : "Kommentar"}
-                    {isCommentOpen ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
-                  </button>
+                  {allowComment && !hasComment && !isCommentOpen && (
+                    <button
+                      onClick={() => toggleComment(commentKey)}
+                      className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
+                    >
+                      <Plus className="h-3 w-3" />
+                      kommentar
+                    </button>
+                  )}
                   <button
                     className="inline-flex items-center gap-1 text-[10px] text-muted-foreground hover:text-foreground transition-colors"
                   >
@@ -334,7 +369,7 @@ export default function FormFillPage() {
               )}
 
               {/* Comment field */}
-              {showComment && (
+              {showComment && allowComment && (
                 <Textarea
                   value={item.comment || ""}
                   onChange={(e) => updateChecklistItem(field.id, idx, { comment: e.target.value })}
@@ -345,7 +380,6 @@ export default function FormFillPage() {
                 />
               )}
 
-              {/* Critical risk requires comment warning */}
               {field.enable_risk_grading && item.risk_grade === "kritisk" && !item.comment?.trim() && !isLocked && (
                 <p className="text-[10px] text-destructive flex items-center gap-1">
                   <AlertTriangle className="h-3 w-3" />
@@ -396,6 +430,7 @@ export default function FormFillPage() {
                 r.value === "no" &&
                 value === "no"
             );
+            const allowComment = field.allow_comment !== false && fieldSupportsComment(field.type);
 
             if (field.type === "section_header") {
               return (
@@ -494,13 +529,14 @@ export default function FormFillPage() {
                   </div>
                 )}
 
+                {/* Required comment on "Nei" */}
                 {needsComment && (
                   <div className="space-y-1.5 pt-1">
                     <label className="text-xs font-medium text-destructive">
                       Kommentar påkrevd ved "Nei"
                     </label>
                     <Textarea
-                      value={answers[`${field.id}_comment`] || ""}
+                      value={getFieldComment(field.id)}
                       onChange={(e) => handleAnswerChange(`${field.id}_comment`, e.target.value)}
                       disabled={isLocked}
                       className="rounded-xl"
@@ -508,6 +544,14 @@ export default function FormFillPage() {
                       placeholder="Beskriv avvik..."
                     />
                   </div>
+                )}
+
+                {/* Optional comment for all field types (hidden when empty) */}
+                {allowComment && !needsComment && field.type !== "checkbox_list" && (
+                  <CommentToggle
+                    fieldId={field.id}
+                    label={field.type === "photo_upload" ? "bildetekst" : "kommentar"}
+                  />
                 )}
               </div>
             );

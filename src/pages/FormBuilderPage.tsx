@@ -19,7 +19,6 @@ import {
   Save,
   ArrowLeft,
   Loader2,
-  Upload,
   FileText,
   CheckSquare,
   ListChecks,
@@ -30,11 +29,16 @@ import {
   PenTool,
   Camera,
   Heading,
+  Copy,
+  ChevronUp,
+  ChevronDown,
+  Archive,
+  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import type { FormField, FormFieldType, FormRule } from "@/lib/form-types";
-import { FIELD_TYPE_LABELS } from "@/lib/form-types";
+import { FIELD_TYPE_LABELS, fieldSupportsComment } from "@/lib/form-types";
 import { Switch } from "@/components/ui/switch";
 
 const FIELD_ICONS: Record<FormFieldType, React.ElementType> = {
@@ -60,13 +64,10 @@ interface Template {
 export default function FormBuilderPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
-  const { user } = useAuth();
+  const { user, isAdmin } = useAuth();
 
-  // Template list state
   const [templates, setTemplates] = useState<Template[]>([]);
   const [loading, setLoading] = useState(true);
-
-  // Builder state
   const [editingTemplate, setEditingTemplate] = useState<string | null>(null);
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -74,6 +75,9 @@ export default function FormBuilderPage() {
   const [rules, setRules] = useState<FormRule[]>([]);
   const [saving, setSaving] = useState(false);
   const [versions, setVersions] = useState<{ id: string; version_number: number; created_at: string }[]>([]);
+  const [activeVersionId, setActiveVersionId] = useState<string | null>(null);
+  const [instanceCounts, setInstanceCounts] = useState<Record<string, number>>({});
+  const [deleting, setDeleting] = useState<string | null>(null);
 
   const fetchTemplates = async () => {
     const { data } = await supabase
@@ -81,13 +85,26 @@ export default function FormBuilderPage() {
       .select("id, title, description, active_version_id, created_at")
       .is("deleted_at", null)
       .order("created_at", { ascending: false });
-    if (data) setTemplates(data as any);
+    if (data) {
+      setTemplates(data as any);
+      // Fetch instance counts for each template
+      const ids = (data as any[]).map((t: any) => t.id);
+      if (ids.length > 0) {
+        const { data: instances } = await supabase
+          .from("form_instances")
+          .select("template_id")
+          .in("template_id", ids);
+        const counts: Record<string, number> = {};
+        (instances || []).forEach((i: any) => {
+          counts[i.template_id] = (counts[i.template_id] || 0) + 1;
+        });
+        setInstanceCounts(counts);
+      }
+    }
     setLoading(false);
   };
 
-  useEffect(() => {
-    fetchTemplates();
-  }, []);
+  useEffect(() => { fetchTemplates(); }, []);
 
   const loadTemplate = async (templateId: string) => {
     setEditingTemplate(templateId);
@@ -100,9 +117,9 @@ export default function FormBuilderPage() {
     if (tpl) {
       setTitle((tpl as any).title);
       setDescription((tpl as any).description || "");
+      setActiveVersionId((tpl as any).active_version_id);
     }
 
-    // Load versions
     const { data: vers } = await supabase
       .from("form_template_versions")
       .select("id, version_number, created_at")
@@ -111,7 +128,6 @@ export default function FormBuilderPage() {
 
     if (vers) setVersions(vers as any);
 
-    // Load active version fields
     if ((tpl as any)?.active_version_id) {
       const { data: ver } = await supabase
         .from("form_template_versions")
@@ -146,6 +162,59 @@ export default function FormBuilderPage() {
     }
   };
 
+  const handleDeleteTemplate = async (templateId: string) => {
+    const count = instanceCounts[templateId] || 0;
+    if (count > 0) {
+      toast.error("Kan ikke slettes", {
+        description: `Malen er brukt i ${count} prosjekt${count > 1 ? "er" : ""}. Bruk arkivering i stedet.`,
+      });
+      return;
+    }
+    const reason = prompt("Begrunnelse for sletting (valgfri):");
+    setDeleting(templateId);
+    const { error } = await supabase
+      .from("form_templates")
+      .update({
+        deleted_at: new Date().toISOString(),
+        // deleted_by and delete_reason would need columns - using description fallback
+      })
+      .eq("id", templateId);
+
+    if (error) {
+      toast.error("Kunne ikke slette", { description: error.message });
+    } else {
+      toast.success("Mal slettet");
+      if (editingTemplate === templateId) {
+        setEditingTemplate(null);
+        setFields([]);
+        setRules([]);
+      }
+      fetchTemplates();
+    }
+    setDeleting(null);
+  };
+
+  const handleArchiveTemplate = async (templateId: string) => {
+    // Soft-archive by setting deleted_at (same pattern, templates are hidden from dropdowns)
+    setDeleting(templateId);
+    const { error } = await supabase
+      .from("form_templates")
+      .update({ deleted_at: new Date().toISOString() })
+      .eq("id", templateId);
+    if (error) {
+      toast.error("Kunne ikke arkivere", { description: error.message });
+    } else {
+      toast.success("Mal arkivert");
+      if (editingTemplate === templateId) {
+        setEditingTemplate(null);
+        setFields([]);
+        setRules([]);
+      }
+      fetchTemplates();
+    }
+    setDeleting(null);
+  };
+
   const addField = (type: FormFieldType) => {
     const newField: FormField = {
       id: crypto.randomUUID(),
@@ -153,6 +222,7 @@ export default function FormBuilderPage() {
       label: FIELD_TYPE_LABELS[type],
       order: fields.length,
       required: type !== "section_header",
+      allow_comment: fieldSupportsComment(type),
     };
     if (type === "checkbox_list") {
       newField.options = ["Alternativ 1", "Alternativ 2"];
@@ -169,24 +239,31 @@ export default function FormBuilderPage() {
     setRules(rules.filter((r) => r.field_id !== id));
   };
 
+  const duplicateField = (idx: number) => {
+    const source = fields[idx];
+    const dup: FormField = { ...source, id: crypto.randomUUID(), label: `${source.label} (kopi)`, order: fields.length };
+    const newFields = [...fields];
+    newFields.splice(idx + 1, 0, dup);
+    setFields(newFields.map((f, i) => ({ ...f, order: i })));
+  };
+
   const moveField = (fromIdx: number, toIdx: number) => {
+    if (toIdx < 0 || toIdx >= fields.length) return;
     const newFields = [...fields];
     const [moved] = newFields.splice(fromIdx, 1);
     newFields.splice(toIdx, 0, moved);
     setFields(newFields.map((f, i) => ({ ...f, order: i })));
   };
 
-  const saveVersion = async () => {
+  const saveVersion = async (setActive = true) => {
     if (!editingTemplate || !user) return;
     setSaving(true);
 
-    // Update template title/description
     await supabase
       .from("form_templates")
       .update({ title, description: description || null })
       .eq("id", editingTemplate);
 
-    // Get next version number
     const nextVersion = versions.length > 0 ? versions[0].version_number + 1 : 1;
 
     const { data: ver, error } = await supabase
@@ -207,17 +284,26 @@ export default function FormBuilderPage() {
       return;
     }
 
-    // Set as active version
-    if (ver) {
+    if (ver && setActive) {
       await supabase
         .from("form_templates")
         .update({ active_version_id: (ver as any).id })
         .eq("id", editingTemplate);
     }
 
-    toast.success(`Versjon ${nextVersion} lagret`);
+    toast.success(`Versjon ${nextVersion} lagret${setActive ? " og satt som aktiv" : ""}`);
     await loadTemplate(editingTemplate);
     setSaving(false);
+  };
+
+  const setVersionActive = async (versionId: string) => {
+    if (!editingTemplate) return;
+    await supabase
+      .from("form_templates")
+      .update({ active_version_id: versionId })
+      .eq("id", editingTemplate);
+    toast.success("Aktiv versjon oppdatert");
+    loadTemplate(editingTemplate);
   };
 
   // Template list view
@@ -252,23 +338,57 @@ export default function FormBuilderPage() {
           </div>
         ) : (
           <div className="space-y-2">
-            {templates.map((tpl) => (
-              <div
-                key={tpl.id}
-                className="rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors cursor-pointer flex items-center justify-between"
-                onClick={() => loadTemplate(tpl.id)}
-              >
-                <div>
-                  <p className="font-medium text-sm">{tpl.title}</p>
-                  {tpl.description && (
-                    <p className="text-xs text-muted-foreground mt-0.5">{tpl.description}</p>
-                  )}
+            {templates.map((tpl) => {
+              const count = instanceCounts[tpl.id] || 0;
+              return (
+                <div
+                  key={tpl.id}
+                  className="rounded-xl border border-border bg-card p-4 hover:border-primary/30 transition-colors cursor-pointer flex items-center justify-between group"
+                  onClick={() => loadTemplate(tpl.id)}
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="font-medium text-sm">{tpl.title}</p>
+                    {tpl.description && (
+                      <p className="text-xs text-muted-foreground mt-0.5 truncate">{tpl.description}</p>
+                    )}
+                    {count > 0 && (
+                      <p className="text-[10px] text-muted-foreground/60 mt-0.5">Brukt i {count} prosjekt{count > 1 ? "er" : ""}</p>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2 shrink-0">
+                    <Badge variant={tpl.active_version_id ? "default" : "secondary"} className="text-[10px]">
+                      {tpl.active_version_id ? "Aktiv" : "Ingen versjon"}
+                    </Badge>
+                    {/* Delete / Archive buttons */}
+                    <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1" onClick={(e) => e.stopPropagation()}>
+                      {count > 0 ? (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-lg"
+                          onClick={() => handleArchiveTemplate(tpl.id)}
+                          disabled={deleting === tpl.id}
+                          title="Arkiver mal"
+                        >
+                          <Archive className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                      ) : (
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          className="h-7 w-7 rounded-lg"
+                          onClick={() => handleDeleteTemplate(tpl.id)}
+                          disabled={deleting === tpl.id}
+                          title="Slett mal"
+                        >
+                          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
+                        </Button>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <Badge variant="secondary" className="text-[10px]">
-                  {tpl.active_version_id ? "Aktiv" : "Ingen versjon"}
-                </Badge>
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
@@ -289,23 +409,54 @@ export default function FormBuilderPage() {
               setEditingTemplate(null);
               setFields([]);
               setRules([]);
+              fetchTemplates();
             }}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div>
             <h1 className="text-lg font-bold">Skjemabygger</h1>
-            <p className="text-xs text-muted-foreground">
-              {versions.length > 0
-                ? `${versions.length} versjon${versions.length > 1 ? "er" : ""}`
-                : "Ingen versjoner"}
-            </p>
+            <div className="flex items-center gap-2 mt-0.5">
+              <p className="text-xs text-muted-foreground">
+                {versions.length > 0
+                  ? `${versions.length} versjon${versions.length > 1 ? "er" : ""}`
+                  : "Ingen versjoner"}
+              </p>
+              {activeVersionId && versions.length > 0 && (
+                <Badge variant="default" className="text-[9px] px-1.5 py-0">
+                  Aktiv v{versions.find(v => v.id === activeVersionId)?.version_number || "?"}
+                </Badge>
+              )}
+              {!activeVersionId && versions.length > 0 && (
+                <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
+                  Ingen aktiv
+                </Badge>
+              )}
+            </div>
           </div>
         </div>
-        <Button size="sm" className="rounded-xl gap-1.5" onClick={saveVersion} disabled={saving}>
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-          Lagre versjon
-        </Button>
+        <div className="flex items-center gap-2">
+          {/* Delete/archive in builder */}
+          {editingTemplate && (
+            <Button
+              variant="ghost"
+              size="sm"
+              className="rounded-xl text-xs text-muted-foreground"
+              onClick={() => {
+                const count = instanceCounts[editingTemplate] || 0;
+                if (count > 0) handleArchiveTemplate(editingTemplate);
+                else handleDeleteTemplate(editingTemplate);
+              }}
+            >
+              <Trash2 className="h-3.5 w-3.5 mr-1" />
+              {(instanceCounts[editingTemplate] || 0) > 0 ? "Arkiver" : "Slett"}
+            </Button>
+          )}
+          <Button size="sm" className="rounded-xl gap-1.5" onClick={() => saveVersion(true)} disabled={saving}>
+            {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
+            Lagre versjon
+          </Button>
+        </div>
       </div>
 
       {/* Template meta */}
@@ -324,6 +475,29 @@ export default function FormBuilderPage() {
           />
         </div>
       </div>
+
+      {/* Version list (if multiple) */}
+      {versions.length > 1 && (
+        <div className="rounded-xl border border-border bg-card p-3 mb-4">
+          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Versjoner</p>
+          <div className="flex flex-wrap gap-1.5">
+            {versions.map((v) => (
+              <button
+                key={v.id}
+                onClick={() => setVersionActive(v.id)}
+                className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors ${
+                  v.id === activeVersionId
+                    ? "bg-primary/10 text-primary border-primary/30"
+                    : "bg-card text-muted-foreground border-border hover:border-primary/20"
+                }`}
+              >
+                v{v.version_number}
+                {v.id === activeVersionId && <span className="ml-1 text-[9px]">✓</span>}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* Field palette */}
       <div className="mb-4">
@@ -363,19 +537,28 @@ export default function FormBuilderPage() {
                 key={field.id}
                 className="rounded-xl border border-border bg-card p-3 flex items-start gap-3 group"
               >
-                {/* Drag handle */}
-                <div className="flex flex-col gap-1 pt-1">
+                {/* Move buttons */}
+                <div className="flex flex-col gap-0.5 pt-1 shrink-0">
                   <button
-                    className="text-muted-foreground hover:text-foreground cursor-grab"
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
                     disabled={idx === 0}
-                    onClick={() => idx > 0 && moveField(idx, idx - 1)}
+                    onClick={() => moveField(idx, idx - 1)}
+                    title="Flytt opp"
                   >
-                    <GripVertical className="h-4 w-4" />
+                    <ChevronUp className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
+                    disabled={idx === fields.length - 1}
+                    onClick={() => moveField(idx, idx + 1)}
+                    title="Flytt ned"
+                  >
+                    <ChevronDown className="h-3.5 w-3.5" />
                   </button>
                 </div>
 
                 {/* Field config */}
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 space-y-2 min-w-0">
                   <div className="flex items-center gap-2">
                     <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
                     <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
@@ -388,9 +571,10 @@ export default function FormBuilderPage() {
                     className="rounded-lg h-8 text-sm font-medium"
                     placeholder="Feltnavn..."
                   />
+
+                  {/* Checkbox list items */}
                   {field.type === "checkbox_list" && (
                     <div className="space-y-3 pl-1">
-                      {/* Checklist items */}
                       <div className="space-y-1">
                         <p className="text-[10px] text-muted-foreground font-medium">Sjekkpunkter</p>
                         {(field.options || []).map((opt, optIdx) => (
@@ -431,9 +615,15 @@ export default function FormBuilderPage() {
                         </Button>
                       </div>
 
-                      {/* Checklist options */}
                       <div className="space-y-2 border-t border-border pt-2">
                         <p className="text-[10px] text-muted-foreground font-medium">Innstillinger</p>
+                        <label className="flex items-center justify-between gap-2">
+                          <span className="text-xs text-muted-foreground">Tillat kommentar per punkt</span>
+                          <Switch
+                            checked={field.allow_comment !== false}
+                            onCheckedChange={(v) => updateField(field.id, { allow_comment: v })}
+                          />
+                        </label>
                         <label className="flex items-center justify-between gap-2">
                           <span className="text-xs text-muted-foreground">Krev bilde ved Avvik</span>
                           <Switch
@@ -451,48 +641,84 @@ export default function FormBuilderPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* Checkbox yes/no settings */}
                   {field.type === "checkbox_yes_no" && (
-                    <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <input
-                        type="checkbox"
-                        checked={rules.some(
-                          (r) => r.field_id === field.id && r.action === "require_comment"
-                        )}
-                        onChange={(e) => {
-                          if (e.target.checked) {
-                            setRules([
-                              ...rules,
-                              {
-                                id: crypto.randomUUID(),
-                                field_id: field.id,
-                                condition: "equals",
-                                value: "no",
-                                action: "require_comment",
-                              },
-                            ]);
-                          } else {
-                            setRules(
-                              rules.filter(
-                                (r) =>
-                                  !(r.field_id === field.id && r.action === "require_comment")
-                              )
-                            );
-                          }
-                        }}
-                        className="rounded"
-                      />
-                      <span>Krev kommentar ved "Nei"</span>
+                    <div className="space-y-2 pl-1 border-t border-border pt-2">
+                      <label className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">Tillat kommentar</span>
+                        <Switch
+                          checked={field.allow_comment !== false}
+                          onCheckedChange={(v) => updateField(field.id, { allow_comment: v })}
+                        />
+                      </label>
+                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <input
+                          type="checkbox"
+                          checked={rules.some(
+                            (r) => r.field_id === field.id && r.action === "require_comment"
+                          )}
+                          onChange={(e) => {
+                            if (e.target.checked) {
+                              setRules([
+                                ...rules,
+                                {
+                                  id: crypto.randomUUID(),
+                                  field_id: field.id,
+                                  condition: "equals",
+                                  value: "no",
+                                  action: "require_comment",
+                                },
+                              ]);
+                            } else {
+                              setRules(
+                                rules.filter(
+                                  (r) =>
+                                    !(r.field_id === field.id && r.action === "require_comment")
+                                )
+                              );
+                            }
+                          }}
+                          className="rounded"
+                        />
+                        <span>Krev kommentar ved "Nei"</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Generic allow_comment for other types */}
+                  {fieldSupportsComment(field.type) && field.type !== "checkbox_yes_no" && field.type !== "checkbox_list" && (
+                    <div className="pl-1 border-t border-border pt-2">
+                      <label className="flex items-center justify-between gap-2">
+                        <span className="text-xs text-muted-foreground">
+                          {field.type === "photo_upload" ? "Tillat bildetekst" : "Tillat intern kommentar"}
+                        </span>
+                        <Switch
+                          checked={field.allow_comment !== false}
+                          onCheckedChange={(v) => updateField(field.id, { allow_comment: v })}
+                        />
+                      </label>
                     </div>
                   )}
                 </div>
 
-                {/* Remove */}
-                <button
-                  className="text-muted-foreground hover:text-destructive opacity-0 group-hover:opacity-100 transition-opacity p-1"
-                  onClick={() => removeField(field.id)}
-                >
-                  <Trash2 className="h-3.5 w-3.5" />
-                </button>
+                {/* Field actions */}
+                <div className="flex flex-col gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
+                  <button
+                    className="text-muted-foreground hover:text-foreground p-1"
+                    onClick={() => duplicateField(idx)}
+                    title="Dupliser"
+                  >
+                    <Copy className="h-3.5 w-3.5" />
+                  </button>
+                  <button
+                    className="text-muted-foreground hover:text-destructive p-1"
+                    onClick={() => removeField(field.id)}
+                    title="Slett felt"
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </button>
+                </div>
               </div>
             );
           })

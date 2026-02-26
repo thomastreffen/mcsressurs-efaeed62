@@ -22,6 +22,8 @@ export interface FormField {
   // Checklist-specific options
   require_photo_on_deviation?: boolean;
   enable_risk_grading?: boolean;
+  // Comment settings
+  allow_comment?: boolean; // default true for most types
 }
 
 export type ChecklistItemStatus = "ok" | "avvik" | "ikke_relevant";
@@ -63,3 +65,8 @@ export const FIELD_TYPE_LABELS: Record<FormFieldType, string> = {
   signature: "Signatur",
   photo_upload: "Bildeopplasting",
 };
+
+/** Whether a field type supports comments by default */
+export function fieldSupportsComment(type: FormFieldType): boolean {
+  return type !== "section_header" && type !== "signature";
+}
