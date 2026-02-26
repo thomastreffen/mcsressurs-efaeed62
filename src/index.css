@@ -168,9 +168,9 @@
 
 /* FullCalendar theme overrides */
 .fc-wrapper .fc {
-  --fc-border-color: hsl(var(--border) / 0.5);
+  --fc-border-color: hsl(var(--border) / 0.15);
   --fc-today-bg-color: hsl(var(--primary) / 0.02);
-  --fc-neutral-bg-color: hsl(var(--muted) / 0.08);
+  --fc-neutral-bg-color: hsl(var(--muted) / 0.04);
   --fc-page-bg-color: hsl(var(--card));
   --fc-now-indicator-color: hsl(var(--primary));
   --fc-event-border-color: transparent;
@@ -178,16 +178,16 @@
 }
 .fc-wrapper .fc .fc-timegrid-slot {
   height: 2.75rem;
-  border-color: hsl(var(--border) / 0.3);
+  border-color: hsl(var(--border) / 0.15);
 }
 .fc-wrapper .fc td,
 .fc-wrapper .fc th {
-  border-color: hsl(var(--border) / 0.3);
+  border-color: hsl(var(--border) / 0.15);
   border-width: 0.5px;
 }
 .fc-wrapper .fc .fc-col-header-cell {
   background: hsl(var(--card));
-  border-bottom: 1px solid hsl(var(--border) / 0.4);
+  border-bottom: 1px solid hsl(var(--border) / 0.2);
   padding: 0;
 }
 .fc-wrapper .fc .fc-timegrid-event {
@@ -198,7 +198,7 @@
   transition: transform 0.15s ease, box-shadow 0.15s ease;
   cursor: grab;
   min-height: 36px;
-  margin: 1px 2px;
+  margin: 2px 3px;
 }
 .fc-wrapper .fc .fc-timegrid-event:hover {
   transform: scale(1.01);
@@ -211,21 +211,16 @@
 .fc-wrapper .fc .fc-timegrid-event .fc-event-main {
   padding: 0;
 }
-/* External / busy event — very subdued */
+/* External / busy event — solid gray, no stripes */
 .fc-wrapper .fc .fc-timegrid-event:has(.fc-event-external) {
-  border-style: dashed;
+  border-style: solid;
   border-width: 1px;
   border-left-width: 1px;
+  border-color: hsl(220 10% 70%);
   cursor: default;
   box-shadow: none;
-  opacity: 0.55;
-  background: repeating-linear-gradient(
-    -45deg,
-    transparent,
-    transparent 4px,
-    hsl(var(--muted) / 0.3) 4px,
-    hsl(var(--muted) / 0.3) 6px
-  ) !important;
+  opacity: 1;
+  background: hsl(220 14% 82% / 0.7) !important;
 }
 .fc-wrapper .fc .fc-timegrid-event:has(.fc-event-external):hover {
   transform: none;
@@ -247,7 +242,7 @@
 }
 .fc-wrapper .fc .fc-bg-event {
   border-radius: 6px;
-  border: 1px dashed hsl(var(--border) / 0.4);
+  border: 1px solid hsl(var(--border) / 0.2);
 }
 .fc-wrapper .fc .fc-highlight {
   background: hsl(var(--primary) / 0.06);

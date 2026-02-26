@@ -25,21 +25,13 @@ function NowBadge({ status }: { status: TechNowStatus }) {
   if (status.state === "busy") {
     return (
       <span className={cn(base, "bg-destructive/10 text-destructive")}>
-        {status.label}
+        {status.durationLabel || status.label}
       </span>
     );
   }
-  if (status.state === "free") {
-    return (
-      <span className={cn(base, "bg-success/10 text-success")}>
-        {status.label}
-      </span>
-    );
-  }
-  // free-until
   return (
     <span className={cn(base, "bg-success/10 text-success")}>
-      {status.label}
+      {status.durationLabel || status.label}
     </span>
   );
 }
@@ -137,7 +129,6 @@ export function TechnicianList({ selectedId, onSelect, allowDeselect, filterIds,
               >
                 {initial}
               </div>
-              {/* Live status dot */}
               {nowStatus && (
                 <span
                   className={cn(

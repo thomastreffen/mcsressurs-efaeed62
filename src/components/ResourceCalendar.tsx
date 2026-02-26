@@ -4,10 +4,10 @@ import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
 import type { EventInput, EventDropArg, DateSelectArg, EventClickArg } from "@fullcalendar/core";
-import { nb } from "date-fns/locale";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import type { ExternalBusySlot } from "@/hooks/useExternalBusy";
 import type { DayCapacity } from "@/hooks/useCapacity";
+import { Lock } from "lucide-react";
 
 interface TechLookup {
   name: string;
@@ -27,6 +27,33 @@ interface ResourceCalendarProps {
   isAdmin?: boolean;
 }
 
+/** Merge overlapping external slots into contiguous blocks */
+function mergeExternalSlots(slots: ExternalBusySlot[]): ExternalBusySlot[] {
+  if (slots.length <= 1) return slots;
+  const sorted = [...slots].sort((a, b) => a.start.getTime() - b.start.getTime());
+  const merged: ExternalBusySlot[] = [{ ...sorted[0] }];
+  for (let i = 1; i < sorted.length; i++) {
+    const last = merged[merged.length - 1];
+    if (sorted[i].start <= last.end) {
+      if (sorted[i].end > last.end) last.end = sorted[i].end;
+    } else {
+      merged.push({ ...sorted[i] });
+    }
+  }
+  return merged;
+}
+
+const statusColors: Record<string, { bg: string; border: string; text: string }> = {
+  planned: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
+  requested: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
+  scheduled: { bg: "#1E3A8A", border: "#2563EB", text: "#FFFFFF" },
+  in_progress: { bg: "#065F46", border: "#065F46", text: "#FFFFFF" },
+  completed: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
+  done: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
+  invoiced: { bg: "#E5E7EB", border: "#D1D5DB", text: "#6B7280" },
+};
+const defaultStatusColor = { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" };
+
 export function ResourceCalendar({
   technicianId,
   referenceDate,
@@ -40,34 +67,17 @@ export function ResourceCalendar({
   isAdmin = false,
 }: ResourceCalendarProps) {
   const calendarRef = useRef<FullCalendar>(null);
-  const { events: calendarEvents, loading } = useCalendarEvents(technicianId, referenceDate);
+  const { events: calendarEvents } = useCalendarEvents(technicianId, referenceDate);
 
-  // Navigate FullCalendar when referenceDate changes
   useEffect(() => {
     const api = calendarRef.current?.getApi();
-    if (api) {
-      api.gotoDate(referenceDate);
-    }
+    if (api) api.gotoDate(referenceDate);
   }, [referenceDate]);
 
-  // Status color map
-  const statusColors: Record<string, { bg: string; border: string; text: string }> = {
-    planned: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
-    requested: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
-    scheduled: { bg: "#1E3A8A", border: "#2563EB", text: "#FFFFFF" },
-    in_progress: { bg: "#065F46", border: "#065F46", text: "#FFFFFF" },
-    completed: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
-    done: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
-    invoiced: { bg: "#E5E7EB", border: "#D1D5DB", text: "#6B7280" },
-  };
-  const defaultStatusColor = { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" };
-
-  // Map CalendarEvents to FullCalendar EventInput
   const fcEvents: EventInput[] = useMemo(() => {
-    const internal: EventInput[] = calendarEvents.map((ev) => {
+    const result: EventInput[] = calendarEvents.map((ev) => {
       const techNames = ev.technicians.map((t) => t.name.split(" ")[0]).join(", ");
       const colors = statusColors[ev.status] || defaultStatusColor;
-
       return {
         id: ev.id,
         title: ev.title.replace("SERVICE – ", ""),
@@ -87,67 +97,61 @@ export function ResourceCalendar({
       };
     });
 
-    // Add external busy slots — subdued styling so they don't dominate internal events
+    // External busy slots – merged and solid
     if (getBusySlotsForDay) {
       const weekStart = new Date(referenceDate);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
       for (let i = 0; i < 7; i++) {
         const day = new Date(weekStart);
         day.setDate(day.getDate() + i);
-        const slots = getBusySlotsForDay(day);
-        for (const slot of slots) {
-          const tech = technicianMap.get(slot.technicianId);
-          internal.push({
-            id: `busy-${slot.technicianId}-${slot.start.getTime()}`,
-            title: tech?.name ? `${tech.name.split(" ")[0]} – ekstern` : "Ekstern",
-            start: slot.start,
-            end: slot.end,
-            backgroundColor: "hsl(var(--muted) / 0.4)",
-            borderColor: "hsl(var(--border))",
-            textColor: "hsl(var(--muted-foreground))",
-            editable: false,
-            extendedProps: { isBusy: true },
-          });
+        const rawSlots = getBusySlotsForDay(day);
+        // Group by technician, then merge overlapping
+        const byTech = new Map<string, ExternalBusySlot[]>();
+        for (const s of rawSlots) {
+          const arr = byTech.get(s.technicianId) || [];
+          arr.push(s);
+          byTech.set(s.technicianId, arr);
+        }
+        for (const [techId, techSlots] of byTech) {
+          const merged = mergeExternalSlots(techSlots);
+          const tech = technicianMap.get(techId);
+          for (const slot of merged) {
+            result.push({
+              id: `busy-${techId}-${slot.start.getTime()}`,
+              title: tech?.name ? `${tech.name.split(" ")[0]} – opptatt` : "Opptatt (ekstern)",
+              start: slot.start,
+              end: slot.end,
+              backgroundColor: "#D1D5DB",
+              borderColor: "#9CA3AF",
+              textColor: "#4B5563",
+              editable: false,
+              extendedProps: { isBusy: true },
+            });
+          }
         }
       }
     }
 
-    return internal;
+    return result;
   }, [calendarEvents, getBusySlotsForDay, technicianMap, referenceDate, isAdmin]);
 
   const handleEventClick = useCallback((info: EventClickArg) => {
     const calEvent = info.event.extendedProps.calendarEvent as CalendarEvent | undefined;
-    if (calEvent && !info.event.extendedProps.isBusy) {
-      onEventClick?.(calEvent);
-    }
+    if (calEvent && !info.event.extendedProps.isBusy) onEventClick?.(calEvent);
   }, [onEventClick]);
 
   const handleDateSelect = useCallback((info: DateSelectArg) => {
-    if (isAdmin) {
-      onDateSelect?.(info.start, info.end);
-    }
+    if (isAdmin) onDateSelect?.(info.start, info.end);
   }, [isAdmin, onDateSelect]);
 
   const handleEventDrop = useCallback((info: EventDropArg) => {
-    if (info.event.extendedProps.isBusy) {
-      info.revert();
-      return;
-    }
-    const eventId = info.event.id;
-    const newStart = info.event.start!;
-    const newEnd = info.event.end!;
-    onEventDrop?.(eventId, newStart, newEnd);
+    if (info.event.extendedProps.isBusy) { info.revert(); return; }
+    onEventDrop?.(info.event.id, info.event.start!, info.event.end!);
   }, [onEventDrop]);
 
   const handleEventResize = useCallback((info: any) => {
-    if (info.event.extendedProps.isBusy) {
-      info.revert();
-      return;
-    }
-    const eventId = info.event.id;
-    const newStart = info.event.start!;
-    const newEnd = info.event.end!;
-    onEventResize?.(eventId, newStart, newEnd);
+    if (info.event.extendedProps.isBusy) { info.revert(); return; }
+    onEventResize?.(info.event.id, info.event.start!, info.event.end!);
   }, [onEventResize]);
 
   return (
@@ -162,8 +166,8 @@ export function ResourceCalendar({
         firstDay={1}
         height="auto"
         allDaySlot={false}
-        slotMinTime="06:00:00"
-        slotMaxTime="20:00:00"
+        slotMinTime="07:00:00"
+        slotMaxTime="16:00:00"
         slotDuration="00:30:00"
         slotLabelInterval="01:00:00"
         slotLabelFormat={{ hour: "2-digit", minute: "2-digit", hour12: false }}
@@ -185,24 +189,22 @@ export function ResourceCalendar({
           const props = arg.event.extendedProps;
           if (props.isBusy) {
             return (
-              <div className="fc-event-external flex items-center gap-2 px-2 py-1.5 cursor-default select-none">
-                <span className="text-base opacity-50">🔒</span>
-                <span className="text-[11px] text-muted-foreground truncate opacity-70">{arg.event.title}</span>
+              <div className="fc-event-external flex items-center gap-1.5 px-2 py-1.5 cursor-default select-none">
+                <Lock className="h-3 w-3 opacity-50 shrink-0" />
+                <span className="text-[11px] font-medium truncate">Opptatt (ekstern)</span>
               </div>
             );
           }
           return (
             <div className="fc-event-internal px-2 py-1.5 overflow-hidden h-full cursor-grab active:cursor-grabbing select-none">
-              <p className="text-[13px] font-bold leading-tight truncate">
+              <p className="text-[14px] font-bold leading-tight truncate text-white">
                 {arg.event.title}
               </p>
               {props.customer && (
                 <p className="text-[11px] opacity-80 truncate mt-0.5">{props.customer}</p>
               )}
               <div className="flex items-center gap-2 mt-1 text-[10px] opacity-70">
-                {props.techNames && (
-                  <span className="truncate">👤 {props.techNames}</span>
-                )}
+                {props.techNames && <span className="truncate">👤 {props.techNames}</span>}
                 <span className="shrink-0">{arg.timeText}</span>
               </div>
             </div>
@@ -232,10 +234,7 @@ export function ResourceCalendar({
                       }}
                     />
                   </div>
-                  <span
-                    className="text-[9px] font-semibold"
-                    style={{ color: dayCap.color }}
-                  >
+                  <span className="text-[9px] font-semibold" style={{ color: dayCap.color }}>
                     {dayCap.label}
                   </span>
                 </div>
@@ -243,9 +242,7 @@ export function ResourceCalendar({
             </div>
           );
         }}
-        loading={(isLoading) => {
-          // Could show skeleton here
-        }}
+        loading={() => {}}
       />
     </div>
   );
