@@ -16,6 +16,7 @@ import { useTechnicians } from "@/hooks/useTechnicians";
 import { useExternalBusy } from "@/hooks/useExternalBusy";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import { useCapacity } from "@/hooks/useCapacity";
+import { useTechnicianNowStatus } from "@/hooks/useTechnicianNowStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -118,6 +119,9 @@ export default function ResourcePlan() {
     techIds
   );
 
+  // Real-time now status for sidebar
+  const nowStatusMap = useTechnicianNowStatus(calEvents, busySlots, techIds);
+
   // Today's day index (0=Mon)
   const todayDayIndex = useMemo(() => {
     const today = new Date();
@@ -145,6 +149,7 @@ export default function ResourcePlan() {
             onSelect={setSelectedTechId}
             allowDeselect
             filterIds={filteredTechForSidebar}
+            nowStatusMap={nowStatusMap}
           />
         </aside>
       )}
