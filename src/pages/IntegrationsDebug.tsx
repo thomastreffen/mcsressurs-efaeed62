@@ -317,6 +317,9 @@ export default function IntegrationsDebug() {
             </Card>
           )}
 
+          {/* Orphan Cleanup */}
+          <OrphanCleanup addLog={addLog} />
+
           {/* Test Availability */}
           <AvailabilityTester addLog={addLog} />
 
@@ -447,6 +450,112 @@ function AvailabilityTester({ addLog }: { addLog: (msg: string) => void }) {
             ))}
           </div>
         )}
+      </CardContent>
+    </Card>
+  );
+}
+
+function OrphanCleanup({ addLog }: { addLog: (msg: string) => void }) {
+  const [scanning, setScanning] = useState(false);
+  const [cleaning, setCleaning] = useState(false);
+  const [orphanCount, setOrphanCount] = useState<number | null>(null);
+  const [orphanIds, setOrphanIds] = useState<string[]>([]);
+
+  const scan = async () => {
+    setScanning(true);
+    addLog("Skanner etter foreldreløse events uten event_technicians...");
+    try {
+      // Find events that have NO rows in event_technicians
+      const { data: allEvents } = await supabase
+        .from("events")
+        .select("id, title, status, created_at")
+        .is("deleted_at", null);
+
+      if (!allEvents?.length) {
+        setOrphanCount(0);
+        setOrphanIds([]);
+        addLog("Ingen events funnet.");
+        return;
+      }
+
+      const { data: linkedEvents } = await supabase
+        .from("event_technicians")
+        .select("event_id");
+
+      const linkedSet = new Set((linkedEvents || []).map((e: any) => e.event_id));
+      const orphans = allEvents.filter((e: any) => !linkedSet.has(e.id));
+
+      setOrphanCount(orphans.length);
+      setOrphanIds(orphans.map((e: any) => e.id));
+      addLog(`Fant ${orphans.length} foreldreløse events av ${allEvents.length} totalt`);
+
+      for (const o of orphans.slice(0, 5)) {
+        addLog(`  → ${o.id.slice(0, 8)}... "${o.title}" (${o.status})`);
+      }
+      if (orphans.length > 5) addLog(`  ... og ${orphans.length - 5} til`);
+    } catch (e: any) {
+      addLog(`FEIL: ${e.message}`);
+    } finally {
+      setScanning(false);
+    }
+  };
+
+  const cleanup = async () => {
+    if (!orphanIds.length) return;
+    setCleaning(true);
+    addLog(`Sletter ${orphanIds.length} foreldreløse events...`);
+    try {
+      let deleted = 0;
+      // Batch delete in chunks of 20
+      for (let i = 0; i < orphanIds.length; i += 20) {
+        const chunk = orphanIds.slice(i, i + 20);
+        const { error } = await supabase
+          .from("events")
+          .update({ deleted_at: new Date().toISOString(), delete_reason: "orphan_cleanup" })
+          .in("id", chunk);
+        if (!error) deleted += chunk.length;
+      }
+      addLog(`Soft-slettet ${deleted} foreldreløse events`);
+      toast.success(`${deleted} foreldreløse events ryddet opp`);
+      setOrphanCount(0);
+      setOrphanIds([]);
+    } catch (e: any) {
+      addLog(`FEIL: ${e.message}`);
+      toast.error("Opprydding feilet");
+    } finally {
+      setCleaning(false);
+    }
+  };
+
+  return (
+    <Card>
+      <CardHeader>
+        <CardTitle className="text-base flex items-center gap-2">
+          <AlertTriangle className="h-4 w-4" />
+          Rydd opp eksterne blokker
+        </CardTitle>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <p className="text-xs text-muted-foreground">
+          Finner og soft-sletter events uten montørkobling (event_technicians). Disse vises som feilaktige blokker i ressursplanen.
+        </p>
+        <div className="flex items-center gap-3">
+          <Button onClick={scan} disabled={scanning} size="sm" variant="outline" className="gap-1.5">
+            {scanning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Skann
+          </Button>
+          {orphanCount !== null && orphanCount > 0 && (
+            <Button onClick={cleanup} disabled={cleaning} size="sm" variant="destructive" className="gap-1.5">
+              {cleaning ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+              Slett {orphanCount} foreldreløse
+            </Button>
+          )}
+          {orphanCount !== null && (
+            <Badge variant={orphanCount > 0 ? "destructive" : "default"}>
+              {orphanCount} foreldreløse
+            </Badge>
+          )}
+        </div>
       </CardContent>
     </Card>
   );
