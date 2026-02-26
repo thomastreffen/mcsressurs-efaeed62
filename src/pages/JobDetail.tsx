@@ -3,23 +3,18 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { supabase } from "@/integrations/supabase/client";
-import { OFFER_STATUS_CONFIG, type OfferStatus } from "@/lib/offer-status";
 
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { JobStatusBadge } from "@/components/JobStatusBadge";
-import { AttendeeStatusList } from "@/components/AttendeeStatusList";
+import { ProjectHeader } from "@/components/project/ProjectHeader";
+import { ProjectSubnav } from "@/components/project/ProjectSubnav";
+import { ProjectDashboard } from "@/components/project/ProjectDashboard";
 
 import { DocumentCenter } from "@/components/DocumentCenter";
 import { JobRiskPanel } from "@/components/risk/JobRiskPanel";
 import { AuditInfo } from "@/components/AuditInfo";
-import { ProjectPulse } from "@/components/ProjectPulse";
-import { ProjectPulseActions } from "@/components/ProjectPulseActions";
 import { EditJobDialog } from "@/components/EditJobDialog";
 import { ImageLightbox } from "@/components/ImageLightbox";
-import { JobSummaryCard } from "@/components/JobSummaryCard";
 import { ChangeOrderTab } from "@/components/change-orders/ChangeOrderTab";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { Job, Attachment } from "@/lib/mock-data";
 import {
   JOB_STATUS_CONFIG,
@@ -29,80 +24,21 @@ import {
   type JobStatus,
 } from "@/lib/job-status";
 import { useAuth } from "@/hooks/useAuth";
-import { JobCalendarSync } from "@/components/JobCalendarSync";
-import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
 import { ProjectPlanTab } from "@/components/ProjectPlanTab";
 import { SubProjectSection } from "@/components/SubProjectSection";
-import { ProjectCockpitCards } from "@/components/ProjectCockpitCards";
 import { EmailComposer } from "@/components/EmailComposer";
+import { ProjectFormsTab } from "@/components/forms/ProjectFormsTab";
 import {
-  ArrowLeft,
-  Building2,
-  MapPin,
-  Clock,
   Loader2,
   FileText,
-  RefreshCw,
-  Unplug,
-  CalendarCheck,
-  Download,
-  Trash2,
-  Pencil,
-  Video,
-  Copy,
-  ExternalLink,
-  MoreHorizontal,
-  ChevronDown,
-  Mail,
-  Send,
   FileSignature,
-  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
-import { Badge } from "@/components/ui/badge";
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible";
 import type { OutlookSyncStatus } from "@/lib/mock-data";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileActionBar } from "@/components/MobileActionBar";
-import { ProjectFormsTab } from "@/components/forms/ProjectFormsTab";
 
-/* ─── Sync Status Badge (small pill) ─── */
-const SYNC_STATUS_MAP: Record<string, { label: string; variant: "ok" | "warn" | "error" | "muted" }> = {
-  not_synced: { label: "Ikke synkronisert", variant: "muted" },
-  synced: { label: "OK", variant: "ok" },
-  missing_in_outlook: { label: "Mangler", variant: "warn" },
-  failed: { label: "Feil", variant: "error" },
-  cancelled: { label: "Kansellert", variant: "muted" },
-  restored: { label: "Gjenopprettet", variant: "ok" },
-};
-
-const syncBadgeClasses: Record<string, string> = {
-  ok: "bg-green-50 text-green-700 border-green-200 dark:bg-green-950 dark:text-green-300 dark:border-green-800",
-  warn: "bg-orange-50 text-orange-700 border-orange-200 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800",
-  error: "bg-red-50 text-red-700 border-red-200 dark:bg-red-950 dark:text-red-300 dark:border-red-800",
-  muted: "bg-muted text-muted-foreground border-border",
-};
-
-function SyncBadge({ status }: { status?: OutlookSyncStatus }) {
-  const config = SYNC_STATUS_MAP[status || "not_synced"] || SYNC_STATUS_MAP.not_synced;
-  return (
-    <span className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[10px] font-medium leading-none ${syncBadgeClasses[config.variant]}`}>
-      {config.label}
-    </span>
-  );
-}
-
-/* ─── Card wrapper with optional accent stripe ─── */
+/* ─── Card wrapper ─── */
 function SectionCard({ children, className = "", accent }: { children: React.ReactNode; className?: string; accent?: "blue" | "orange" | "neutral" }) {
   const accentClass = accent === "blue"
     ? "border-l-[3px] border-l-primary"
@@ -140,8 +76,8 @@ interface EventLog {
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
-  const defaultTab = searchParams.get("tab") || "oversikt";
+  const [searchParams, setSearchParams] = useSearchParams();
+  const activeTab = searchParams.get("tab") || "dash";
   const { user, isAdmin } = useAuth();
   const isMobile = useIsMobile();
 
@@ -153,53 +89,25 @@ export default function JobDetail() {
   const [editOpen, setEditOpen] = useState(false);
   const [lightboxOpen, setLightboxOpen] = useState(false);
   const [lightboxIndex, setLightboxIndex] = useState(0);
-  const [syncLoading, setSyncLoading] = useState<string | null>(null);
-  const [meetingLoading, setMeetingLoading] = useState(false);
   const [offerData, setOfferData] = useState<any>(null);
-  const [debugOpen, setDebugOpen] = useState(false);
-  const [resourceAssignOpen, setResourceAssignOpen] = useState(false);
   const [parentProjectId, setParentProjectId] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
 
-  // Economy source hierarchy state
+  // Economy
   const [econData, setEconData] = useState<{
     totalAmount: number | null;
     currency: string;
     paymentTerms: string | null;
     source: "job_summaries" | "offer_analysis" | "ingen";
   }>({ totalAmount: null, currency: "NOK", paymentTerms: null, source: "ingen" });
-  const [historyOpen, setHistoryOpen] = useState(!isMobile);
   const [coApproved, setCoApproved] = useState(0);
   const [coPending, setCoPending] = useState(0);
 
-  // Refs for scroll-to actions
   const emailRef = useRef<HTMLDivElement>(null);
-  const syncRef = useRef<HTMLDivElement>(null);
 
-  /* ── Outlook legacy action ── */
-  const handleOutlookAction = async (syncAction: string) => {
-    if (!job || !user) return;
-    setSyncLoading(syncAction);
-    try {
-      const res = await supabase.functions.invoke("outlook-sync", {
-        body: { action: syncAction, event_id: job.id, performed_by: user.id },
-      });
-      if (res.error) {
-        toast.error("Outlook-handling feilet", { description: String(res.error) });
-      } else {
-        const msg = syncAction === "resync" ? "Outlook resynkronisert"
-          : syncAction === "delete_outlook" ? "Outlook-event slettet"
-          : syncAction === "disconnect" ? "Outlook-kobling fjernet"
-          : syncAction === "check_and_restore" ? "Sync-sjekk fullført"
-          : "Handling utført";
-        toast.success(msg);
-        fetchJob();
-        fetchLogs();
-      }
-    } catch (err) {
-      toast.error("Feil ved Outlook-handling");
-    }
-    setSyncLoading(null);
+  /* ── Tab navigation ── */
+  const handleTabChange = (tab: string) => {
+    setSearchParams({ tab });
   };
 
   /* ── Fetch data ── */
@@ -275,7 +183,6 @@ export default function JobDetail() {
 
   const fetchEconData = useCallback(async () => {
     if (!id) return;
-    // 1. Try job_summaries first
     const { data: summary } = await supabase
       .from("job_summaries")
       .select("key_numbers")
@@ -293,7 +200,6 @@ export default function JobDetail() {
       return;
     }
 
-    // 2. Fallback: latest offer analysis
     const { data: analyses } = await supabase
       .from("document_analyses")
       .select("parsed_fields")
@@ -305,7 +211,6 @@ export default function JobDetail() {
     if (analyses && analyses.length > 0) {
       const pf = (analyses[0].parsed_fields as any) || {};
       if (pf.total_amount != null) {
-        // Also check contract analysis for payment_terms
         const { data: contractAnalyses } = await supabase
           .from("document_analyses")
           .select("parsed_fields")
@@ -325,7 +230,6 @@ export default function JobDetail() {
       }
     }
 
-    // 3. No data
     setEconData({ totalAmount: null, currency: "NOK", paymentTerms: null, source: "ingen" });
   }, [id]);
 
@@ -388,35 +292,7 @@ export default function JobDetail() {
     }
   };
 
-  /* ── Create Teams meeting ── */
-  const handleCreateMeeting = async () => {
-    if (!user || !job) return;
-    setMeetingLoading(true);
-    try {
-      const res = await supabase.functions.invoke("teams-meeting", {
-        body: { action: "create", job_id: job.id },
-      });
-      if (res.error || res.data?.error) {
-        const errMsg = res.data?.error || String(res.error);
-        if (res.data?.ms_reauth) {
-          toast.error("Microsoft-tilkobling kreves", { description: "Logg inn på nytt via Microsoft." });
-        } else {
-          toast.error("Kunne ikke opprette møte", { description: errMsg });
-        }
-      } else {
-        toast.success("Teams-møte opprettet");
-        fetchJob();
-        fetchLogs();
-      }
-    } catch {
-      toast.error("Feil ved opprettelse av Teams-møte");
-    }
-    setMeetingLoading(false);
-  };
-
-  /* ── Scroll-to helpers ── */
   const scrollToEmail = () => emailRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
-  const scrollToSync = () => syncRef.current?.scrollIntoView({ behavior: "smooth", block: "center" });
 
   /* ── Loading / not found ── */
   if (loading) {
@@ -431,7 +307,7 @@ export default function JobDetail() {
     return (
       <div className="flex items-center justify-center p-20">
         <div className="text-center space-y-3">
-          <p className="text-lg font-semibold">Jobb ikke funnet</p>
+          <p className="text-lg font-semibold">Prosjekt ikke funnet</p>
           <Button variant="outline" onClick={() => navigate("/projects")}>Tilbake til prosjekter</Button>
         </div>
       </div>
@@ -439,207 +315,36 @@ export default function JobDetail() {
   }
 
   const displayNumber = getDisplayNumber(job.jobNumber ?? null, job.internalNumber ?? null);
-  const role = user?.role ?? "montør";
-  const attachments = job.attachments ?? [];
-  const imageAttachments = attachments.filter((a) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name));
-  const docAttachments = attachments.filter((a) => !/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name));
+  const imageAttachments = (job.attachments ?? []).filter((a) => /\.(jpg|jpeg|png|gif|webp|svg)$/i.test(a.name));
 
   return (
     <>
-      <div className="min-h-screen bg-card">
-        {/* ═══ Sticky Header ═══ */}
-        <div className="sticky top-0 z-30 border-b border-primary/10 bg-gradient-to-r from-primary/[0.03] to-transparent backdrop-blur-xl">
-          <div className="mx-auto max-w-6xl px-4 sm:px-6 py-3 sm:py-4">
-            <div className="flex items-start justify-between gap-3">
-              {/* Left: back + job info */}
-              <div className="flex items-start gap-2.5 min-w-0">
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  onClick={() => navigate("/")}
-                  className="shrink-0 mt-0.5 rounded-xl h-8 w-8 focus-visible:ring-2 focus-visible:ring-primary"
-                >
-                  <ArrowLeft className="h-4 w-4" />
-                </Button>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h1 className="text-base sm:text-lg font-bold tracking-tight truncate">
-                      {displayNumber}
-                    </h1>
-                    <JobStatusBadge status={job.status} />
-                    {job.calendarDirty && (
-                      <span className="inline-flex items-center rounded-full border border-orange-200 bg-orange-50 px-2 py-0.5 text-[10px] font-medium leading-none text-orange-700 dark:bg-orange-950 dark:text-orange-300 dark:border-orange-800">
-                        Usynkronisert
-                      </span>
-                    )}
-                  </div>
-                  <div className="flex items-center gap-2.5 mt-0.5 text-xs text-muted-foreground flex-wrap">
-                    <span className="flex items-center gap-1">
-                      <Building2 className="h-3 w-3" />
-                      {job.customer}
-                    </span>
-                    {job.address && (
-                      <span className="flex items-center gap-1 hidden sm:flex">
-                        <MapPin className="h-3 w-3" />
-                        {job.address}
-                      </span>
-                    )}
-                    <span className="flex items-center gap-1">
-                      <Clock className="h-3 w-3" />
-                      {format(job.start, "d. MMM", { locale: nb })} {format(job.start, "HH:mm")}–{format(job.end, "HH:mm")}
-                    </span>
-                  </div>
-                </div>
-              </div>
+      <div className="min-h-screen bg-background">
+        {/* ═══ Project Header ═══ */}
+        <ProjectHeader
+          jobNumber={job.jobNumber ?? null}
+          internalNumber={job.internalNumber ?? null}
+          title={job.title}
+          customer={job.customer}
+          address={job.address}
+          start={job.start}
+          end={job.end}
+          status={job.status}
+          technicianNames={technicianNames}
+          onNavigateTab={handleTabChange}
+        />
 
-              {/* Right: Primary actions + More */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                {/* 3 primary action buttons (hidden on smallest screens, shown sm+) */}
-                <div className="hidden sm:flex items-center gap-1.5">
-                  {/* Email */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
-                    onClick={scrollToEmail}
-                  >
-                    <Mail className="h-3.5 w-3.5" />
-                    Opprett kladd
-                  </Button>
-
-                  {/* Synk Outlook */}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
-                    onClick={scrollToSync}
-                  >
-                    <CalendarCheck className="h-3.5 w-3.5" />
-                    Synk
-                  </Button>
-
-                  {/* Teams */}
-                  {job.meetingJoinUrl ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
-                      onClick={() => window.open(job.meetingJoinUrl!, "_blank")}
-                    >
-                      <Video className="h-3.5 w-3.5" />
-                      Bli med
-                    </Button>
-                  ) : isAdmin ? (
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="rounded-xl gap-1.5 h-8 text-xs font-medium focus-visible:ring-2 focus-visible:ring-primary"
-                      disabled={meetingLoading}
-                      onClick={handleCreateMeeting}
-                    >
-                      {meetingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
-                      Teams
-                    </Button>
-                  ) : null}
-                </div>
-
-                {/* Status select (desktop) */}
-                <div className="hidden md:block w-40 ml-1">
-                  <Select
-                    value={job.status}
-                    onValueChange={(v) => handleStatusChange(v as JobStatus)}
-                    disabled={statusUpdating}
-                  >
-                    <SelectTrigger className="h-8 rounded-xl text-xs">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {ALL_STATUSES.filter((s) => canSetStatus(role, s)).map((s) => (
-                        <SelectItem key={s} value={s}>{JOB_STATUS_CONFIG[s].label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {/* More menu */}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="ghost" size="icon" className="rounded-xl h-8 w-8 focus-visible:ring-2 focus-visible:ring-primary">
-                      <MoreHorizontal className="h-4 w-4" />
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end" className="w-48">
-                    {/* Mobile-only shortcuts */}
-                    <div className="sm:hidden">
-                      <DropdownMenuItem onClick={scrollToEmail} className="gap-2">
-                        <Mail className="h-3.5 w-3.5" /> Opprett kladd
-                      </DropdownMenuItem>
-                      <DropdownMenuItem onClick={scrollToSync} className="gap-2">
-                        <CalendarCheck className="h-3.5 w-3.5" /> Synk Outlook
-                      </DropdownMenuItem>
-                      {job.meetingJoinUrl ? (
-                        <DropdownMenuItem onClick={() => window.open(job.meetingJoinUrl!, "_blank")} className="gap-2">
-                          <Video className="h-3.5 w-3.5" /> Bli med i Teams
-                        </DropdownMenuItem>
-                      ) : isAdmin ? (
-                        <DropdownMenuItem onClick={handleCreateMeeting} disabled={meetingLoading} className="gap-2">
-                          <Video className="h-3.5 w-3.5" /> Opprett Teams-møte
-                        </DropdownMenuItem>
-                      ) : null}
-                    </div>
-                    {isAdmin && (
-                      <DropdownMenuItem onClick={() => setEditOpen(true)} className="gap-2">
-                        <Pencil className="h-3.5 w-3.5" /> Rediger jobb
-                      </DropdownMenuItem>
-                    )}
-                    {isAdmin && job.microsoftEventId && (
-                      <>
-                        <DropdownMenuItem onClick={() => handleOutlookAction("resync")} disabled={!!syncLoading} className="gap-2">
-                          <RefreshCw className="h-3.5 w-3.5" /> Resync Outlook
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => handleOutlookAction("disconnect")} disabled={!!syncLoading} className="gap-2">
-                          <Unplug className="h-3.5 w-3.5" /> Koble fra Outlook
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                    {job.meetingJoinUrl && (
-                      <DropdownMenuItem
-                        onClick={() => {
-                          navigator.clipboard.writeText(job.meetingJoinUrl!);
-                          toast.success("Møtelenke kopiert");
-                        }}
-                        className="gap-2"
-                      >
-                        <Copy className="h-3.5 w-3.5" /> Kopier Teams-lenke
-                      </DropdownMenuItem>
-                    )}
-                    {isAdmin && (
-                      <DropdownMenuItem
-                        className="gap-2 text-destructive focus:text-destructive"
-                        onClick={async () => {
-                          await supabase.from("events").update({ deleted_at: new Date().toISOString(), deleted_by: user?.id } as any).eq("id", job.id);
-                          toast.success("Flyttet til papirkurv", { description: job.title });
-                          navigate("/projects");
-                        }}
-                      >
-                        <Trash2 className="h-3.5 w-3.5" /> Flytt til papirkurv
-                      </DropdownMenuItem>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
-            </div>
-          </div>
-        </div>
+        {/* ═══ Subnav ═══ */}
+        <ProjectSubnav activeTab={activeTab} onTabChange={handleTabChange} />
 
         {/* ═══ Proposed time-change banner ═══ */}
         {job.status === "time_change_proposed" && job.proposedStart && job.proposedEnd && (
           <div className="mx-auto max-w-6xl px-4 sm:px-6 pt-5">
-            <div className="rounded-2xl border border-orange-200 bg-orange-50/70 dark:border-orange-800 dark:bg-orange-950/40 p-4 space-y-2">
-              <p className="text-sm font-medium text-orange-800 dark:text-orange-200">
+            <div className="rounded-2xl border border-accent/30 bg-accent/5 p-4 space-y-2">
+              <p className="text-sm font-medium text-accent">
                 ⚠️ Foreslått nytt tidspunkt
               </p>
-              <p className="text-sm text-orange-700 dark:text-orange-300">
+              <p className="text-sm text-muted-foreground">
                 {format(job.proposedStart, "EEEE d. MMMM yyyy", { locale: nb })},{" "}
                 {format(job.proposedStart, "HH:mm")} – {format(job.proposedEnd, "HH:mm")}
               </p>
@@ -688,169 +393,62 @@ export default function JobDetail() {
           </div>
         )}
 
-        {/* ═══ Main Content: 2-col grid ═══ */}
-        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-8 pb-28 md:pb-8">
-          {/* ═══ PROSJEKT-PULS ═══ */}
-          <ProjectPulse jobId={id!} />
+        {/* ═══ Main Content ═══ */}
+        <div className="mx-auto max-w-6xl px-4 sm:px-6 py-6 pb-28 md:pb-8">
 
-          {/* Cockpit Summary Cards */}
-          <div className="mt-6">
-            <ProjectCockpitCards jobId={id!} />
-          </div>
-
-          {/* Job Summary Card */}
-          <div className="mt-4">
-            <JobSummaryCard
+          {/* ── DASHBOARD ── */}
+          {activeTab === "dash" && (
+            <ProjectDashboard
               jobId={id!}
-              customer={job.customer}
-              status={job.status}
-              address={job.address}
               technicianNames={technicianNames}
+              start={job.start}
+              end={job.end}
+              logs={logs}
+              onNavigateTab={handleTabChange}
             />
-          </div>
+          )}
 
-          {/* Tabbed Navigation */}
-          <Tabs defaultValue={defaultTab} className="mt-8">
-            <div className="sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 bg-card/95 backdrop-blur-md pb-1 pt-2 border-b border-border/40">
-              <TabsList className="h-11 w-full justify-start gap-1 bg-transparent p-0 overflow-x-auto">
-                <TabsTrigger value="oversikt" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <FileText className="h-4 w-4" />
-                  Oversikt
-                </TabsTrigger>
-                <TabsTrigger value="okonomi" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <span className="text-base leading-none">💰</span>
-                  Økonomi
-                </TabsTrigger>
-                <TabsTrigger value="dokumenter" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <Download className="h-4 w-4" />
-                  Dokumenter
-                </TabsTrigger>
-                <TabsTrigger value="plan" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <CalendarCheck className="h-4 w-4" />
-                  Plan
-                </TabsTrigger>
-                <TabsTrigger value="epost" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <Mail className="h-4 w-4" />
-                  E-post
-                </TabsTrigger>
-                <TabsTrigger value="risiko" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <span className="text-base leading-none">⚠️</span>
-                  Risiko
-                </TabsTrigger>
-                <TabsTrigger value="tillegg" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <FileSignature className="h-4 w-4" />
-                  Tillegg
-                </TabsTrigger>
-                <TabsTrigger value="skjemaer" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
-                  <ClipboardList className="h-4 w-4" />
-                  Skjemaer
-                </TabsTrigger>
-              </TabsList>
-            </div>
+          {/* ── PLAN ── */}
+          {activeTab === "plan" && (
+            <ProjectPlanTab
+              jobId={job.id}
+              jobTitle={job.title}
+              jobStart={job.start}
+              jobEnd={job.end}
+              jobAddress={job.address}
+              technicianIds={job.technicianIds}
+              technicianNames={technicianNames}
+              isAdmin={isAdmin}
+              calendarDirty={job.calendarDirty}
+              calendarLastSyncedAt={job.calendarLastSyncedAt}
+              onSynced={() => fetchJob()}
+              onResourceAssign={() => fetchJob()}
+            />
+          )}
 
-            {/* ── OVERSIKT ── */}
-            <TabsContent value="oversikt" className="mt-6 min-h-[400px] space-y-6">
-              <SubProjectSection jobId={id!} parentProjectId={parentProjectId} customerId={customerId} />
-              {/* Action section */}
-              <ProjectPulseActions jobId={id!} />
+          {/* ── SKJEMAER ── */}
+          {activeTab === "skjemaer" && (
+            <ProjectFormsTab projectId={id!} isAdmin={isAdmin} />
+          )}
 
-              {job.description && (
-                <SectionCard>
-                  <SectionTitle icon={<FileText className="h-4 w-4 text-muted-foreground" />}>Beskrivelse</SectionTitle>
-                  <p className="text-sm text-muted-foreground whitespace-pre-wrap">{job.description}</p>
-                </SectionCard>
-              )}
+          {/* ── DOKUMENTER ── */}
+          {activeTab === "dokumenter" && (
+            <SectionCard>
+              <DocumentCenter jobId={id!} companyId={null} />
+            </SectionCard>
+          )}
 
-              {/* Teams-møte */}
-              <SectionCard accent="blue">
-                <SectionTitle icon={<Video className="h-4 w-4 text-primary" />}>Teams-møte</SectionTitle>
-                {job.meetingJoinUrl ? (
-                  <div className="space-y-3">
-                    <div className="flex items-center gap-4 text-sm flex-wrap">
-                      <div>
-                        <span className="text-muted-foreground text-xs">Tidspunkt: </span>
-                        <span className="text-sm">{format(job.start, "d. MMM HH:mm", { locale: nb })} – {format(job.end, "HH:mm")}</span>
-                      </div>
-                    </div>
-                    <div className="flex gap-2">
-                      <Button size="sm" className="rounded-xl gap-1.5" onClick={() => window.open(job.meetingJoinUrl!, "_blank")}>
-                        <ExternalLink className="h-3.5 w-3.5" /> Bli med
-                      </Button>
-                      <Button size="sm" variant="outline" className="rounded-xl gap-1.5" onClick={() => { navigator.clipboard.writeText(job.meetingJoinUrl!); toast.success("Møtelenke kopiert"); }}>
-                        <Copy className="h-3.5 w-3.5" /> Kopier lenke
-                      </Button>
-                    </div>
-                  </div>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">Ingen Teams-møte opprettet.</p>
-                    {isAdmin && (
-                      <Button size="sm" variant="outline" className="rounded-xl gap-1.5" disabled={meetingLoading} onClick={handleCreateMeeting}>
-                        {meetingLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Video className="h-3.5 w-3.5" />}
-                        Opprett Teams-møte
-                      </Button>
-                    )}
-                  </div>
-                )}
-              </SectionCard>
+          {/* ── RISIKO ── */}
+          {activeTab === "risiko" && (
+            <SectionCard>
+              <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Risikooversikt</SectionTitle>
+              <JobRiskPanel jobId={id!} companyId={undefined} />
+            </SectionCard>
+          )}
 
-              {/* Historikk */}
-              <Collapsible open={historyOpen} onOpenChange={setHistoryOpen}>
-                <SectionCard>
-                  <CollapsibleTrigger asChild>
-                    <button className="flex items-center justify-between w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg -m-1 p-1">
-                      <SectionTitle icon={<Clock className="h-4 w-4 text-muted-foreground" />}>
-                        Historikk
-                        {logs.length > 0 && (
-                          <span className="ml-1.5 inline-flex items-center rounded-full bg-muted px-1.5 py-0.5 text-[10px] font-medium text-muted-foreground leading-none">
-                            {logs.length}
-                          </span>
-                        )}
-                      </SectionTitle>
-                      <ChevronDown className={`h-4 w-4 text-muted-foreground transition-transform ${historyOpen ? "rotate-180" : ""}`} />
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    {logs.length > 0 ? (
-                      <div className="space-y-2.5 max-h-72 overflow-y-auto pr-1 mt-1">
-                        {logs.map((log) => (
-                          <div key={log.id} className="flex items-start gap-2.5 text-sm">
-                            <div className="h-1.5 w-1.5 rounded-full bg-border mt-2 shrink-0" />
-                            <div className="min-w-0">
-                              <p className="text-sm text-foreground">{log.change_summary || log.action_type}</p>
-                              <p className="text-[11px] text-muted-foreground">
-                                {format(new Date(log.timestamp), "d. MMM yyyy HH:mm", { locale: nb })}
-                              </p>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    ) : (
-                      <p className="text-sm text-muted-foreground mt-1">Ingen historikk registrert.</p>
-                    )}
-                  </CollapsibleContent>
-                </SectionCard>
-              </Collapsible>
-
-              {/* Detaljer */}
-              <Collapsible defaultOpen={!isMobile}>
-                <SectionCard>
-                  <CollapsibleTrigger asChild>
-                    <button className="flex items-center justify-between w-full text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded-lg -m-1 p-1">
-                      <SectionTitle icon={<FileText className="h-4 w-4 text-muted-foreground" />}>Detaljer</SectionTitle>
-                      <ChevronDown className="h-4 w-4 text-muted-foreground lg:hidden" />
-                    </button>
-                  </CollapsibleTrigger>
-                  <CollapsibleContent>
-                    <AuditInfo job={job} />
-                  </CollapsibleContent>
-                </SectionCard>
-              </Collapsible>
-            </TabsContent>
-
-            {/* ── ØKONOMI ── */}
-            <TabsContent value="okonomi" className="mt-6 min-h-[400px] space-y-6">
-              {/* KPI Cards */}
+          {/* ── ØKONOMI ── */}
+          {activeTab === "okonomi" && (
+            <div className="space-y-6">
               {econData.totalAmount != null ? (
                 <>
                   <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
@@ -880,7 +478,6 @@ export default function JobDetail() {
                     </div>
                   </div>
 
-                  {/* Payment terms & offer details */}
                   <SectionCard>
                     <SectionTitle icon={<FileText className="h-4 w-4 text-primary" />}>Økonomidetaljer</SectionTitle>
                     <div className="space-y-3">
@@ -930,65 +527,15 @@ export default function JobDetail() {
                 </SectionCard>
               )}
 
-              {/* Admin debug source */}
               {isAdmin && (
                 <p className="text-[10px] text-muted-foreground/60 pl-1">
                   Kilde: {econData.source}
                 </p>
               )}
-            </TabsContent>
 
-            {/* ── DOKUMENTER ── */}
-            <TabsContent value="dokumenter" className="mt-6 min-h-[400px]">
+              {/* Change orders in economy tab */}
               <SectionCard>
-                <DocumentCenter jobId={id!} companyId={null} />
-              </SectionCard>
-            </TabsContent>
-
-            {/* ── PLAN ── */}
-            <TabsContent value="plan" className="mt-6 min-h-[400px]">
-              <ProjectPlanTab
-                jobId={job.id}
-                jobTitle={job.title}
-                jobStart={job.start}
-                jobEnd={job.end}
-                jobAddress={job.address}
-                technicianIds={job.technicianIds}
-                technicianNames={technicianNames}
-                isAdmin={isAdmin}
-                calendarDirty={job.calendarDirty}
-                calendarLastSyncedAt={job.calendarLastSyncedAt}
-                onSynced={() => fetchJob()}
-                onResourceAssign={() => fetchJob()}
-              />
-            </TabsContent>
-
-            {/* ── E-POST ── */}
-            <TabsContent value="epost" className="mt-6 min-h-[400px]">
-              <div ref={emailRef}>
-                <SectionCard accent="orange">
-                  <EmailComposer
-                    entityType="job"
-                    entityId={job.id}
-                    defaultSubject={`${job.customer || ""} | ${job.title}`}
-                    refCode={job.internalNumber || displayNumber}
-                    onSent={() => fetchLogs()}
-                  />
-                </SectionCard>
-              </div>
-            </TabsContent>
-
-            {/* ── RISIKO ── */}
-            <TabsContent value="risiko" className="mt-6 min-h-[400px]">
-              <SectionCard>
-                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Risikooversikt</SectionTitle>
-                <JobRiskPanel jobId={id!} companyId={undefined} />
-              </SectionCard>
-            </TabsContent>
-
-            {/* ── TILLEGG ── */}
-            <TabsContent value="tillegg" className="mt-6 min-h-[400px]">
-              <SectionCard>
+                <SectionTitle icon={<FileSignature className="h-4 w-4 text-primary" />}>Tillegg og endringer</SectionTitle>
                 <ChangeOrderTab
                   jobId={id!}
                   customer={job.customer}
@@ -998,54 +545,22 @@ export default function JobDetail() {
                   onTotalsChange={(approved, pending) => { setCoApproved(approved); setCoPending(pending); }}
                 />
               </SectionCard>
-            </TabsContent>
+            </div>
+          )}
 
-            {/* ── SKJEMAER ── */}
-            <TabsContent value="skjemaer" className="mt-6 min-h-[400px]">
-              <SectionCard>
-                <ProjectFormsTab projectId={id!} isAdmin={isAdmin} />
+          {/* ── E-POST ── */}
+          {activeTab === "epost" && (
+            <div ref={emailRef}>
+              <SectionCard accent="orange">
+                <EmailComposer
+                  entityType="job"
+                  entityId={job.id}
+                  defaultSubject={`${job.customer || ""} | ${job.title}`}
+                  refCode={job.internalNumber || displayNumber}
+                  onSent={() => fetchLogs()}
+                />
               </SectionCard>
-            </TabsContent>
-          </Tabs>
-
-          {/* Admin Debug (collapsed) */}
-          {isAdmin && job.microsoftEventId && (
-            <Collapsible open={debugOpen} onOpenChange={setDebugOpen} className="mt-6">
-              <CollapsibleTrigger asChild>
-                <button className="flex items-center gap-2 text-[11px] text-muted-foreground hover:text-foreground transition-colors w-full py-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded">
-                  <ChevronDown className={`h-3 w-3 transition-transform ${debugOpen ? "rotate-180" : ""}`} />
-                  Admin: Legacy Outlook Sync
-                </button>
-              </CollapsibleTrigger>
-              <CollapsibleContent>
-                <SectionCard className="mt-2">
-                  <div className="flex items-center justify-between mb-3">
-                    <SectionTitle icon={<CalendarCheck className="h-4 w-4 text-muted-foreground" />}>Legacy Outlook</SectionTitle>
-                    <SyncBadge status={job.outlookSyncStatus} />
-                  </div>
-                  <div className="space-y-1.5 text-sm">
-                    <div>
-                      <span className="text-muted-foreground text-xs">Event ID: </span>
-                      <span className="font-mono text-[11px]">{job.microsoftEventId.slice(0, 20)}…</span>
-                    </div>
-                    <div>
-                      <span className="text-muted-foreground text-xs">Sist synkronisert: </span>
-                      <span className="text-sm">{job.outlookLastSyncedAt ? format(job.outlookLastSyncedAt, "d. MMM yyyy HH:mm", { locale: nb }) : "Aldri"}</span>
-                    </div>
-                  </div>
-                  <div className="flex gap-2 mt-3">
-                    <Button size="sm" variant="outline" className="rounded-xl gap-1.5 text-xs" disabled={!!syncLoading} onClick={() => handleOutlookAction("resync")}>
-                      {syncLoading === "resync" ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-                      Resync
-                    </Button>
-                    <Button size="sm" variant="outline" className="rounded-xl gap-1.5 text-xs" disabled={!!syncLoading} onClick={() => handleOutlookAction("disconnect")}>
-                      {syncLoading === "disconnect" ? <Loader2 className="h-3 w-3 animate-spin" /> : <Unplug className="h-3 w-3" />}
-                      Koble fra
-                    </Button>
-                  </div>
-                </SectionCard>
-              </CollapsibleContent>
-            </Collapsible>
+            </div>
           )}
         </div>
 
