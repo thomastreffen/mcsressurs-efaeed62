@@ -42,7 +42,7 @@ import {
 
 const mainNav = [
   { title: "Oversikt", url: "/overview", icon: LayoutDashboard },
-  { title: "Postkontoret", url: "/inbox", icon: Inbox },
+  { title: "Henvendelser", url: "/inbox", icon: Inbox },
   { title: "Integrasjoner", url: "/settings/integrations", icon: Plug },
 ];
 
