@@ -5,8 +5,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { CreateJobDialog } from "@/components/CreateJobDialog";
+import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -18,12 +17,19 @@ import {
   ChevronLeft,
   ChevronRight,
   FolderKanban,
+  CalendarCheck,
+  Mail,
+  Send,
 } from "lucide-react";
-import { JOB_STATUS_CONFIG, ALL_STATUSES, getDisplayNumber, type JobStatus } from "@/lib/job-status";
+import { JOB_STATUS_CONFIG, getDisplayNumber, type JobStatus } from "@/lib/job-status";
 import { useAuth } from "@/hooks/useAuth";
+import { toast } from "sonner";
 import {
   Table, TableBody, TableCell, TableHead, TableHeader, TableRow,
 } from "@/components/ui/table";
+import {
+  Tooltip, TooltipContent, TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 interface JobRow {
   id: string;
@@ -31,81 +37,113 @@ interface JobRow {
   customer: string;
   address: string;
   startTime: Date;
+  endTime: Date;
   status: JobStatus;
   jobNumber: string | null;
   internalNumber: string | null;
-  outlookSyncStatus: string;
   techNames: string[];
   techColors: string[];
 }
 
-const PAGE_SIZE = 20;
+const PAGE_SIZE = 25;
+
+type StatusTab = "requested" | "scheduled" | "in_progress" | "completed" | "archive" | "all";
+
+const STATUS_TAB_MAP: Record<StatusTab, JobStatus[]> = {
+  requested: ["requested", "approved", "time_change_proposed", "rejected"],
+  scheduled: ["scheduled"],
+  in_progress: ["in_progress"],
+  completed: ["completed", "ready_for_invoicing"],
+  archive: ["invoiced"],
+  all: [],
+};
+
+const TAB_LABELS: Record<StatusTab, string> = {
+  requested: "Forespurt",
+  scheduled: "Planlagt",
+  in_progress: "Pågår",
+  completed: "Ferdig",
+  archive: "Arkiv",
+  all: "Alle",
+};
 
 export default function JobsPage() {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { user, isAdmin } = useAuth();
   const [jobs, setJobs] = useState<JobRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState("");
-  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [activeTab, setActiveTab] = useState<StatusTab>("requested");
   const [sortField, setSortField] = useState<"start" | "status" | "customer">("start");
   const [sortDir, setSortDir] = useState<"asc" | "desc">("desc");
   const [page, setPage] = useState(0);
-  const [createOpen, setCreateOpen] = useState(false);
-  const [highlightedId, setHighlightedId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
+  const [sendingApproval, setSendingApproval] = useState<string | null>(null);
 
   const toggleSelect = (id: string) => {
     setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]);
   };
-  const toggleSelectAll = () => {
-    if (selectedIds.length === paged.length) setSelectedIds([]);
-    else setSelectedIds(paged.map(j => j.id));
-  };
 
   const fetchJobs = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data } = await supabase
       .from("events")
       .select(`
-        id, title, customer, address, start_time, status, job_number, internal_number, outlook_sync_status,
+        id, title, customer, address, start_time, end_time, status, job_number, internal_number,
         event_technicians(technician_id, technicians(name, color))
       `)
       .is("deleted_at", null)
       .order("start_time", { ascending: false });
 
-      if (data) {
-        setJobs(
-          data.map((e: any) => {
-            const techs = (e.event_technicians || [])
-              .filter((et: any) => et.technicians)
-              .map((et: any) => et.technicians);
-            return {
-              id: e.id,
-              title: e.title,
-              customer: e.customer || "",
-              address: e.address || "",
-              startTime: new Date(e.start_time),
-              status: e.status as JobStatus,
-              jobNumber: e.job_number,
-              internalNumber: e.internal_number,
-              outlookSyncStatus: e.outlook_sync_status || "not_synced",
-              techNames: techs.map((t: any) => t.name),
-              techColors: techs.map((t: any) => t.color || "#6366f1"),
-            };
-          })
-        );
-      }
+    if (data) {
+      setJobs(
+        data.map((e: any) => {
+          const techs = (e.event_technicians || [])
+            .filter((et: any) => et.technicians)
+            .map((et: any) => et.technicians);
+          return {
+            id: e.id,
+            title: e.title,
+            customer: e.customer || "",
+            address: e.address || "",
+            startTime: new Date(e.start_time),
+            endTime: new Date(e.end_time),
+            status: e.status as JobStatus,
+            jobNumber: e.job_number,
+            internalNumber: e.internal_number,
+            techNames: techs.map((t: any) => t.name),
+            techColors: techs.map((t: any) => t.color || "#6366f1"),
+          };
+        })
+      );
+    }
     setLoading(false);
   };
 
   useEffect(() => { fetchJobs(); }, []);
 
+  const tabCounts = useMemo(() => {
+    const counts: Record<StatusTab, number> = { requested: 0, scheduled: 0, in_progress: 0, completed: 0, archive: 0, all: jobs.length };
+    for (const j of jobs) {
+      for (const [tab, statuses] of Object.entries(STATUS_TAB_MAP)) {
+        if (tab !== "all" && statuses.includes(j.status)) {
+          counts[tab as StatusTab]++;
+        }
+      }
+    }
+    return counts;
+  }, [jobs]);
+
   const filtered = useMemo(() => {
     let result = [...jobs];
-    if (statusFilter !== "all") {
-      result = result.filter((j) => j.status === statusFilter);
+
+    // Tab filter
+    const tabStatuses = STATUS_TAB_MAP[activeTab];
+    if (tabStatuses.length > 0) {
+      result = result.filter((j) => tabStatuses.includes(j.status));
     }
+
+    // Search
     if (search.trim()) {
       const q = search.toLowerCase();
       result = result.filter(
@@ -118,6 +156,8 @@ export default function JobsPage() {
           j.techNames.some((n) => n.toLowerCase().includes(q))
       );
     }
+
+    // Sort
     result.sort((a, b) => {
       const dir = sortDir === "asc" ? 1 : -1;
       if (sortField === "start") return dir * (a.startTime.getTime() - b.startTime.getTime());
@@ -125,29 +165,46 @@ export default function JobsPage() {
       return dir * a.status.localeCompare(b.status);
     });
     return result;
-  }, [jobs, statusFilter, search, sortField, sortDir]);
+  }, [jobs, activeTab, search, sortField, sortDir]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / PAGE_SIZE));
   const paged = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
 
   const toggleSort = (field: typeof sortField) => {
-    if (sortField === field) {
-      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
-    } else {
-      setSortField(field);
-      setSortDir("asc");
+    if (sortField === field) setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    else { setSortField(field); setSortDir("asc"); }
+  };
+
+  const handleSendApproval = async (jobId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    if (!user) return;
+    setSendingApproval(jobId);
+    try {
+      const res = await supabase.functions.invoke("create-approval", {
+        body: { job_id: jobId },
+      });
+      if (res.error || res.data?.error) {
+        toast.error("Kunne ikke sende godkjenning", { description: res.data?.error || String(res.error) });
+      } else {
+        toast.success("Godkjenning sendt");
+        fetchJobs();
+      }
+    } catch {
+      toast.error("Feil ved sending av godkjenning");
     }
+    setSendingApproval(null);
   };
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 space-y-5 max-w-7xl mx-auto">
+      {/* Header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
         <div>
           <h1 className="text-xl sm:text-2xl font-semibold tracking-tight flex items-center gap-2">
             <FolderKanban className="h-6 w-6 text-primary" />
             Prosjekter
           </h1>
-          <p className="text-sm text-muted-foreground/70">{filtered.length} prosjekter totalt</p>
+          <p className="text-sm text-muted-foreground/70">{filtered.length} prosjekter</p>
         </div>
         {isAdmin && (
           <Button onClick={() => navigate("/projects/new")} className="gap-1.5 self-start rounded-xl">
@@ -157,28 +214,35 @@ export default function JobsPage() {
         )}
       </div>
 
-      {/* Filters */}
-      <div className="flex flex-col sm:flex-row gap-2">
-        <div className="relative flex-1 max-w-sm">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input
-            placeholder="Søk prosjekter..."
-            value={search}
-            onChange={(e) => { setSearch(e.target.value); setPage(0); }}
-            className="pl-9 rounded-xl"
-          />
-        </div>
-        <Select value={statusFilter} onValueChange={(v) => { setStatusFilter(v); setPage(0); }}>
-          <SelectTrigger className="w-[180px] rounded-xl">
-            <SelectValue placeholder="Alle statuser" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Alle statuser</SelectItem>
-            {ALL_STATUSES.map((s) => (
-              <SelectItem key={s} value={s}>{JOB_STATUS_CONFIG[s].label}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+      {/* Status Tabs */}
+      <Tabs value={activeTab} onValueChange={(v) => { setActiveTab(v as StatusTab); setPage(0); setSelectedIds([]); }}>
+        <TabsList className="h-10 bg-secondary/40 rounded-xl gap-0.5 p-1">
+          {(Object.keys(TAB_LABELS) as StatusTab[]).map((tab) => (
+            <TabsTrigger
+              key={tab}
+              value={tab}
+              className="rounded-lg text-xs font-medium px-3 py-1.5 data-[state=active]:bg-card data-[state=active]:shadow-sm gap-1.5"
+            >
+              {TAB_LABELS[tab]}
+              {tabCounts[tab] > 0 && (
+                <span className="inline-flex items-center justify-center min-w-[18px] h-[18px] rounded-full bg-muted text-[10px] font-semibold px-1">
+                  {tabCounts[tab]}
+                </span>
+              )}
+            </TabsTrigger>
+          ))}
+        </TabsList>
+      </Tabs>
+
+      {/* Search */}
+      <div className="relative max-w-md">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+        <Input
+          placeholder="Søk kunde, jobbnr, adresse, tittel..."
+          value={search}
+          onChange={(e) => { setSearch(e.target.value); setPage(0); }}
+          className="pl-9 rounded-xl"
+        />
       </div>
 
       {/* Table */}
@@ -205,27 +269,28 @@ export default function JobsPage() {
                     <TableHead className="w-10">
                       <Checkbox
                         checked={paged.length > 0 && selectedIds.length === paged.length}
-                        onCheckedChange={toggleSelectAll}
+                        onCheckedChange={() => {
+                          if (selectedIds.length === paged.length) setSelectedIds([]);
+                          else setSelectedIds(paged.map(j => j.id));
+                        }}
                       />
                     </TableHead>
                   )}
-                  <TableHead className="w-[120px] text-xs font-semibold uppercase tracking-wider">Nr</TableHead>
-                  <TableHead className="text-xs font-semibold uppercase tracking-wider">Kunde</TableHead>
-                  <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Adresse</TableHead>
+                  <TableHead className="w-[110px] text-xs font-semibold uppercase tracking-wider">Jobb nr</TableHead>
+                  <TableHead className="text-xs font-semibold uppercase tracking-wider min-w-[180px]">Tittel / Kunde</TableHead>
+                  <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Sted</TableHead>
                   <TableHead>
                     <button onClick={() => toggleSort("start")} className="flex items-center gap-1 hover:text-foreground text-xs font-semibold uppercase tracking-wider">
-                      Dato
-                      <ArrowUpDown className="h-3 w-3" />
+                      Periode <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </TableHead>
+                  <TableHead className="hidden lg:table-cell text-xs font-semibold uppercase tracking-wider">Montør(er)</TableHead>
                   <TableHead>
                     <button onClick={() => toggleSort("status")} className="flex items-center gap-1 hover:text-foreground text-xs font-semibold uppercase tracking-wider">
-                      Status
-                      <ArrowUpDown className="h-3 w-3" />
+                      Status <ArrowUpDown className="h-3 w-3" />
                     </button>
                   </TableHead>
-                  <TableHead className="hidden lg:table-cell text-xs font-semibold uppercase tracking-wider">Montører</TableHead>
-                  <TableHead className="hidden lg:table-cell w-[100px] text-xs font-semibold uppercase tracking-wider">Sync</TableHead>
+                  <TableHead className="w-[100px] text-xs font-semibold uppercase tracking-wider text-right">Handlinger</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -233,14 +298,14 @@ export default function JobsPage() {
                   <TableRow>
                     <TableCell colSpan={isAdmin ? 8 : 7} className="text-center text-muted-foreground py-12">
                       <FolderKanban className="h-8 w-8 mx-auto mb-2 opacity-30" />
-                      Ingen prosjekter funnet.
+                      Ingen prosjekter i denne kategorien.
                     </TableCell>
                   </TableRow>
                 ) : (
                   paged.map((job) => (
                     <TableRow
                       key={job.id}
-                      className={`cursor-pointer hover:bg-secondary/40 transition-colors ${highlightedId === job.id ? "bg-primary/5 ring-1 ring-primary/20" : ""}`}
+                      className="cursor-pointer hover:bg-secondary/40 transition-colors group"
                       onClick={() => navigate(`/projects/${job.id}`)}
                     >
                       {isAdmin && (
@@ -255,16 +320,37 @@ export default function JobsPage() {
                         {getDisplayNumber(job.jobNumber, job.internalNumber)}
                       </TableCell>
                       <TableCell>
-                        <div>
-                          <p className="text-sm font-medium truncate max-w-[200px]">{job.title}</p>
-                          <p className="text-xs text-muted-foreground/60 truncate max-w-[200px]">{job.customer}</p>
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate max-w-[220px]">{job.title}</p>
+                          <p className="text-xs text-muted-foreground/60 truncate max-w-[220px]">{job.customer}</p>
                         </div>
                       </TableCell>
-                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground/70 truncate max-w-[200px]">
+                      <TableCell className="hidden md:table-cell text-sm text-muted-foreground/70 truncate max-w-[180px]">
                         {job.address}
                       </TableCell>
                       <TableCell className="text-sm whitespace-nowrap text-muted-foreground">
-                        {format(job.startTime, "d. MMM", { locale: nb })}
+                        <div>
+                          <span>{format(job.startTime, "d. MMM", { locale: nb })}</span>
+                          {job.endTime && job.startTime.toDateString() !== job.endTime.toDateString() && (
+                            <span className="text-muted-foreground/50"> – {format(job.endTime, "d. MMM", { locale: nb })}</span>
+                          )}
+                        </div>
+                      </TableCell>
+                      <TableCell className="hidden lg:table-cell">
+                        <div className="flex items-center gap-1.5">
+                          {job.techNames.slice(0, 2).map((name, i) => (
+                            <div key={i} className="flex items-center gap-1">
+                              <div
+                                className="h-2.5 w-2.5 rounded-full shrink-0"
+                                style={{ backgroundColor: job.techColors[i] }}
+                              />
+                              <span className="text-xs text-muted-foreground truncate max-w-[80px]">{name}</span>
+                            </div>
+                          ))}
+                          {job.techNames.length > 2 && (
+                            <span className="text-xs text-muted-foreground/50">+{job.techNames.length - 2}</span>
+                          )}
+                        </div>
                       </TableCell>
                       <TableCell>
                         <Badge
@@ -277,23 +363,55 @@ export default function JobsPage() {
                           {JOB_STATUS_CONFIG[job.status]?.label || job.status}
                         </Badge>
                       </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <div className="flex items-center gap-1">
-                          {job.techColors.slice(0, 3).map((color, i) => (
-                            <div
-                              key={i}
-                              className="h-2.5 w-2.5 rounded-full"
-                              style={{ backgroundColor: color }}
-                              title={job.techNames[i]}
-                            />
-                          ))}
-                          {job.techNames.length > 3 && (
-                            <span className="text-xs text-muted-foreground">+{job.techNames.length - 3}</span>
+                      <TableCell className="text-right" onClick={(e) => e.stopPropagation()}>
+                        <div className="flex items-center justify-end gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/projects/${job.id}?tab=plan`); }}
+                              >
+                                <CalendarCheck className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Planlegg</TooltipContent>
+                          </Tooltip>
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                variant="ghost"
+                                size="icon"
+                                className="h-7 w-7 rounded-lg"
+                                onClick={(e) => { e.stopPropagation(); navigate(`/projects/${job.id}?tab=epost`); }}
+                              >
+                                <Mail className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>E-post</TooltipContent>
+                          </Tooltip>
+                          {isAdmin && (job.status === "requested" || job.status === "approved") && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button
+                                  variant="ghost"
+                                  size="icon"
+                                  className="h-7 w-7 rounded-lg"
+                                  disabled={sendingApproval === job.id}
+                                  onClick={(e) => handleSendApproval(job.id, e)}
+                                >
+                                  {sendingApproval === job.id ? (
+                                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                                  ) : (
+                                    <Send className="h-3.5 w-3.5" />
+                                  )}
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent>Send godkjenning</TooltipContent>
+                            </Tooltip>
                           )}
                         </div>
-                      </TableCell>
-                      <TableCell className="hidden lg:table-cell">
-                        <SyncDot status={job.outlookSyncStatus} />
                       </TableCell>
                     </TableRow>
                   ))
@@ -306,7 +424,7 @@ export default function JobsPage() {
           {totalPages > 1 && (
             <div className="flex items-center justify-between">
               <p className="text-xs text-muted-foreground">
-                Side {page + 1} av {totalPages}
+                Side {page + 1} av {totalPages} · {filtered.length} prosjekter
               </p>
               <div className="flex gap-1">
                 <Button variant="outline" size="icon" disabled={page === 0} onClick={() => setPage((p) => p - 1)} className="rounded-xl">
@@ -320,42 +438,6 @@ export default function JobsPage() {
           )}
         </>
       )}
-
-      <CreateJobDialog
-        open={createOpen}
-        onOpenChange={setCreateOpen}
-        preselectedTechId={null}
-        onJobCreated={() => {
-          fetchJobs();
-        }}
-      />
-    </div>
-  );
-}
-
-function SyncDot({ status }: { status: string }) {
-  const colors: Record<string, string> = {
-    synced: "bg-green-500",
-    restored: "bg-blue-500",
-    failed: "bg-destructive",
-    not_synced: "bg-muted-foreground/30",
-    cancelled: "bg-muted-foreground/30",
-    missing_in_outlook: "bg-orange-500",
-  };
-
-  const labels: Record<string, string> = {
-    synced: "Synced",
-    restored: "Restored",
-    failed: "Feilet",
-    not_synced: "Ikke synced",
-    cancelled: "Kansellert",
-    missing_in_outlook: "Mangler",
-  };
-
-  return (
-    <div className="flex items-center gap-1.5" title={labels[status] || status}>
-      <div className={`h-2 w-2 rounded-full ${colors[status] || colors.not_synced}`} />
-      <span className="text-[10px] text-muted-foreground">{labels[status] || status}</span>
     </div>
   );
 }

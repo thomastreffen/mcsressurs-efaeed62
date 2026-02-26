@@ -1,4 +1,4 @@
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { useState, useEffect, useCallback, useRef } from "react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -33,6 +33,7 @@ import { JobCalendarSync } from "@/components/JobCalendarSync";
 import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
 import { ProjectPlanTab } from "@/components/ProjectPlanTab";
 import { SubProjectSection } from "@/components/SubProjectSection";
+import { ProjectCockpitCards } from "@/components/ProjectCockpitCards";
 import { EmailComposer } from "@/components/EmailComposer";
 import {
   ArrowLeft,
@@ -137,6 +138,8 @@ interface EventLog {
 export default function JobDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const defaultTab = searchParams.get("tab") || "oversikt";
   const { user, isAdmin } = useAuth();
   const isMobile = useIsMobile();
 
@@ -688,8 +691,13 @@ export default function JobDetail() {
           {/* ═══ PROSJEKT-PULS ═══ */}
           <ProjectPulse jobId={id!} />
 
-          {/* Job Summary Card */}
+          {/* Cockpit Summary Cards */}
           <div className="mt-6">
+            <ProjectCockpitCards jobId={id!} />
+          </div>
+
+          {/* Job Summary Card */}
+          <div className="mt-4">
             <JobSummaryCard
               jobId={id!}
               customer={job.customer}
@@ -700,7 +708,7 @@ export default function JobDetail() {
           </div>
 
           {/* Tabbed Navigation */}
-          <Tabs defaultValue="oversikt" className="mt-8">
+          <Tabs defaultValue={defaultTab} className="mt-8">
             <div className="sticky top-[57px] z-20 -mx-4 sm:-mx-6 px-4 sm:px-6 bg-card/95 backdrop-blur-md pb-1 pt-2 border-b border-border/40">
               <TabsList className="h-11 w-full justify-start gap-1 bg-transparent p-0 overflow-x-auto">
                 <TabsTrigger value="oversikt" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
