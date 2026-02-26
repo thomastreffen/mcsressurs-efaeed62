@@ -28,11 +28,12 @@ export default function ProjectNewPage() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const preselectedCustomerId = searchParams.get("customer") || "";
+  const preselectedParentId = searchParams.get("parent") || "";
   const { user } = useAuth();
   const { activeCompanyId } = useCompanyContext();
 
   const [saving, setSaving] = useState(false);
-  const [showOptional, setShowOptional] = useState(false);
+  const [showOptional, setShowOptional] = useState(!!preselectedParentId);
 
   // Required
   const [title, setTitle] = useState("");
@@ -47,7 +48,7 @@ export default function ProjectNewPage() {
   const [endDate, setEndDate] = useState("");
   const [endTime, setEndTime] = useState("16:00");
   const [techIds, setTechIds] = useState<string[]>([]);
-  const [parentProjectId, setParentProjectId] = useState("");
+  const [parentProjectId, setParentProjectId] = useState(preselectedParentId);
   const [projectNumber, setProjectNumber] = useState("");
 
   // Data

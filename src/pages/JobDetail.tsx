@@ -32,6 +32,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { JobCalendarSync } from "@/components/JobCalendarSync";
 import { ResourceAssignDialog } from "@/components/ResourceAssignDialog";
 import { ProjectPlanTab } from "@/components/ProjectPlanTab";
+import { SubProjectSection } from "@/components/SubProjectSection";
 import { EmailComposer } from "@/components/EmailComposer";
 import {
   ArrowLeft,
@@ -152,6 +153,8 @@ export default function JobDetail() {
   const [offerData, setOfferData] = useState<any>(null);
   const [debugOpen, setDebugOpen] = useState(false);
   const [resourceAssignOpen, setResourceAssignOpen] = useState(false);
+  const [parentProjectId, setParentProjectId] = useState<string | null>(null);
+  const [customerId, setCustomerId] = useState<string | null>(null);
 
   // Economy source hierarchy state
   const [econData, setEconData] = useState<{
@@ -250,6 +253,8 @@ export default function JobDetail() {
       meetingId: data.meeting_id || null,
       meetingCreatedAt: data.meeting_created_at ? new Date(data.meeting_created_at) : null,
     });
+    setParentProjectId(data.parent_project_id || null);
+    setCustomerId(data.customer_id || null);
     setLoading(false);
   }, [id]);
 
@@ -731,6 +736,7 @@ export default function JobDetail() {
 
             {/* ── OVERSIKT ── */}
             <TabsContent value="oversikt" className="mt-6 min-h-[400px] space-y-6">
+              <SubProjectSection jobId={id!} parentProjectId={parentProjectId} customerId={customerId} />
               {/* Action section */}
               <ProjectPulseActions jobId={id!} />
 
