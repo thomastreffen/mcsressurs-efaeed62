@@ -92,10 +92,37 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
     fetchTemplates();
   }, [projectId]);
 
-  const handleCreateFromTemplate = async (templateId?: string) => {
-    const tpl = templateId ? templates.find((t) => t.id === templateId) : null;
+  const handleCreateNewForm = async () => {
+    setCreating(true);
+    const { data: userData } = await supabase.auth.getUser();
+    if (!userData.user) {
+      toast.error("Ikke innlogget");
+      setCreating(false);
+      return;
+    }
 
-    if (tpl && !tpl.active_version_id) {
+    // Create a new form_template (not an instance)
+    const { data: tpl, error: tplErr } = await supabase
+      .from("form_templates")
+      .insert({ title: "Nytt skjema", created_by: userData.user.id })
+      .select("id")
+      .single();
+
+    if (tplErr || !tpl) {
+      toast.error("Kunne ikke opprette skjemamal", { description: tplErr?.message });
+      setCreating(false);
+      return;
+    }
+
+    toast.success("Skjemamal opprettet – åpner skjemabygger");
+    navigate(`/admin/forms?edit=${(tpl as any).id}`);
+    setCreating(false);
+  };
+
+  const handleCreateFromTemplate = async (templateId: string) => {
+    const tpl = templates.find((t) => t.id === templateId);
+
+    if (!tpl || !tpl.active_version_id) {
       toast.error("Malen har ingen aktiv versjon", {
         description: isAdmin ? "Åpne malen i skjemabyggeren for å publisere en versjon." : undefined,
       });
@@ -105,67 +132,6 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
     setCreating(true);
     const { data: userData } = await supabase.auth.getUser();
 
-    if (!tpl) {
-      // Create blank ad-hoc template
-      const { data: blankTpl, error: tplErr } = await supabase
-        .from("form_templates")
-        .insert({ title: "Blankt skjema", created_by: userData.user!.id })
-        .select("id")
-        .single();
-
-      if (tplErr || !blankTpl) {
-        toast.error("Kunne ikke opprette skjema");
-        setCreating(false);
-        return;
-      }
-
-      // Create version with empty fields
-      const { data: ver, error: verErr } = await supabase
-        .from("form_template_versions")
-        .insert({
-          template_id: (blankTpl as any).id,
-          version_number: 1,
-          fields: [] as any,
-          rules: [] as any,
-          created_by: userData.user!.id,
-        })
-        .select("id")
-        .single();
-
-      if (verErr || !ver) {
-        toast.error("Kunne ikke opprette versjon");
-        setCreating(false);
-        return;
-      }
-
-      await supabase
-        .from("form_templates")
-        .update({ active_version_id: (ver as any).id })
-        .eq("id", (blankTpl as any).id);
-
-      const { data: inst, error: instErr } = await supabase
-        .from("form_instances")
-        .insert({
-          template_id: (blankTpl as any).id,
-          version_id: (ver as any).id,
-          project_id: projectId,
-          created_by: userData.user!.id,
-          status: "not_started",
-        })
-        .select("id")
-        .single();
-
-      if (instErr) {
-        toast.error("Kunne ikke opprette skjema", { description: instErr.message });
-      } else if (inst) {
-        toast.success("Blankt skjema opprettet");
-        navigate(`/forms/${(inst as any).id}`);
-      }
-      setCreating(false);
-      return;
-    }
-
-    // Create from selected template
     const { data, error } = await supabase
       .from("form_instances")
       .insert({
@@ -187,7 +153,13 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
     setCreating(false);
   };
 
-  const handleCreate = () => handleCreateFromTemplate(selectedTemplate || undefined);
+  const handleCreate = () => {
+    if (!selectedTemplate) {
+      toast.error("Velg en mal først");
+      return;
+    }
+    handleCreateFromTemplate(selectedTemplate);
+  };
 
   const filtered = instances.filter((i) =>
     !search || i.template?.title?.toLowerCase().includes(search.toLowerCase())
@@ -214,7 +186,7 @@ export function ProjectFormsTab({ projectId, isAdmin }: ProjectFormsTabProps) {
             size="sm"
             variant="outline"
             className="rounded-xl gap-1.5 text-xs"
-            onClick={() => handleCreateFromTemplate()}
+            onClick={handleCreateNewForm}
             disabled={creating}
           >
             {creating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
