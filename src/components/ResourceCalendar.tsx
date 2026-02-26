@@ -47,37 +47,47 @@ export function ResourceCalendar({
     }
   }, [referenceDate]);
 
+  // Status color map
+  const statusColors: Record<string, { bg: string; border: string; text: string }> = {
+    planned: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
+    requested: { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" },
+    scheduled: { bg: "#1E3A8A", border: "#2563EB", text: "#FFFFFF" },
+    in_progress: { bg: "#065F46", border: "#065F46", text: "#FFFFFF" },
+    completed: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
+    done: { bg: "#E5E7EB", border: "#D1D5DB", text: "#374151" },
+    invoiced: { bg: "#E5E7EB", border: "#D1D5DB", text: "#6B7280" },
+  };
+  const defaultStatusColor = { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" };
+
   // Map CalendarEvents to FullCalendar EventInput
   const fcEvents: EventInput[] = useMemo(() => {
     const internal: EventInput[] = calendarEvents.map((ev) => {
-      const primaryTech = ev.technicians?.[0];
-      const techColor = primaryTech?.color || "#6366f1";
       const techNames = ev.technicians.map((t) => t.name.split(" ")[0]).join(", ");
+      const colors = statusColors[ev.status] || defaultStatusColor;
 
       return {
         id: ev.id,
         title: ev.title.replace("SERVICE – ", ""),
         start: ev.start,
         end: ev.end,
-        backgroundColor: `${techColor}20`,
-        borderColor: techColor,
-        textColor: "var(--foreground)",
+        backgroundColor: colors.bg,
+        borderColor: colors.border,
+        textColor: colors.text,
         extendedProps: {
           calendarEvent: ev,
           customer: ev.customer,
           status: ev.status,
           techNames,
-          techColor,
+          statusColors: colors,
         },
         editable: isAdmin,
       };
     });
 
-    // Add external busy slots as background events
+    // Add external busy slots as foreground events (not background) for better visibility
     if (getBusySlotsForDay) {
-      // Generate busy slots for visible week (7 days)
       const weekStart = new Date(referenceDate);
-      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1); // Monday
+      weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
       for (let i = 0; i < 7; i++) {
         const day = new Date(weekStart);
         day.setDate(day.getDate() + i);
@@ -89,9 +99,9 @@ export function ResourceCalendar({
             title: tech?.name ? `${tech.name.split(" ")[0]} – opptatt` : "Opptatt",
             start: slot.start,
             end: slot.end,
-            display: "background",
-            backgroundColor: `${tech?.color || "#94a3b8"}15`,
-            borderColor: `${tech?.color || "#94a3b8"}40`,
+            backgroundColor: "#F3F4F6",
+            borderColor: "#D1D5DB",
+            textColor: "#9CA3AF",
             editable: false,
             extendedProps: { isBusy: true },
           });
@@ -167,38 +177,38 @@ export function ResourceCalendar({
         select={handleDateSelect}
         eventDrop={handleEventDrop}
         eventResize={handleEventResize}
+        eventMinHeight={36}
         eventContent={(arg) => {
           const props = arg.event.extendedProps;
           if (props.isBusy) {
             return (
-              <div className="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground opacity-70">
-                🔒 {arg.event.title}
+              <div className="fc-event-external flex items-center gap-1.5 px-2 py-1.5 text-[11px] cursor-default select-none" style={{ color: "#9CA3AF" }}>
+                <span className="opacity-60">🔒</span>
+                <span className="truncate">{arg.event.title}</span>
               </div>
             );
           }
           return (
-            <div className="px-2 py-1 overflow-hidden h-full cursor-pointer">
-              <p className="text-[11px] font-semibold leading-tight truncate">
+            <div className="fc-event-internal px-2 py-1.5 overflow-hidden h-full cursor-grab active:cursor-grabbing select-none">
+              <p className="text-[13px] font-bold leading-tight truncate">
                 {arg.event.title}
               </p>
               {props.customer && (
-                <p className="text-[10px] opacity-70 truncate">{props.customer}</p>
+                <p className="text-[11px] opacity-80 truncate mt-0.5">{props.customer}</p>
               )}
-              {props.techNames && (
-                <p className="text-[10px] opacity-60 truncate mt-0.5">
-                  👤 {props.techNames}
-                </p>
-              )}
-              <p className="text-[10px] opacity-50 mt-0.5">
-                {arg.timeText}
-              </p>
+              <div className="flex items-center gap-2 mt-1 text-[10px] opacity-70">
+                {props.techNames && (
+                  <span className="truncate">👤 {props.techNames}</span>
+                )}
+                <span className="shrink-0">{arg.timeText}</span>
+              </div>
             </div>
           );
         }}
         dayHeaderContent={(arg) => {
           const isToday = new Date().toDateString() === arg.date.toDateString();
           return (
-            <div className={`py-2 text-center ${isToday ? "text-primary font-bold" : ""}`}>
+            <div className={`py-2.5 text-center ${isToday ? "text-primary font-bold" : ""}`}>
               <div className="text-[10px] uppercase tracking-widest text-muted-foreground">
                 {arg.date.toLocaleDateString("nb-NO", { weekday: "short" })}
               </div>

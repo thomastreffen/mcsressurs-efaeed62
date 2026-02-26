@@ -168,9 +168,9 @@
 
 /* FullCalendar theme overrides */
 .fc-wrapper .fc {
-  --fc-border-color: hsl(var(--border));
-  --fc-today-bg-color: hsl(var(--primary) / 0.04);
-  --fc-neutral-bg-color: hsl(var(--muted) / 0.3);
+  --fc-border-color: #E5E7EB;
+  --fc-today-bg-color: hsl(var(--primary) / 0.03);
+  --fc-neutral-bg-color: hsl(var(--muted) / 0.15);
   --fc-page-bg-color: hsl(var(--card));
   --fc-now-indicator-color: hsl(var(--primary));
   --fc-event-border-color: transparent;
@@ -178,25 +178,49 @@
 }
 .fc-wrapper .fc .fc-timegrid-slot {
   height: 2.5rem;
+  border-color: #E5E7EB;
+}
+.fc-wrapper .fc td,
+.fc-wrapper .fc th {
+  border-color: #E5E7EB;
+  border-width: 0.5px;
 }
 .fc-wrapper .fc .fc-col-header-cell {
   background: hsl(var(--card));
-  border-bottom: 1px solid hsl(var(--border));
+  border-bottom: 1px solid #E5E7EB;
   padding: 0;
 }
 .fc-wrapper .fc .fc-timegrid-event {
-  border-radius: 0.5rem;
+  border-radius: 8px;
   border-width: 0;
   border-left-width: 3px;
-  box-shadow: 0 1px 3px hsl(var(--foreground) / 0.08);
-  transition: transform 0.15s, box-shadow 0.15s;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.06);
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  cursor: grab;
+  min-height: 36px;
 }
 .fc-wrapper .fc .fc-timegrid-event:hover {
   transform: scale(1.01);
-  box-shadow: 0 2px 8px hsl(var(--foreground) / 0.12);
+  box-shadow: 0 3px 12px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+.fc-wrapper .fc .fc-timegrid-event:active {
+  cursor: grabbing;
 }
 .fc-wrapper .fc .fc-timegrid-event .fc-event-main {
   padding: 0;
+}
+/* External / busy event dashed style */
+.fc-wrapper .fc .fc-timegrid-event:has(.fc-event-external) {
+  border-style: dashed;
+  border-width: 1px;
+  border-left-width: 1px;
+  cursor: default;
+  box-shadow: none;
+}
+.fc-wrapper .fc .fc-timegrid-event:has(.fc-event-external):hover {
+  transform: none;
+  box-shadow: none;
 }
 .fc-wrapper .fc .fc-timegrid-now-indicator-line {
   border-color: hsl(var(--primary));
@@ -213,9 +237,9 @@
   color: hsl(var(--muted-foreground));
 }
 .fc-wrapper .fc .fc-bg-event {
-  border-radius: 0.375rem;
-  border: 1px dashed hsl(var(--muted-foreground) / 0.2);
+  border-radius: 6px;
+  border: 1px dashed #D1D5DB;
 }
 .fc-wrapper .fc .fc-highlight {
-  background: hsl(var(--primary) / 0.1);
+  background: hsl(var(--primary) / 0.08);
 }
