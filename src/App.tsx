@@ -61,6 +61,7 @@ import ProjectNewPage from "./pages/ProjectNewPage";
 import InboxPage from "./pages/InboxPage";
 import FormBuilderPage from "./pages/FormBuilderPage";
 import FormFillPage from "./pages/FormFillPage";
+import SuperofficeSettingsPage from "./pages/SuperofficeSettingsPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -260,6 +261,14 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <ContractCronPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/superoffice"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <SuperofficeSettingsPage />
                   </ProtectedRoute>
                 }
               />
