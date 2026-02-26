@@ -23,6 +23,7 @@ import {
   Timer,
   HardHat,
   Upload,
+  Inbox,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -41,6 +42,7 @@ import {
 
 const mainNav = [
   { title: "Oversikt", url: "/overview", icon: LayoutDashboard },
+  { title: "Innboks", url: "/inbox", icon: Inbox },
   { title: "Integrasjoner", url: "/settings/integrations", icon: Plug },
 ];
 

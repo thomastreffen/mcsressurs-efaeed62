@@ -1249,6 +1249,91 @@ export type Database = {
           },
         ]
       }
+      inbox_messages: {
+        Row: {
+          ai_category: string | null
+          ai_confidence: number | null
+          assigned_user_id: string | null
+          body_full: string | null
+          body_preview: string | null
+          company_id: string | null
+          created_at: string
+          external_id: string
+          fetched_by: string | null
+          from_email: string | null
+          from_name: string | null
+          has_attachments: boolean
+          id: string
+          linked_lead_id: string | null
+          linked_project_id: string | null
+          received_at: string
+          status: string
+          subject: string
+        }
+        Insert: {
+          ai_category?: string | null
+          ai_confidence?: number | null
+          assigned_user_id?: string | null
+          body_full?: string | null
+          body_preview?: string | null
+          company_id?: string | null
+          created_at?: string
+          external_id: string
+          fetched_by?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          has_attachments?: boolean
+          id?: string
+          linked_lead_id?: string | null
+          linked_project_id?: string | null
+          received_at?: string
+          status?: string
+          subject?: string
+        }
+        Update: {
+          ai_category?: string | null
+          ai_confidence?: number | null
+          assigned_user_id?: string | null
+          body_full?: string | null
+          body_preview?: string | null
+          company_id?: string | null
+          created_at?: string
+          external_id?: string
+          fetched_by?: string | null
+          from_email?: string | null
+          from_name?: string | null
+          has_attachments?: boolean
+          id?: string
+          linked_lead_id?: string | null
+          linked_project_id?: string | null
+          received_at?: string
+          status?: string
+          subject?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "inbox_messages_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbox_messages_linked_lead_id_fkey"
+            columns: ["linked_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "inbox_messages_linked_project_id_fkey"
+            columns: ["linked_project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       internal_companies: {
         Row: {
           created_at: string

@@ -58,6 +58,7 @@ import CustomerNewPage from "./pages/CustomerNewPage";
 import CustomerDetailPage from "./pages/CustomerDetailPage";
 import CustomerImportPage from "./pages/CustomerImportPage";
 import ProjectNewPage from "./pages/ProjectNewPage";
+import InboxPage from "./pages/InboxPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -87,6 +88,7 @@ const App = () => (
             >
               <Route path="/" element={<Navigate to="/overview" replace />} />
               <Route path="/overview" element={<OverviewPage />} />
+              <Route path="/inbox" element={<InboxPage />} />
               <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
               <Route path="/projects" element={<JobsPage />} />
               <Route path="/projects/new" element={<ProjectNewPage />} />
