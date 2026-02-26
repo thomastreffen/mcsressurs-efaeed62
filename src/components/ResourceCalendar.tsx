@@ -53,6 +53,14 @@ const GCAL_PALETTE = [
   "#616161", "#795548",
 ];
 
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace("#", "");
+  const r = parseInt(h.slice(0, 2), 16);
+  const g = parseInt(h.slice(2, 4), 16);
+  const b = parseInt(h.slice(4, 6), 16);
+  return `rgba(${r},${g},${b},${alpha})`;
+}
+
 /** Status indicator dot colors */
 const statusDotColors: Record<string, string> = {
   planned: "#1E3A8A",
@@ -170,18 +178,20 @@ export function ResourceCalendar({
               missingNameCount++;
               console.warn(`[ResourceCalendar] Busy slot missing technician name – techId=${techId}, slot=${slot.start.toISOString()}`);
             }
+            const busyTechColor = techColorMap.get(techId) || GCAL_PALETTE[0];
             result.push({
               id: `busy-${techId}-${slot.start.getTime()}`,
               title: `${displayName} – opptatt`,
               start: slot.start,
               end: slot.end,
-              backgroundColor: "#D1D5DB",
-              borderColor: "#9CA3AF",
-              textColor: "#4B5563",
+              backgroundColor: hexToRgba(busyTechColor, 0.25),
+              borderColor: hexToRgba(busyTechColor, 0.5),
+              textColor: busyTechColor,
               editable: false,
               extendedProps: {
                 isBusy: true,
                 techName: displayName,
+                busyTechColor,
               },
             });
           }
