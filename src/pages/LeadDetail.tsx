@@ -485,16 +485,8 @@ function LeadDetailInner() {
   // ─── EntityView config ───
   const entityActions: EntityAction[] = [
     {
-      label: "E-post",
-      mobileLabel: "Ny e-post",
-      icon: <Mail className="h-4 w-4" />,
-      onClick: handleCreateEmailDraft,
-      disabled: creatingDraft || !lead?.email,
-      loading: creatingDraft,
-    },
-    {
-      label: "Møte",
-      mobileLabel: "Opprett møte",
+      label: "Opprett møte",
+      mobileLabel: "Møte",
       icon: <CalendarPlus className="h-4 w-4" />,
       onClick: () => {
         setMeetingStart("");
@@ -504,6 +496,14 @@ function LeadDetailInner() {
         setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
         setMeetingDialogOpen(true);
       },
+    },
+    {
+      label: "Send e-post",
+      mobileLabel: "E-post",
+      icon: <Mail className="h-4 w-4" />,
+      onClick: handleCreateEmailDraft,
+      disabled: creatingDraft || !lead?.email,
+      loading: creatingDraft,
     },
   ];
 
@@ -566,14 +566,14 @@ function LeadDetailInner() {
   const tabs: EntityTab[] = [
     {
       value: "contact",
-      label: "Kontaktinfo",
+      label: "Kunde & anlegg",
       content: lead ? (
         <div className="space-y-4">
           <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="pb-3"><CardTitle className="text-base">Kontaktinformasjon</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Kundeinformasjon</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1.5">
-                <Label>Firmanavn *</Label>
+                <Label>Installatør / kunde *</Label>
                 <Input value={companyName} onChange={e => setCompanyName(e.target.value)} />
               </div>
               <div className="space-y-1.5">
@@ -645,19 +645,19 @@ function LeadDetailInner() {
     },
     {
       value: "deal",
-      label: "Deal",
+      label: "Jobb-estimat",
       content: lead ? (
         <div className="space-y-4">
           {/* Value highlight */}
           <Card className="rounded-2xl shadow-sm">
             <CardContent className="pt-5">
               <div className="rounded-xl bg-gradient-to-r from-primary/[0.06] to-transparent p-4">
-                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Estimert verdi</p>
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Estimert ordreverdi</p>
                 <p className="text-2xl font-bold text-foreground">
                   kr {Number(estimatedValue || 0).toLocaleString("nb-NO")}
                 </p>
                 <div className="flex items-center gap-2 mt-2">
-                  <p className="text-xs text-muted-foreground">Sannsynlighet:</p>
+                  <p className="text-xs text-muted-foreground">Ordresannsynlighet:</p>
                   <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${
                     Number(probability) >= 70
                       ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
@@ -676,10 +676,10 @@ function LeadDetailInner() {
           </Card>
 
           <Card className="rounded-2xl shadow-sm">
-            <CardHeader className="pb-3"><CardTitle className="text-base">Detaljer</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Ordredetaljer</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="space-y-1.5">
-                <Label>Eier</Label>
+                <Label>Ansvarlig selger</Label>
                 <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
                   <SelectTrigger><SelectValue placeholder="Velg eier" /></SelectTrigger>
                   <SelectContent>
@@ -692,16 +692,16 @@ function LeadDetailInner() {
               </div>
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1.5">
-                  <Label>Estimert verdi (kr)</Label>
+                  <Label>Estimert ordreverdi (kr)</Label>
                   <Input value={estimatedValue} onChange={e => setEstimatedValue(e.target.value)} type="number" />
                 </div>
                 <div className="space-y-1.5">
-                  <Label>Sannsynlighet (%)</Label>
+                  <Label>Ordresannsynlighet (%)</Label>
                   <Input value={probability} onChange={e => setProbability(e.target.value)} type="number" min="0" max="100" />
                 </div>
               </div>
               <div className="space-y-1.5">
-                <Label>Forventet lukkedato</Label>
+                <Label>Forventet leveringsdato</Label>
                 <Input value={expectedCloseDate} onChange={e => setExpectedCloseDate(e.target.value)} type="date" />
               </div>
             </CardContent>
@@ -793,7 +793,7 @@ function LeadDetailInner() {
     },
     {
       value: "activity",
-      label: "Aktiviteter",
+      label: "Aktivitet & dok.",
       content: lead ? (
         <div className="space-y-5">
           {/* E-post */}
@@ -815,7 +815,7 @@ function LeadDetailInner() {
           <Card className="rounded-2xl shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-base">Møter</CardTitle>
+                <CardTitle className="text-base">Befaringer & møter</CardTitle>
                 <Button size="sm" variant="ghost" className="gap-1 h-7 text-xs" onClick={() => {
                   setMeetingStart("");
                   setMeetingDuration("60");
@@ -824,7 +824,7 @@ function LeadDetailInner() {
                   setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
                   setMeetingDialogOpen(true);
                 }}>
-                  <CalendarPlus className="h-3 w-3" /> Nytt møte
+                  <CalendarPlus className="h-3 w-3" /> Ny befaring
                 </Button>
               </div>
             </CardHeader>
@@ -832,7 +832,7 @@ function LeadDetailInner() {
               {calendarLinks.length === 0 ? (
                 <div className="text-center py-4 text-muted-foreground">
                   <CalendarIcon className="h-6 w-6 mx-auto mb-1.5 opacity-40" />
-                  <p className="text-sm">Ingen møter opprettet</p>
+                  <p className="text-sm">Ingen befaringer eller møter planlagt</p>
                 </div>
               ) : (
                 <div className="space-y-2">

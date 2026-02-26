@@ -15,23 +15,29 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog";
 import { BulkDeleteBar } from "@/components/BulkDeleteBar";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, PIPELINE_STAGES, type LeadStatus } from "@/lib/lead-status";
-import { Search, Plus, Loader2, ArrowRight, Lightbulb, RotateCcw, Archive, Trash2, Users } from "lucide-react";
+import { Search, Plus, Loader2, ArrowRight, RotateCcw, Archive, Trash2, Users, Phone, CalendarDays, Mail, FileText, Clock, Send, MessageSquare } from "lucide-react";
 import { toast } from "sonner";
 
 type ViewMode = "active" | "archived" | "trash";
 
-function getNextStepLabel(status: LeadStatus): string {
-  switch (status) {
-    case "new": return "Kontakt";
-    case "contacted": return "Avtal befaring";
-    case "befaring": return "Kvalifiser";
-    case "qualified": return "Lag kalkyle";
-    case "tilbud_sendt": return "Følg opp";
-    case "forhandling": return "Lukk";
-    case "won": return "Start prosjekt";
-    case "lost": return "—";
-    default: return "—";
-  }
+const NEXT_STEP_CONFIG: Record<string, { label: string; icon: typeof Phone }> = {
+  new: { label: "Ring kunde", icon: Phone },
+  contacted: { label: "Avtal befaring", icon: CalendarDays },
+  befaring: { label: "Bekreft spesifikasjon", icon: FileText },
+  qualified: { label: "Utarbeid tilbud", icon: FileText },
+  tilbud_sendt: { label: "Purre tilbud", icon: Send },
+  forhandling: { label: "Avklar detaljer", icon: MessageSquare },
+  won: { label: "Opprett prosjekt", icon: ArrowRight },
+  lost: { label: "—", icon: Clock },
+};
+
+function getNextStepLabel(status: string): string {
+  return NEXT_STEP_CONFIG[status]?.label || "—";
+}
+
+function getNextStepIcon(status: string) {
+  const Icon = NEXT_STEP_CONFIG[status]?.icon;
+  return Icon ? <Icon className="h-3 w-3 text-muted-foreground/60 shrink-0" /> : null;
 }
 
 interface Lead {
@@ -176,11 +182,11 @@ export default function LeadsPage() {
 
         <div className="relative flex-1 max-w-sm">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-          <Input placeholder="Søk firma, kontakt, referanse..." className="pl-9 h-9 rounded-xl" value={search} onChange={(e) => setSearch(e.target.value)} />
+          <Input placeholder="Søk kunde, kontakt, referanse..." className="pl-9 h-9 rounded-xl" value={search} onChange={(e) => setSearch(e.target.value)} />
         </div>
         {viewMode === "active" && (
           <Select value={statusFilter} onValueChange={setStatusFilter}>
-            <SelectTrigger className="w-[150px] h-9 rounded-xl"><SelectValue placeholder="Status" /></SelectTrigger>
+            <SelectTrigger className="w-[180px] h-9 rounded-xl"><SelectValue placeholder="Status" /></SelectTrigger>
             <SelectContent>
               <SelectItem value="all">Alle statuser</SelectItem>
               {ALL_LEAD_STATUSES.map((s) => (
@@ -190,10 +196,10 @@ export default function LeadsPage() {
           </Select>
         )}
         <div className="flex items-center gap-2 ml-auto">
-          <span className="text-xs text-muted-foreground">{filtered.length} leads</span>
+          <span className="text-xs text-muted-foreground">{filtered.length} henvendelser</span>
           {viewMode === "active" && (
             <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 h-9 rounded-xl">
-              <Plus className="h-3.5 w-3.5" /> Ny lead
+              <Plus className="h-3.5 w-3.5" /> Ny henvendelse
             </Button>
           )}
         </div>
@@ -218,19 +224,19 @@ export default function LeadsPage() {
               <Users className="h-10 w-10 mx-auto text-muted-foreground/30" />
               <div>
                 <p className="text-sm font-medium text-foreground">
-                  {viewMode === "active" ? "Ingen leads funnet" : viewMode === "archived" ? "Ingen arkiverte leads" : "Papirkurven er tom"}
+                  {viewMode === "active" ? "Ingen henvendelser funnet" : viewMode === "archived" ? "Ingen arkiverte henvendelser" : "Papirkurven er tom"}
                 </p>
                 {viewMode === "active" && (
-                  <p className="text-xs text-muted-foreground mt-1">Opprett din første lead for å starte salgspipeline</p>
+                  <p className="text-xs text-muted-foreground mt-1">Registrer din første kundehenvendelse for å starte ordrepipeline</p>
                 )}
               </div>
               {viewMode === "active" && (
                 <div className="flex items-center justify-center gap-3">
                   <Button size="sm" onClick={() => { resetForm(); setDialogOpen(true); }} className="gap-1.5 rounded-xl">
-                    <Plus className="h-3.5 w-3.5" /> Opprett lead
+                    <Plus className="h-3.5 w-3.5" /> Ny henvendelse
                   </Button>
                   <Button size="sm" variant="outline" onClick={() => navigate("/sales/pipeline")} className="gap-1.5 rounded-xl">
-                    Slik fungerer pipeline <ArrowRight className="h-3.5 w-3.5" />
+                    Se ordrepipeline <ArrowRight className="h-3.5 w-3.5" />
                   </Button>
                 </div>
               )}
@@ -248,7 +254,7 @@ export default function LeadsPage() {
                         />
                       </TableHead>
                     )}
-                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Lead</TableHead>
+                    <TableHead className="text-xs font-semibold uppercase tracking-wider">Kunde</TableHead>
                     <TableHead className="text-xs font-semibold uppercase tracking-wider">Status</TableHead>
                     <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Sist aktivitet</TableHead>
                     {viewMode === "active" && <TableHead className="hidden md:table-cell text-xs font-semibold uppercase tracking-wider">Neste steg</TableHead>}
@@ -294,7 +300,10 @@ export default function LeadsPage() {
                         </TableCell>
                         {viewMode === "active" && (
                           <TableCell className="hidden md:table-cell">
-                            <span className="text-xs text-muted-foreground">{getNextStepLabel(lead.status)}</span>
+                            <span className="text-xs text-muted-foreground inline-flex items-center gap-1.5">
+                              {getNextStepIcon(lead.status)}
+                              {getNextStepLabel(lead.status)}
+                            </span>
                           </TableCell>
                         )}
                         <TableCell className="text-right font-mono text-sm">
@@ -321,12 +330,12 @@ export default function LeadsPage() {
       <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
         <DialogContent className="max-w-lg rounded-2xl">
           <DialogHeader>
-            <DialogTitle>Ny lead</DialogTitle>
+            <DialogTitle>Ny kundehenvendelse</DialogTitle>
           </DialogHeader>
           <div className="space-y-3">
             <div className="space-y-1.5">
-              <Label>Firmanavn *</Label>
-              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Firma AS" className="rounded-xl" />
+              <Label>Installatør / kunde *</Label>
+              <Input value={companyName} onChange={(e) => setCompanyName(e.target.value)} placeholder="Elektro AS" className="rounded-xl" />
             </div>
             <div className="grid grid-cols-2 gap-3">
               <div className="space-y-1.5">
@@ -344,12 +353,12 @@ export default function LeadsPage() {
                 <Input value={email} onChange={(e) => setEmail(e.target.value)} placeholder="epost@firma.no" type="email" className="rounded-xl" />
               </div>
               <div className="space-y-1.5">
-                <Label>Kilde</Label>
-                <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Nettside, anbud, etc." className="rounded-xl" />
+              <Label>Kilde</Label>
+                <Input value={source} onChange={(e) => setSource(e.target.value)} placeholder="Messe, anbud, eksisterende kunde..." className="rounded-xl" />
               </div>
             </div>
             <div className="space-y-1.5">
-              <Label>Estimert verdi (kr)</Label>
+              <Label>Estimert ordreverdi (kr)</Label>
               <Input value={estimatedValue} onChange={(e) => setEstimatedValue(e.target.value)} placeholder="0" type="number" className="rounded-xl" />
             </div>
           </div>
