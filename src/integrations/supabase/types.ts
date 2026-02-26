@@ -2705,6 +2705,9 @@ export type Database = {
           graph_delta_link: string | null
           id: string
           is_enabled: boolean
+          last_sync_at: string | null
+          last_sync_count: number | null
+          last_sync_error: string | null
         }
         Insert: {
           address: string
@@ -2713,6 +2716,9 @@ export type Database = {
           graph_delta_link?: string | null
           id?: string
           is_enabled?: boolean
+          last_sync_at?: string | null
+          last_sync_count?: number | null
+          last_sync_error?: string | null
         }
         Update: {
           address?: string
@@ -2721,6 +2727,9 @@ export type Database = {
           graph_delta_link?: string | null
           id?: string
           is_enabled?: boolean
+          last_sync_at?: string | null
+          last_sync_count?: number | null
+          last_sync_error?: string | null
         }
         Relationships: []
       }
@@ -3175,6 +3184,59 @@ export type Database = {
           value?: Json
         }
         Relationships: []
+      }
+      superoffice_settings: {
+        Row: {
+          auto_assign_enabled: boolean
+          auto_assign_sales_user_id: string | null
+          auto_assign_service_user_id: string | null
+          auto_triage_enabled: boolean
+          catchall_enabled: boolean
+          catchall_mailbox_address: string | null
+          company_id: string
+          default_case_scope: string
+          default_case_status: string
+          default_mailbox_address: string | null
+          default_priority: string
+          updated_at: string
+        }
+        Insert: {
+          auto_assign_enabled?: boolean
+          auto_assign_sales_user_id?: string | null
+          auto_assign_service_user_id?: string | null
+          auto_triage_enabled?: boolean
+          catchall_enabled?: boolean
+          catchall_mailbox_address?: string | null
+          company_id: string
+          default_case_scope?: string
+          default_case_status?: string
+          default_mailbox_address?: string | null
+          default_priority?: string
+          updated_at?: string
+        }
+        Update: {
+          auto_assign_enabled?: boolean
+          auto_assign_sales_user_id?: string | null
+          auto_assign_service_user_id?: string | null
+          auto_triage_enabled?: boolean
+          catchall_enabled?: boolean
+          catchall_mailbox_address?: string | null
+          company_id?: string
+          default_case_scope?: string
+          default_case_status?: string
+          default_mailbox_address?: string | null
+          default_priority?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "superoffice_settings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: true
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       technicians: {
         Row: {

@@ -234,7 +234,7 @@ Deno.serve(async (req) => {
     // Fetch enabled mailboxes
     const { data: mailboxes } = await supabaseAdmin
       .from("mailboxes")
-      .select("address, display_name, graph_delta_link")
+      .select("address, display_name, graph_delta_link, id")
       .eq("is_enabled", true);
 
     const enabledMailboxes = mailboxes || [];
@@ -258,7 +258,22 @@ Deno.serve(async (req) => {
       return respond({ error: "No active company found" }, 400);
     }
 
-    console.log(`[inbox-sync] Syncing ${enabledMailboxes.length} mailbox(es) for user ${userId}`);
+    // Fetch superoffice_settings for defaults
+    const { data: soSettings } = await supabaseAdmin
+      .from("superoffice_settings")
+      .select("*")
+      .eq("company_id", companyId)
+      .maybeSingle();
+
+    const defaultScope = soSettings?.default_case_scope || "company";
+    const defaultStatus = soSettings?.default_case_status || "new";
+    const defaultPriority = soSettings?.default_priority || "normal";
+    const autoTriageEnabled = soSettings?.auto_triage_enabled || false;
+    const autoAssignEnabled = soSettings?.auto_assign_enabled || false;
+    const autoAssignSalesUserId = soSettings?.auto_assign_sales_user_id || null;
+    const autoAssignServiceUserId = soSettings?.auto_assign_service_user_id || null;
+    const catchallEnabled = soSettings?.catchall_enabled || false;
+    const catchallAddress = soSettings?.catchall_mailbox_address || null;
 
     const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let totalFetched = 0;
@@ -268,11 +283,15 @@ Deno.serve(async (req) => {
 
     for (const mb of enabledMailboxes) {
       console.log(`[inbox-sync] Fetching from: ${mb.address}`);
+      let mbError: string | null = null;
+      let mbCount = 0;
+      try {
       const { messages, newDeltaLink } = await fetchMailboxMessages(
         msToken, mb.address, sinceDate, true, mb.graph_delta_link
       );
       console.log(`[inbox-sync] Got ${messages.length} messages from ${mb.address}`);
       totalFetched += messages.length;
+      mbCount = messages.length;
 
       // Save delta link
       if (newDeltaLink) {
@@ -320,19 +339,29 @@ Deno.serve(async (req) => {
             .eq("id", caseId);
         } else {
           // Create new case
-          const ai = classifyMessage(subject, bodyPreview);
+          const ai = autoTriageEnabled ? classifyMessage(subject, bodyPreview) : { category: "general", urgency: "normal", recommended_next_action: "none" };
           const routing = applyRoutingRules(rules, subject, bodyPreview, fromEmail, mb.address);
+
+          // Determine auto-assign owner
+          let autoOwner = routing.owner_user_id || null;
+          if (!autoOwner && autoAssignEnabled) {
+            if (["quote_request", "order"].includes(ai.category) && autoAssignSalesUserId) {
+              autoOwner = autoAssignSalesUserId;
+            } else if (["technical", "urgent_support", "site_visit"].includes(ai.category) && autoAssignServiceUserId) {
+              autoOwner = autoAssignServiceUserId;
+            }
+          }
 
           const newCase = {
             company_id: companyId,
             title: subject,
-            status: routing.status || "new",
-            priority: routing.priority || (ai.urgency === "critical" ? "critical" : ai.urgency === "high" ? "high" : "normal"),
-            next_action: routing.next_action || ai.recommended_next_action || "none",
-            scope: routing.scope || "company",
+            status: routing.status || (autoTriageEnabled && ai.urgency !== "normal" ? "triage" : defaultStatus),
+            priority: routing.priority || (autoTriageEnabled ? (ai.urgency === "critical" ? "critical" : ai.urgency === "high" ? "high" : defaultPriority) : defaultPriority),
+            next_action: routing.next_action || (autoTriageEnabled ? ai.recommended_next_action : "none") || "none",
+            scope: routing.scope || defaultScope,
             mailbox_address: mb.address,
             thread_id: threadId,
-            owner_user_id: routing.owner_user_id || null,
+            owner_user_id: autoOwner,
           };
 
           const { data: createdCase, error: caseErr } = await supabaseAdmin
@@ -394,9 +423,21 @@ Deno.serve(async (req) => {
             { onConflict: "external_id", ignoreDuplicates: true }
           );
       }
-    }
+      } catch (syncErr: any) {
+        mbError = syncErr.message || "Unknown sync error";
+        console.error(`[inbox-sync] Error syncing ${mb.address}: ${mbError}`);
+      }
 
-    // Fallback: personal inbox if no shared mailboxes
+      // Update mailbox sync metadata
+      await supabaseAdmin
+        .from("mailboxes")
+        .update({
+          last_sync_at: new Date().toISOString(),
+          last_sync_error: mbError,
+          last_sync_count: mbCount,
+        })
+        .eq("id", mb.id);
+    }
     if (enabledMailboxes.length === 0) {
       console.log(`[inbox-sync] No shared mailboxes. Fetching personal inbox.`);
       const { messages } = await fetchMailboxMessages(msToken, "", sinceDate, false, null);
