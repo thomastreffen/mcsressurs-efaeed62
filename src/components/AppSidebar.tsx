@@ -22,6 +22,7 @@ import {
   FileSignature,
   Timer,
   HardHat,
+  Upload,
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
@@ -45,6 +46,7 @@ const mainNav = [
 
 const customerNav = [
   { title: "Alle kunder", url: "/customers", icon: Users },
+  { title: "Import", url: "/customers/import", icon: Upload },
 ];
 
 const salesNav = [
