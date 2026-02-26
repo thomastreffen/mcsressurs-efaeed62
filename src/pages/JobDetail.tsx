@@ -26,6 +26,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { ProjectPlanTab } from "@/components/ProjectPlanTab";
 import { SubProjectSection } from "@/components/SubProjectSection";
+import { ServiceJobsTab } from "@/components/project/ServiceJobsTab";
 import { EmailComposer } from "@/components/EmailComposer";
 import { ProjectFormsTab } from "@/components/forms/ProjectFormsTab";
 import {
@@ -424,6 +425,11 @@ export default function JobDetail() {
               onSynced={() => fetchJob()}
               onResourceAssign={() => fetchJob()}
             />
+          )}
+
+          {/* ── SERVICEARBEID ── */}
+          {activeTab === "servicearbeid" && (
+            <ServiceJobsTab projectId={id!} />
           )}
 
           {/* ── SKJEMAER ── */}

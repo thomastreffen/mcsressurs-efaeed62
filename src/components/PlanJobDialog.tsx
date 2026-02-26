@@ -5,7 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
-import { CalendarDays, Loader2 } from "lucide-react";
+import { Hammer, Loader2 } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 import { useTechnicians } from "@/hooks/useTechnicians";
@@ -17,7 +17,7 @@ interface PlanJobDialogProps {
   caseTitle: string;
   companyId: string;
   existingProjectId: string | null;
-  onPlanned: (projectId: string, workOrderId: string) => void;
+  onPlanned: (projectId: string, serviceJobId: string) => void;
 }
 
 const DURATION_OPTIONS = [
@@ -44,6 +44,7 @@ export function PlanJobDialog({
   const [date, setDate] = useState("");
   const [startTime, setStartTime] = useState("08:00");
   const [duration, setDuration] = useState("60");
+  const [address, setAddress] = useState("");
   const [note, setNote] = useState("");
   const [saving, setSaving] = useState(false);
 
@@ -76,6 +77,7 @@ export function PlanJobDialog({
             project_type: "service",
             company_id: companyId,
             created_by: userId,
+            address: address || null,
             description: note || `Fra henvendelse: ${caseTitle}`,
           } as any)
           .select("id")
@@ -91,15 +93,16 @@ export function PlanJobDialog({
         } as any);
       }
 
-      // Create work_order
-      const { data: wo, error: woErr } = await supabase
-        .from("work_orders")
+      // Create service_job
+      const { data: sj, error: sjErr } = await supabase
+        .from("service_jobs")
         .insert({
           company_id: companyId,
           project_id: projectId,
           case_id: caseId,
           title: caseTitle,
           description: note || null,
+          address: address || null,
           status: "planned",
           technician_id: techId,
           starts_at: startsAt.toISOString(),
@@ -109,27 +112,28 @@ export function PlanJobDialog({
         .select("id")
         .single();
 
-      if (woErr) throw woErr;
+      if (sjErr) throw sjErr;
 
-      // Update case: set project_id, work_order_id, status = converted
+      // Update case: set project_id, service_job_id, status = converted
       await supabase.from("cases").update({
         project_id: projectId,
-        work_order_id: wo.id,
+        service_job_id: sj.id,
         status: "converted",
       } as any).eq("id", caseId);
 
       // Add system log to case_items
+      const techName = technicians.find((t) => t.id === techId)?.name || "montør";
       await supabase.from("case_items").insert({
         case_id: caseId,
         company_id: companyId,
         type: "system",
-        subject: "Jobb planlagt",
-        body_preview: `Oppdrag opprettet for ${technicians.find((t) => t.id === techId)?.name || "montør"} – ${date} kl. ${startTime} (${duration} min)`,
+        subject: "Servicearbeid opprettet",
+        body_preview: `Servicearbeid planlagt for ${techName} – ${date} kl. ${startTime} (${duration} min)${address ? `, sted: ${address}` : ""}`,
         created_by: userId,
       } as any);
 
-      toast.success("Jobb planlagt og oppdrag opprettet!");
-      onPlanned(projectId!, wo.id);
+      toast.success("Servicearbeid opprettet!");
+      onPlanned(projectId!, sj.id);
       onOpenChange(false);
 
       // Reset
@@ -137,10 +141,11 @@ export function PlanJobDialog({
       setDate("");
       setStartTime("08:00");
       setDuration("60");
+      setAddress("");
       setNote("");
     } catch (err: any) {
       console.error("PlanJob error:", err);
-      toast.error("Kunne ikke planlegge jobb: " + (err.message || "Ukjent feil"));
+      toast.error("Kunne ikke opprette servicearbeid: " + (err.message || "Ukjent feil"));
     } finally {
       setSaving(false);
     }
@@ -151,8 +156,8 @@ export function PlanJobDialog({
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
-            <CalendarDays className="h-5 w-5 text-primary" />
-            Planlegg jobb
+            <Hammer className="h-5 w-5 text-primary" />
+            Opprett servicearbeid
           </DialogTitle>
         </DialogHeader>
 
@@ -207,6 +212,11 @@ export function PlanJobDialog({
           </div>
 
           <div>
+            <Label className="text-xs">Sted / Adresse</Label>
+            <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="F.eks. Storgata 10, Oslo" className="mt-1" />
+          </div>
+
+          <div>
             <Label className="text-xs">Notat (valgfritt)</Label>
             <Textarea value={note} onChange={(e) => setNote(e.target.value)} placeholder="Beskrivelse, instrukser…" className="mt-1" rows={3} />
           </div>
@@ -218,7 +228,7 @@ export function PlanJobDialog({
           </Button>
           <Button onClick={handleSave} disabled={saving} className="gap-1.5">
             {saving && <Loader2 className="h-4 w-4 animate-spin" />}
-            Planlegg
+            Opprett
           </Button>
         </DialogFooter>
       </DialogContent>
