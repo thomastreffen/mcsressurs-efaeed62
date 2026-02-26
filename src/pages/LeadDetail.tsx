@@ -15,11 +15,12 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter, DialogDescription } from "@/components/ui/dialog";
 import { EntityView, type EntityTab, type EntityAction } from "@/components/entity/EntityView";
 import { ActivityTimeline } from "@/components/entity/ActivityTimeline";
+import { LeadPipelineBar } from "@/components/LeadPipelineBar";
 import { LEAD_STATUS_CONFIG, ALL_LEAD_STATUSES, NEXT_ACTION_TYPES, type LeadStatus } from "@/lib/lead-status";
 import {
   User, Loader2, Save, Clock,
   AlertTriangle, Plus, Trash2, FileText, ArrowRightLeft, ShieldAlert,
-  Mail, CalendarPlus, RefreshCw, Calendar as CalendarIcon
+  Mail, CalendarPlus, RefreshCw, Calendar as CalendarIcon, CheckCircle2
 } from "lucide-react";
 import { toast } from "sonner";
 import { EmailComposer } from "@/components/EmailComposer";
@@ -265,7 +266,6 @@ function LeadDetailInner() {
     };
     await supabase.from("leads").update(payload).eq("id", lead.id);
     await logActivity({ action: "updated", description: "Lead oppdatert", type: "note", performedBy: user?.id });
-    // Also write to lead_history for backward compatibility
     await supabase.from("lead_history").insert({ lead_id: id!, action: "updated", description: "Lead oppdatert", performed_by: user?.id, metadata: {} });
     toast.success("Lead lagret");
     setSaving(false);
@@ -275,6 +275,7 @@ function LeadDetailInner() {
 
   const handleStatusChange = async (newStatus: LeadStatus) => {
     if (!lead) return;
+    if (lead.status === newStatus) return;
     const oldLabel = LEAD_STATUS_CONFIG[lead.status]?.label || lead.status;
     const newLabel = LEAD_STATUS_CONFIG[newStatus]?.label || newStatus;
     await supabase.from("leads").update({ status: newStatus }).eq("id", lead.id);
@@ -366,7 +367,6 @@ function LeadDetailInner() {
     navigate(`/projects/${data!.id}`);
   };
 
-  // ─── Re-auth Microsoft ───
   const handleMsReauth = () => {
     const AZURE_CLIENT_ID = "f5605c08-b986-4626-9dec-e1446fd13702";
     const AZURE_TENANT_ID = "e1b96c2a-c273-40b9-bb46-a2a7b570e133";
@@ -375,7 +375,6 @@ function LeadDetailInner() {
     window.location.href = `https://login.microsoftonline.com/${AZURE_TENANT_ID}/oauth2/v2.0/authorize?client_id=${AZURE_CLIENT_ID}&response_type=code&redirect_uri=${encodeURIComponent(redirectUri)}&scope=${scope}&response_mode=query&prompt=consent`;
   };
 
-  // ─── Email Draft ───
   const handleCreateEmailDraft = async () => {
     if (!lead) return;
     if (!lead.email) { toast.error("Lead har ingen e-postadresse"); return; }
@@ -400,7 +399,6 @@ function LeadDetailInner() {
     }
   };
 
-  // ─── Create Meeting ───
   const handleCreateMeeting = async () => {
     if (!lead || !meetingStart) { toast.error("Velg dato og tid"); return; }
     setCreatingMeeting(true);
@@ -436,7 +434,6 @@ function LeadDetailInner() {
     }
   };
 
-  // ─── Delete Calendar Link ───
   const handleDeleteCalendarLink = async (linkId: string) => {
     try {
       const { data, error } = await supabase.functions.invoke("lead-calendar-event", { body: { action: "delete", link_id: linkId } });
@@ -452,7 +449,6 @@ function LeadDetailInner() {
     }
   };
 
-  // ─── Resync Calendar Link ───
   const handleResyncCalendarLink = async (linkId: string) => {
     try {
       const { data, error } = await supabase.functions.invoke("lead-calendar-event", { body: { action: "resync", link_id: linkId } });
@@ -464,6 +460,20 @@ function LeadDetailInner() {
       console.error("[LeadDetail] Resync error:", err);
       toast.error("Kunne ikke resynkronisere");
     }
+  };
+
+  const handleMarkNextActionDone = async () => {
+    if (!lead) return;
+    const actionLabel = NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || lead.next_action_type || "Aksjon";
+    await supabase.from("leads").update({ next_action_type: null, next_action_date: null, next_action_note: null }).eq("id", lead.id);
+    await logActivity({ action: "next_action_completed", description: `${actionLabel} markert som utført`, type: "note", performedBy: user?.id });
+    await supabase.from("lead_history").insert({ lead_id: id!, action: "next_action_completed", description: `${actionLabel} markert som utført`, performed_by: user?.id, metadata: {} });
+    toast.success("Aksjon markert som utført");
+    setNextActionType("");
+    setNextActionDate("");
+    setNextActionNote("");
+    setLead({ ...lead, next_action_type: null, next_action_date: null, next_action_note: null });
+    fetchActivities();
   };
 
   // ─── Derived values ───
@@ -497,8 +507,9 @@ function LeadDetailInner() {
     },
   ];
 
-  const banner = (
-    <>
+  // ─── Banner: Pipeline bar + Neste aksjon ───
+  const banner = lead ? (
+    <div className="space-y-3">
       {msReauthNeeded && (
         <div className="flex items-center gap-3 rounded-lg border border-destructive/30 bg-destructive/5 p-4">
           <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
@@ -509,131 +520,196 @@ function LeadDetailInner() {
           <Button size="sm" variant="destructive" onClick={handleMsReauth}>Koble til Microsoft på nytt</Button>
         </div>
       )}
-      {lead?.next_action_date && (
-        <Card className={isOverdue ? "border-destructive bg-destructive/5" : ""}>
-          <CardContent className="flex items-center gap-3 py-3">
-            {isOverdue ? <AlertTriangle className="h-5 w-5 text-destructive shrink-0" /> : <Clock className="h-5 w-5 text-muted-foreground shrink-0" />}
-            <div className="flex-1">
+
+      {/* Pipeline bar */}
+      <Card className="rounded-2xl shadow-sm">
+        <CardContent className="py-4">
+          <LeadPipelineBar currentStatus={safeStatus} onStatusChange={handleStatusChange} />
+        </CardContent>
+      </Card>
+
+      {/* Neste aksjon - prominent placement */}
+      {lead.next_action_date ? (
+        <Card className={`rounded-2xl shadow-sm ${isOverdue ? "border-destructive/40 bg-destructive/[0.03]" : "border-primary/20 bg-primary/[0.02]"}`}>
+          <CardContent className="flex items-center gap-3 py-3.5">
+            {isOverdue
+              ? <AlertTriangle className="h-5 w-5 text-destructive shrink-0" />
+              : <Clock className="h-5 w-5 text-primary shrink-0" />
+            }
+            <div className="flex-1 min-w-0">
               <p className="text-sm font-medium">
                 {isOverdue ? "Forfalt: " : "Neste aksjon: "}
-                {NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || lead.next_action_type || "Ukjent"}
+                <span className="font-semibold">
+                  {NEXT_ACTION_TYPES.find(t => t.key === lead.next_action_type)?.label || lead.next_action_type || "Ukjent"}
+                </span>
                 {" — "}
                 {format(new Date(lead.next_action_date), "d. MMM yyyy HH:mm", { locale: nb })}
               </p>
-              {lead.next_action_note && <p className="text-xs text-muted-foreground">{lead.next_action_note}</p>}
+              {lead.next_action_note && <p className="text-xs text-muted-foreground mt-0.5">{lead.next_action_note}</p>}
             </div>
+            <Button
+              variant="outline"
+              size="sm"
+              className="gap-1.5 shrink-0 rounded-xl"
+              onClick={handleMarkNextActionDone}
+            >
+              <CheckCircle2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Marker utført</span>
+            </Button>
           </CardContent>
         </Card>
-      )}
-    </>
-  );
-
-  const statusBadge = lead ? (
-    <Select value={safeStatus} onValueChange={(v) => handleStatusChange(v as LeadStatus)}>
-      <SelectTrigger className="w-auto h-9">
-        <Badge className={LEAD_STATUS_CONFIG[safeStatus]?.className}>
-          {LEAD_STATUS_CONFIG[safeStatus]?.label}
-        </Badge>
-      </SelectTrigger>
-      <SelectContent>
-        {ALL_LEAD_STATUSES.map(s => (
-          <SelectItem key={s} value={s}>{LEAD_STATUS_CONFIG[s].label}</SelectItem>
-        ))}
-      </SelectContent>
-    </Select>
+      ) : null}
+    </div>
   ) : undefined;
 
   // ─── Tabs ───
   const tabs: EntityTab[] = [
     {
-      value: "info",
-      label: "Oversikt",
+      value: "contact",
+      label: "Kontaktinfo",
       content: lead ? (
         <div className="space-y-4">
-          <div className="grid md:grid-cols-2 gap-4">
-            <Card className="rounded-2xl shadow-sm">
-              <CardHeader><CardTitle className="text-base">Kontaktinfo</CardTitle></CardHeader>
-              <CardContent className="space-y-3">
-                <div className="space-y-1.5">
-                  <Label>Firmanavn *</Label>
-                  <Input value={companyName} onChange={e => setCompanyName(e.target.value)} />
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Kontaktperson</Label>
-                  <Input value={contactName} onChange={e => setContactName(e.target.value)} />
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>E-post</Label>
-                    <Input value={email} onChange={e => setEmail(e.target.value)} type="email" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Telefon</Label>
-                    <Input value={phone} onChange={e => setPhone(e.target.value)} />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Kilde</Label>
-                  <Input value={source} onChange={e => setSource(e.target.value)} />
-                </div>
-              </CardContent>
-            </Card>
-            <Card className="rounded-2xl shadow-sm">
-              <CardHeader><CardTitle className="text-base">Salgsinfo</CardTitle></CardHeader>
-              <CardContent className="space-y-4">
-                {/* Estimated value highlight */}
-                <div className="rounded-xl bg-gradient-to-r from-primary/[0.06] to-transparent p-4 -mx-1">
-                  <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Estimert verdi</p>
-                  <p className="text-2xl font-bold text-foreground">
-                    kr {Number(estimatedValue || 0).toLocaleString("nb-NO")}
-                  </p>
-                  <div className="flex items-center gap-2 mt-2">
-                    <p className="text-xs text-muted-foreground">Sannsynlighet:</p>
-                    <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${
-                      Number(probability) >= 70
-                        ? "bg-status-approved/15 text-status-approved"
-                        : Number(probability) >= 40
-                        ? "bg-status-ready-for-invoicing/15 text-status-ready-for-invoicing"
-                        : "bg-muted text-muted-foreground"
-                    }`}>
-                      {probability}%
-                    </span>
-                    <p className="text-xs text-muted-foreground ml-auto">
-                      Vektet: <span className="font-medium text-foreground">kr {Math.round(Number(estimatedValue || 0) * Number(probability || 50) / 100).toLocaleString("nb-NO")}</span>
-                    </p>
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Eier</Label>
-                  <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
-                    <SelectTrigger><SelectValue placeholder="Velg eier" /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="__unset__">Ikke satt</SelectItem>
-                      {companyUsers.map(u => (
-                        <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1.5">
-                    <Label>Estimert verdi (kr)</Label>
-                    <Input value={estimatedValue} onChange={e => setEstimatedValue(e.target.value)} type="number" />
-                  </div>
-                  <div className="space-y-1.5">
-                    <Label>Sannsynlighet (%)</Label>
-                    <Input value={probability} onChange={e => setProbability(e.target.value)} type="number" min="0" max="100" />
-                  </div>
-                </div>
-                <div className="space-y-1.5">
-                  <Label>Forventet lukkedato</Label>
-                  <Input value={expectedCloseDate} onChange={e => setExpectedCloseDate(e.target.value)} type="date" />
-                </div>
-              </CardContent>
-            </Card>
-          </div>
           <Card className="rounded-2xl shadow-sm">
-            <CardHeader><CardTitle className="text-base">Neste aksjon</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Kontaktinformasjon</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Firmanavn *</Label>
+                <Input value={companyName} onChange={e => setCompanyName(e.target.value)} />
+              </div>
+              <div className="space-y-1.5">
+                <Label>Kontaktperson</Label>
+                <Input value={contactName} onChange={e => setContactName(e.target.value)} />
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>E-post</Label>
+                  <Input value={email} onChange={e => setEmail(e.target.value)} type="email" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Telefon</Label>
+                  <Input value={phone} onChange={e => setPhone(e.target.value)} />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Kilde</Label>
+                <Input value={source} onChange={e => setSource(e.target.value)} />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Deltakere inline */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Deltakere</CardTitle>
+                <Button size="sm" variant="ghost" className="gap-1 h-7 text-xs" onClick={() => setAddParticipantOpen(true)}>
+                  <Plus className="h-3 w-3" /> Legg til
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {participants.length === 0 ? (
+                <p className="text-sm text-muted-foreground text-center py-2">Ingen deltakere</p>
+              ) : (
+                <div className="space-y-2">
+                  {participants.map(p => (
+                    <div key={p.id} className="flex items-center gap-3 py-1.5">
+                      <div className="h-7 w-7 rounded-full bg-primary/10 flex items-center justify-center">
+                        <User className="h-3.5 w-3.5 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{p.user_name}</p>
+                        <p className="text-[10px] text-muted-foreground">{p.user_email}</p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] capitalize">{p.role === "owner" ? "Eier" : "Bidragsyter"}</Badge>
+                      {p.role !== "owner" && (
+                        <Button variant="ghost" size="icon" className="h-6 w-6" onClick={() => removeParticipant(p)}>
+                          <Trash2 className="h-3 w-3 text-muted-foreground" />
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          <div className="flex justify-end">
+            <Button onClick={handleSave} disabled={saving} className="gap-1.5 rounded-xl">
+              {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
+              Lagre endringer
+            </Button>
+          </div>
+        </div>
+      ) : null,
+    },
+    {
+      value: "deal",
+      label: "Deal",
+      content: lead ? (
+        <div className="space-y-4">
+          {/* Value highlight */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardContent className="pt-5">
+              <div className="rounded-xl bg-gradient-to-r from-primary/[0.06] to-transparent p-4">
+                <p className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium mb-1">Estimert verdi</p>
+                <p className="text-2xl font-bold text-foreground">
+                  kr {Number(estimatedValue || 0).toLocaleString("nb-NO")}
+                </p>
+                <div className="flex items-center gap-2 mt-2">
+                  <p className="text-xs text-muted-foreground">Sannsynlighet:</p>
+                  <span className={`inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold leading-none ${
+                    Number(probability) >= 70
+                      ? "bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300"
+                      : Number(probability) >= 40
+                      ? "bg-amber-100 text-amber-700 dark:bg-amber-900/30 dark:text-amber-300"
+                      : "bg-muted text-muted-foreground"
+                  }`}>
+                    {probability}%
+                  </span>
+                  <p className="text-xs text-muted-foreground ml-auto">
+                    Vektet: <span className="font-medium text-foreground">kr {Math.round(Number(estimatedValue || 0) * Number(probability || 50) / 100).toLocaleString("nb-NO")}</span>
+                  </p>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Detaljer</CardTitle></CardHeader>
+            <CardContent className="space-y-3">
+              <div className="space-y-1.5">
+                <Label>Eier</Label>
+                <Select value={ownerSelectValue} onValueChange={handleOwnerChange}>
+                  <SelectTrigger><SelectValue placeholder="Velg eier" /></SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="__unset__">Ikke satt</SelectItem>
+                    {companyUsers.map(u => (
+                      <SelectItem key={u.id} value={u.id}>{u.name}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1.5">
+                  <Label>Estimert verdi (kr)</Label>
+                  <Input value={estimatedValue} onChange={e => setEstimatedValue(e.target.value)} type="number" />
+                </div>
+                <div className="space-y-1.5">
+                  <Label>Sannsynlighet (%)</Label>
+                  <Input value={probability} onChange={e => setProbability(e.target.value)} type="number" min="0" max="100" />
+                </div>
+              </div>
+              <div className="space-y-1.5">
+                <Label>Forventet lukkedato</Label>
+                <Input value={expectedCloseDate} onChange={e => setExpectedCloseDate(e.target.value)} type="date" />
+              </div>
+            </CardContent>
+          </Card>
+
+          {/* Neste aksjon editor */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Neste aksjon</CardTitle></CardHeader>
             <CardContent className="space-y-3">
               <div className="grid sm:grid-cols-3 gap-3">
                 <div className="space-y-1.5">
@@ -659,14 +735,55 @@ function LeadDetailInner() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Notater */}
           <Card className="rounded-2xl shadow-sm">
-            <CardHeader><CardTitle className="text-base">Notater</CardTitle></CardHeader>
+            <CardHeader className="pb-3"><CardTitle className="text-base">Notater</CardTitle></CardHeader>
             <CardContent>
               <Textarea value={notes} onChange={e => setNotes(e.target.value)} rows={4} placeholder="Interne notater..." />
             </CardContent>
           </Card>
+
+          {/* Tilbud */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Tilbud</CardTitle></CardHeader>
+            <CardContent>
+              {offers.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <FileText className="h-6 w-6 mx-auto mb-1.5 opacity-40" />
+                  <p className="text-sm">Ingen tilbud ennå</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {offers.map(offer => (
+                    <div key={offer.id} className="flex items-center gap-3 py-2 border-b border-border/20 last:border-0">
+                      <FileText className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium">{offer.offer_number} (v{offer.version})</p>
+                        <p className="text-xs text-muted-foreground">
+                          {format(new Date(offer.created_at), "d. MMM yyyy", { locale: nb })}
+                          {" · kr "}
+                          {Number(offer.total_ex_vat).toLocaleString("nb-NO")} eks. mva
+                        </p>
+                      </div>
+                      <Badge variant="outline" className="text-[10px] capitalize">{offer.status}</Badge>
+                      {offer.status === "accepted" && (
+                        <Button size="sm" variant="outline" className="gap-1 text-xs h-7" onClick={() => {
+                          setConvertingOfferId(offer.id);
+                          setConvertDialogOpen(true);
+                        }}>
+                          <ArrowRightLeft className="h-3 w-3" /> Konverter
+                        </Button>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
           <div className="flex justify-end">
-            <Button onClick={handleSave} disabled={saving} className="gap-1.5">
+            <Button onClick={handleSave} disabled={saving} className="gap-1.5 rounded-xl">
               {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
               Lagre endringer
             </Button>
@@ -675,172 +792,95 @@ function LeadDetailInner() {
       ) : null,
     },
     {
-      value: "participants",
-      label: "Deltakere",
-      count: participants.length,
-      content: (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Deltakere</h3>
-            <Button size="sm" className="gap-1.5" onClick={() => setAddParticipantOpen(true)}>
-              <Plus className="h-4 w-4" /> Legg til
-            </Button>
-          </div>
-          <div className="space-y-2">
-            {participants.length === 0 ? (
-              <p className="text-sm text-muted-foreground py-4 text-center">Ingen deltakere ennå</p>
-            ) : participants.map(p => (
-              <Card key={p.id}>
-                <CardContent className="flex items-center gap-3 py-3">
-                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center">
-                    <User className="h-4 w-4 text-primary" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{p.user_name}</p>
-                    <p className="text-xs text-muted-foreground">{p.user_email}</p>
-                  </div>
-                  <Badge variant="outline" className="text-xs capitalize">{p.role === "owner" ? "Eier" : p.role === "contributor" ? "Bidragsyter" : "Leser"}</Badge>
-                  {p.role !== "owner" && (
-                    <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => removeParticipant(p)}>
-                      <Trash2 className="h-3.5 w-3.5 text-muted-foreground" />
-                    </Button>
-                  )}
-                </CardContent>
-              </Card>
-            ))}
-          </div>
-        </div>
-      ),
-    },
-    {
-      value: "offers",
-      label: "Tilbud",
-      count: offers.length,
-      content: (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Tilbud knyttet til denne leaden</h3>
-          </div>
-          {offers.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">
-              <FileText className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              Ingen tilbud ennå
-            </CardContent></Card>
-          ) : (
-            <div className="space-y-2">
-              {offers.map(offer => (
-                <Card key={offer.id}>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <FileText className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium">{offer.offer_number} (v{offer.version})</p>
-                      <p className="text-xs text-muted-foreground">
-                        {format(new Date(offer.created_at), "d. MMM yyyy", { locale: nb })}
-                        {" · "}
-                        kr {Number(offer.total_ex_vat).toLocaleString("nb-NO")} eks. mva
-                      </p>
-                    </div>
-                    <Badge variant="outline" className="text-xs capitalize">{offer.status}</Badge>
-                    {offer.status === "accepted" && (
-                      <Button size="sm" variant="outline" className="gap-1 text-xs" onClick={() => {
-                        setConvertingOfferId(offer.id);
-                        setConvertDialogOpen(true);
-                      }}>
-                        <ArrowRightLeft className="h-3 w-3" /> Konverter
-                      </Button>
-                    )}
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
-          )}
-        </div>
-      ),
-    },
-    {
-      value: "email",
-      label: "E-post",
+      value: "activity",
+      label: "Aktiviteter",
       content: lead ? (
-        <EmailComposer
-          entityType="lead"
-          entityId={lead.id}
-          defaultTo={lead.email || undefined}
-          defaultSubject={lead.company_name}
-          refCode={lead.lead_ref_code || undefined}
-          onSent={() => fetchActivities()}
-        />
-      ) : null,
-    },
-    {
-      value: "calendar",
-      label: "Møter",
-      count: calendarLinks.length,
-      content: (
-        <div className="space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="font-semibold">Outlook-møter</h3>
-            <Button size="sm" className="gap-1.5" onClick={() => {
-              setMeetingStart("");
-              setMeetingDuration("60");
-              setMeetingLocation("");
-              setMeetingSubject("Befaring");
-              setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
-              setMeetingDialogOpen(true);
-            }}>
-              <CalendarPlus className="h-4 w-4" /> Nytt møte
-            </Button>
-          </div>
-          {calendarLinks.length === 0 ? (
-            <Card><CardContent className="py-8 text-center text-muted-foreground">
-              <CalendarIcon className="h-8 w-8 mx-auto mb-2 opacity-40" />
-              Ingen møter opprettet ennå
-            </CardContent></Card>
-          ) : (
-            <div className="space-y-2">
-              {calendarLinks.map(link => (
-                <Card key={link.id}>
-                  <CardContent className="flex items-center gap-3 py-3">
-                    <CalendarIcon className="h-5 w-5 text-muted-foreground shrink-0" />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium truncate">{link.event_subject || "Ukjent møte"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {link.event_start ? format(new Date(link.event_start), "d. MMM yyyy HH:mm", { locale: nb }) : "—"}
-                        {link.event_end ? ` – ${format(new Date(link.event_end), "HH:mm", { locale: nb })}` : ""}
-                        {link.event_location ? ` · ${link.event_location}` : ""}
-                      </p>
+        <div className="space-y-5">
+          {/* E-post */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">E-post</CardTitle></CardHeader>
+            <CardContent>
+              <EmailComposer
+                entityType="lead"
+                entityId={lead.id}
+                defaultTo={lead.email || undefined}
+                defaultSubject={lead.company_name}
+                refCode={lead.lead_ref_code || undefined}
+                onSent={() => fetchActivities()}
+              />
+            </CardContent>
+          </Card>
+
+          {/* Møter */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-base">Møter</CardTitle>
+                <Button size="sm" variant="ghost" className="gap-1 h-7 text-xs" onClick={() => {
+                  setMeetingStart("");
+                  setMeetingDuration("60");
+                  setMeetingLocation("");
+                  setMeetingSubject("Befaring");
+                  setMeetingAttendees(participants.filter(p => p.user_email).map(p => p.user_email!));
+                  setMeetingDialogOpen(true);
+                }}>
+                  <CalendarPlus className="h-3 w-3" /> Nytt møte
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent>
+              {calendarLinks.length === 0 ? (
+                <div className="text-center py-4 text-muted-foreground">
+                  <CalendarIcon className="h-6 w-6 mx-auto mb-1.5 opacity-40" />
+                  <p className="text-sm">Ingen møter opprettet</p>
+                </div>
+              ) : (
+                <div className="space-y-2">
+                  {calendarLinks.map(link => (
+                    <div key={link.id} className="flex items-center gap-3 py-2 border-b border-border/20 last:border-0">
+                      <CalendarIcon className="h-4 w-4 text-muted-foreground shrink-0" />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium truncate">{link.event_subject || "Ukjent møte"}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {link.event_start ? format(new Date(link.event_start), "d. MMM yyyy HH:mm", { locale: nb }) : "—"}
+                          {link.event_end ? ` – ${format(new Date(link.event_end), "HH:mm", { locale: nb })}` : ""}
+                          {link.event_location ? ` · ${link.event_location}` : ""}
+                        </p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleResyncCalendarLink(link.id)} title="Resynkroniser">
+                          <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteCalendarLink(link.id)} title="Slett fra Outlook">
+                          <Trash2 className="h-3.5 w-3.5 text-destructive" />
+                        </Button>
+                      </div>
                     </div>
-                    <div className="flex items-center gap-1">
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleResyncCalendarLink(link.id)} title="Resynkroniser">
-                        <RefreshCw className="h-3.5 w-3.5 text-muted-foreground" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => handleDeleteCalendarLink(link.id)} title="Slett fra Outlook">
-                        <Trash2 className="h-3.5 w-3.5 text-destructive" />
-                      </Button>
-                    </div>
-                  </CardContent>
-                </Card>
-              ))}
-            </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {/* Kontrakter */}
+          {id && (
+            <Card className="rounded-2xl shadow-sm">
+              <CardHeader className="pb-3"><CardTitle className="text-base">Kontrakter</CardTitle></CardHeader>
+              <CardContent>
+                <ContractListSection entityType="lead" entityId={id} />
+              </CardContent>
+            </Card>
           )}
+
+          {/* Historikk */}
+          <Card className="rounded-2xl shadow-sm">
+            <CardHeader className="pb-3"><CardTitle className="text-base">Aktivitetslogg</CardTitle></CardHeader>
+            <CardContent>
+              <ActivityTimeline activities={activities} emptyMessage="Ingen hendelser loggført" />
+            </CardContent>
+          </Card>
         </div>
-      ),
-    },
-    {
-      value: "contracts",
-      label: "Kontrakter",
-      content: id ? (
-        <ContractListSection entityType="lead" entityId={id} />
       ) : null,
-    },
-    {
-      value: "history",
-      label: "Historikk",
-      content: (
-        <div className="space-y-4">
-          <h3 className="font-semibold">Aktivitetslogg</h3>
-          <ActivityTimeline activities={activities} emptyMessage="Ingen hendelser loggført" />
-        </div>
-      ),
     },
   ];
 
@@ -850,11 +890,10 @@ function LeadDetailInner() {
         name={lead?.company_name || ""}
         refCode={lead?.lead_ref_code}
         subtitle={lead ? `Opprettet ${format(new Date(lead.created_at), "d. MMM yyyy", { locale: nb })}` : undefined}
-        statusBadge={statusBadge}
         actions={entityActions}
         banner={banner}
         tabs={tabs}
-        defaultTab="info"
+        defaultTab="contact"
         onBack={() => navigate("/sales/leads")}
         loading={loading}
         notFound={notFound || !lead}
