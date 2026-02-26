@@ -87,7 +87,7 @@ export function ResourceCalendar({
       };
     });
 
-    // Add external busy slots as foreground events (not background) for better visibility
+    // Add external busy slots — subdued styling so they don't dominate internal events
     if (getBusySlotsForDay) {
       const weekStart = new Date(referenceDate);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
@@ -99,12 +99,12 @@ export function ResourceCalendar({
           const tech = technicianMap.get(slot.technicianId);
           internal.push({
             id: `busy-${slot.technicianId}-${slot.start.getTime()}`,
-            title: tech?.name ? `${tech.name.split(" ")[0]} – opptatt` : "Opptatt",
+            title: tech?.name ? `${tech.name.split(" ")[0]} – ekstern` : "Ekstern",
             start: slot.start,
             end: slot.end,
-            backgroundColor: "#F3F4F6",
-            borderColor: "#D1D5DB",
-            textColor: "#9CA3AF",
+            backgroundColor: "hsl(var(--muted) / 0.4)",
+            borderColor: "hsl(var(--border))",
+            textColor: "hsl(var(--muted-foreground))",
             editable: false,
             extendedProps: { isBusy: true },
           });
@@ -185,9 +185,9 @@ export function ResourceCalendar({
           const props = arg.event.extendedProps;
           if (props.isBusy) {
             return (
-              <div className="fc-event-external flex items-center gap-1.5 px-2 py-1.5 text-[11px] cursor-default select-none" style={{ color: "#9CA3AF" }}>
-                <span className="opacity-60">🔒</span>
-                <span className="truncate">{arg.event.title}</span>
+              <div className="fc-event-external flex items-center gap-2 px-2 py-1.5 cursor-default select-none">
+                <span className="text-base opacity-50">🔒</span>
+                <span className="text-[11px] text-muted-foreground truncate opacity-70">{arg.event.title}</span>
               </div>
             );
           }
