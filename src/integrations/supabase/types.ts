@@ -990,6 +990,7 @@ export type Database = {
           proposed_start: string | null
           start_time: string
           status: Database["public"]["Enums"]["job_status"]
+          task_id: string | null
           technician_id: string
           title: string
           updated_at: string
@@ -1035,6 +1036,7 @@ export type Database = {
           proposed_start?: string | null
           start_time: string
           status?: Database["public"]["Enums"]["job_status"]
+          task_id?: string | null
           technician_id: string
           title: string
           updated_at?: string
@@ -1080,6 +1082,7 @@ export type Database = {
           proposed_start?: string | null
           start_time?: string
           status?: Database["public"]["Enums"]["job_status"]
+          task_id?: string | null
           technician_id?: string
           title?: string
           updated_at?: string
@@ -1105,6 +1108,13 @@ export type Database = {
             columns: ["offer_id"]
             isOneToOne: false
             referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "events_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "job_tasks"
             referencedColumns: ["id"]
           },
           {

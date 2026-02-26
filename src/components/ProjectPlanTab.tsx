@@ -7,36 +7,23 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { TechnicianMultiSelect } from "./TechnicianMultiSelect";
 import { JobCalendarSync } from "./JobCalendarSync";
-import { ResourceAssignDialog } from "./ResourceAssignDialog";
+import { EventDrawer } from "./EventDrawer";
 import { useTechnicians } from "@/hooks/useTechnicians";
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
-  Plus,
-  Clock,
-  CalendarCheck,
-  Users,
-  CheckCircle2,
-  Circle,
-  Loader2,
-  Trash2,
-  ChevronDown,
-  MapPin,
-  PlayCircle,
-  FileText,
-  ImageIcon,
-  Send,
-  Paperclip,
-  X,
-  MessageSquare,
+  Plus, Clock, CalendarCheck, Users, CheckCircle2, Circle,
+  Loader2, Trash2, ChevronDown, MapPin, PlayCircle, FileText,
+  ImageIcon, Send, Paperclip, X, MessageSquare, CalendarPlus,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
+  Collapsible, CollapsibleContent, CollapsibleTrigger,
 } from "@/components/ui/collapsible";
+import {
+  Sheet, SheetContent, SheetHeader, SheetTitle, SheetDescription, SheetFooter,
+} from "@/components/ui/sheet";
 
 /* ── Types ── */
 interface JobTask {
@@ -66,6 +53,15 @@ interface TaskNote {
   created_at: string;
 }
 
+interface LinkedEvent {
+  id: string;
+  title: string;
+  start_time: string;
+  end_time: string;
+  status: string;
+  techNames: string[];
+}
+
 interface ProjectPlanTabProps {
   jobId: string;
   jobTitle: string;
@@ -87,30 +83,21 @@ const STATUS_CONFIG = {
   done: { label: "Ferdig", icon: CheckCircle2, className: "text-emerald-500" },
 };
 
-/* ══════════════════════════════════════════════════════════
-   Main Component
-   ══════════════════════════════════════════════════════════ */
 export function ProjectPlanTab({
-  jobId,
-  jobTitle,
-  jobStart,
-  jobEnd,
-  jobAddress,
-  technicianIds,
-  technicianNames,
-  isAdmin,
-  calendarDirty,
-  calendarLastSyncedAt,
-  onSynced,
-  onResourceAssign,
+  jobId, jobTitle, jobStart, jobEnd, jobAddress,
+  technicianIds, technicianNames, isAdmin,
+  calendarDirty, calendarLastSyncedAt, onSynced, onResourceAssign,
 }: ProjectPlanTabProps) {
   const { user } = useAuth();
   const [tasks, setTasks] = useState<JobTask[]>([]);
+  const [linkedEvents, setLinkedEvents] = useState<LinkedEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedTaskId, setExpandedTaskId] = useState<string | null>(null);
-  const [resourceAssignOpen, setResourceAssignOpen] = useState(false);
   const [showCompleted, setShowCompleted] = useState(false);
-  const [showCreateForm, setShowCreateForm] = useState(false);
+
+  // Drawer states
+  const [createDrawerOpen, setCreateDrawerOpen] = useState(false);
+  const [eventDrawerOpen, setEventDrawerOpen] = useState(false);
 
   const fetchTasks = useCallback(async () => {
     const { data } = await supabase
@@ -123,13 +110,45 @@ export function ProjectPlanTab({
     setLoading(false);
   }, [jobId]);
 
+  const fetchLinkedEvents = useCallback(async () => {
+    // Fetch all events that reference this job (as project)
+    // Events are linked by having the same job_id in a broader sense
+    // For now we look at events that share the jobId as their id or have task_id pointing to tasks in this job
+    const { data } = await supabase
+      .from("events")
+      .select(`
+        id, title, start_time, end_time, status,
+        event_technicians(technician_id, technicians(name))
+      `)
+      .or(`id.eq.${jobId},task_id.not.is.null`)
+      .is("deleted_at", null)
+      .order("start_time", { ascending: true });
+
+    // Filter to only events linked to this project
+    // The main event itself + any events with task_id pointing to our tasks
+    const taskIds = tasks.map(t => t.id);
+    const filtered = (data || []).filter((ev: any) =>
+      ev.id === jobId // The main project event
+    );
+
+    setLinkedEvents(filtered.map((ev: any) => ({
+      id: ev.id,
+      title: ev.title,
+      start_time: ev.start_time,
+      end_time: ev.end_time,
+      status: ev.status,
+      techNames: (ev.event_technicians || [])
+        .filter((et: any) => et.technicians)
+        .map((et: any) => et.technicians.name),
+    })));
+  }, [jobId, tasks]);
+
   useEffect(() => { fetchTasks(); }, [fetchTasks]);
+  useEffect(() => { if (!loading) fetchLinkedEvents(); }, [loading, fetchLinkedEvents]);
 
   const toggleTaskStatus = async (task: JobTask) => {
     const nextStatus: Record<string, string> = {
-      pending: "in_progress",
-      in_progress: "done",
-      done: "pending",
+      pending: "in_progress", in_progress: "done", done: "pending",
     };
     const newStatus = nextStatus[task.status] as JobTask["status"];
     const updates: Record<string, unknown> = {
@@ -171,9 +190,9 @@ export function ProjectPlanTab({
           </div>
           {isAdmin && (
             <Button size="sm" variant="outline" className="rounded-xl gap-1.5 shrink-0"
-              onClick={() => setResourceAssignOpen(true)}>
-              <Users className="h-3.5 w-3.5" />
-              Legg til ressurs
+              onClick={() => setEventDrawerOpen(true)}>
+              <CalendarPlus className="h-3.5 w-3.5" />
+              Planlegg ressurs
             </Button>
           )}
         </div>
@@ -232,24 +251,13 @@ export function ProjectPlanTab({
               <span className="ml-1 text-xs text-muted-foreground font-normal">({activeTasks.length} aktive)</span>
             )}
           </h3>
-          {isAdmin && !showCreateForm && (
-            <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setShowCreateForm(true)}>
+          {isAdmin && (
+            <Button size="sm" className="gap-1.5 rounded-xl" onClick={() => setCreateDrawerOpen(true)}>
               <Plus className="h-3.5 w-3.5" />
               Ny oppgave
             </Button>
           )}
         </div>
-
-        {/* Inline create form */}
-        {isAdmin && showCreateForm && (
-          <CreateTaskForm
-            jobId={jobId}
-            userId={user?.id || null}
-            tasksCount={tasks.length}
-            onCreated={() => { fetchTasks(); setShowCreateForm(false); }}
-            onCancel={() => setShowCreateForm(false)}
-          />
-        )}
 
         {/* Active tasks */}
         <div className="divide-y divide-border/30">
@@ -257,7 +265,7 @@ export function ProjectPlanTab({
             <div className="flex items-center justify-center py-8">
               <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
             </div>
-          ) : activeTasks.length === 0 && completedTasks.length === 0 && !showCreateForm ? (
+          ) : activeTasks.length === 0 && completedTasks.length === 0 ? (
             <div className="py-10 text-center">
               <CheckCircle2 className="h-8 w-8 text-muted-foreground/30 mx-auto mb-2" />
               <p className="text-sm text-muted-foreground">Ingen oppgaver ennå</p>
@@ -265,16 +273,12 @@ export function ProjectPlanTab({
             </div>
           ) : (
             activeTasks.map((task) => (
-              <TaskRow
-                key={task.id}
-                task={task}
-                isAdmin={isAdmin}
+              <TaskRow key={task.id} task={task} isAdmin={isAdmin}
                 expanded={expandedTaskId === task.id}
                 onToggleExpand={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
                 onStatusToggle={() => toggleTaskStatus(task)}
                 onDelete={() => deleteTask(task.id)}
-                userId={user?.id || null}
-              />
+                userId={user?.id || null} />
             ))
           )}
         </div>
@@ -294,22 +298,52 @@ export function ProjectPlanTab({
             <CollapsibleContent>
               <div className="divide-y divide-border/20">
                 {completedTasks.map((task) => (
-                  <TaskRow
-                    key={task.id}
-                    task={task}
-                    isAdmin={isAdmin}
+                  <TaskRow key={task.id} task={task} isAdmin={isAdmin}
                     expanded={expandedTaskId === task.id}
                     onToggleExpand={() => setExpandedTaskId(expandedTaskId === task.id ? null : task.id)}
                     onStatusToggle={() => toggleTaskStatus(task)}
                     onDelete={() => deleteTask(task.id)}
-                    userId={user?.id || null}
-                  />
+                    userId={user?.id || null} />
                 ))}
               </div>
             </CollapsibleContent>
           </Collapsible>
         )}
       </div>
+
+      {/* ── Prosjektplan: Planlagte blokker ── */}
+      {linkedEvents.length > 0 && (
+        <div className="rounded-2xl border border-border/60 bg-card shadow-sm overflow-hidden">
+          <div className="px-5 py-3.5 border-b border-border/40">
+            <h3 className="text-sm font-semibold flex items-center gap-2">
+              <CalendarPlus className="h-4 w-4 text-primary" />
+              Planlagte blokker
+              <span className="text-xs text-muted-foreground font-normal">({linkedEvents.length})</span>
+            </h3>
+          </div>
+          <div className="divide-y divide-border/30">
+            {linkedEvents.map((ev) => (
+              <div key={ev.id} className="px-5 py-3 flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="text-sm font-medium truncate">{ev.title}</p>
+                  <p className="text-xs text-muted-foreground flex items-center gap-1.5 mt-0.5">
+                    <Clock className="h-3 w-3" />
+                    {format(new Date(ev.start_time), "d. MMM HH:mm", { locale: nb })} –{" "}
+                    {format(new Date(ev.end_time), "HH:mm", { locale: nb })}
+                  </p>
+                  {ev.techNames.length > 0 && (
+                    <p className="text-xs text-muted-foreground flex items-center gap-1 mt-0.5">
+                      <Users className="h-3 w-3" />
+                      {ev.techNames.join(", ")}
+                    </p>
+                  )}
+                </div>
+                <Badge variant="secondary" className="text-[10px] shrink-0">{ev.status}</Badge>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── Outlook calendar sync ── */}
       <div className="rounded-2xl border border-border/60 bg-card shadow-sm p-5">
@@ -318,21 +352,37 @@ export function ProjectPlanTab({
           calendarDirty={calendarDirty} calendarLastSyncedAt={calendarLastSyncedAt} onSynced={onSynced} />
       </div>
 
-      <ResourceAssignDialog open={resourceAssignOpen} onOpenChange={setResourceAssignOpen}
-        projectId={jobId} projectTitle={jobTitle}
-        onAssigned={() => { onResourceAssign?.(); fetchTasks(); }} />
+      {/* ── Create Task Drawer ── */}
+      <CreateTaskDrawer
+        open={createDrawerOpen}
+        onOpenChange={setCreateDrawerOpen}
+        jobId={jobId}
+        userId={user?.id || null}
+        tasksCount={tasks.length}
+        onCreated={() => { fetchTasks(); }}
+      />
+
+      {/* ── Event Drawer for scheduling resources ── */}
+      <EventDrawer
+        open={eventDrawerOpen}
+        onOpenChange={setEventDrawerOpen}
+        projectId={jobId}
+        projectTitle={jobTitle}
+        onSaved={() => { onResourceAssign?.(); fetchTasks(); fetchLinkedEvents(); }}
+      />
     </div>
   );
 }
 
 /* ══════════════════════════════════════════════════════════
-   Create Task Form — all-in-one, single step
+   Create Task Drawer — all-in-one, single step, in a side panel
    ══════════════════════════════════════════════════════════ */
-function CreateTaskForm({
-  jobId, userId, tasksCount, onCreated, onCancel,
+function CreateTaskDrawer({
+  open, onOpenChange, jobId, userId, tasksCount, onCreated,
 }: {
+  open: boolean; onOpenChange: (v: boolean) => void;
   jobId: string; userId: string | null; tasksCount: number;
-  onCreated: () => void; onCancel: () => void;
+  onCreated: () => void;
 }) {
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
@@ -343,8 +393,16 @@ function CreateTaskForm({
   const [file, setFile] = useState<File | null>(null);
   const [saving, setSaving] = useState(false);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
+  // Reset form when opening
+  useEffect(() => {
+    if (open) {
+      setTitle(""); setDescription(""); setTechIds([]);
+      setScheduledDate(""); setStartTime(""); setEndTime("");
+      setFile(null);
+    }
+  }, [open]);
+
+  const handleSubmit = async () => {
     if (!title.trim()) return;
     setSaving(true);
 
@@ -367,7 +425,32 @@ function CreateTaskForm({
       return;
     }
 
-    // 2. Upload file if present
+    // 2. If time + resources → also create a resource event linked to task
+    if (scheduledDate && startTime && endTime && techIds.length > 0) {
+      const startISO = new Date(`${scheduledDate}T${startTime}`).toISOString();
+      const endISO = new Date(`${scheduledDate}T${endTime}`).toISOString();
+      const { data: session } = await supabase.auth.getSession();
+      const currentUserId = session?.session?.user?.id;
+
+      const { data: eventData } = await supabase.from("events").insert({
+        title: `${title.trim()}`,
+        start_time: startISO,
+        end_time: endISO,
+        technician_id: techIds[0],
+        status: "requested" as any,
+        created_by: currentUserId || null,
+        task_id: taskData.id,
+      }).select("id").single();
+
+      if (eventData) {
+        await supabase.from("event_technicians").insert(
+          techIds.map((tid) => ({ event_id: eventData.id, technician_id: tid }))
+        );
+        await supabase.functions.invoke("create-approval", { body: { job_id: eventData.id } });
+      }
+    }
+
+    // 3. Upload file if present
     if (file) {
       const path = `task-files/${taskData.id}/${file.name}`;
       const { error: uploadErr } = await supabase.storage.from("job-attachments").upload(path, file);
@@ -383,72 +466,106 @@ function CreateTaskForm({
       }
     }
 
-    toast.success("Oppgave opprettet");
+    const planned = scheduledDate && startTime && endTime && techIds.length > 0;
+    toast.success(planned ? "Oppgave opprettet og planlagt" : "Oppgave opprettet", {
+      description: planned ? `${title} er tildelt ${techIds.length} montør(er)` : undefined,
+    });
     setSaving(false);
     onCreated();
+    // Don't auto-close per spec
   };
 
   return (
-    <form onSubmit={handleSubmit} className="border-b border-border/40 bg-muted/10 p-5 space-y-4">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-semibold flex items-center gap-2">
-          <Plus className="h-4 w-4 text-primary" />
-          Ny oppgave
-        </h4>
-        <Button type="button" size="sm" variant="ghost" onClick={onCancel} className="h-7 w-7 p-0">
-          <X className="h-4 w-4" />
-        </Button>
-      </div>
+    <Sheet open={open} onOpenChange={onOpenChange}>
+      <SheetContent className="sm:max-w-[480px] flex flex-col overflow-y-auto">
+        <SheetHeader>
+          <SheetTitle className="flex items-center gap-2">
+            <Plus className="h-5 w-5 text-primary" />
+            Ny oppgave
+          </SheetTitle>
+          <SheetDescription>
+            Opprett oppgave og planlegg i ett steg
+          </SheetDescription>
+        </SheetHeader>
 
-      {/* Title */}
-      <Input value={title} onChange={(e) => setTitle(e.target.value)}
-        placeholder="Hva skal gjøres?" className="text-sm" autoFocus />
+        <div className="flex-1 mt-4 space-y-5">
+          {/* Title */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Oppgavetittel *</label>
+            <Input value={title} onChange={(e) => setTitle(e.target.value)}
+              placeholder="Hva skal gjøres?" className="mt-1" autoFocus />
+          </div>
 
-      {/* Description */}
-      <Textarea value={description} onChange={(e) => setDescription(e.target.value)}
-        placeholder="Beskrivelse (valgfritt) — legg inn detaljer montøren trenger..."
-        className="text-sm min-h-[60px] resize-none" rows={2} />
+          {/* Description */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Beskrivelse</label>
+            <Textarea value={description} onChange={(e) => setDescription(e.target.value)}
+              placeholder="Detaljer montøren trenger..."
+              className="mt-1 min-h-[60px] resize-none" rows={2} />
+          </div>
 
-      {/* Schedule + Resources side by side */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <div className="space-y-2">
-          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Planlegging</label>
-          <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="h-8 text-xs" />
-          <div className="grid grid-cols-2 gap-2">
-            <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} placeholder="Start" className="h-8 text-xs" />
-            <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} placeholder="Slutt" className="h-8 text-xs" />
+          {/* File attachment */}
+          <div>
+            <label className="text-xs font-medium text-muted-foreground">Vedlegg</label>
+            <div className="mt-1 flex items-center gap-3">
+              <label className="cursor-pointer flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-dashed border-border rounded-lg px-3 py-2.5 flex-1">
+                <Paperclip className="h-3.5 w-3.5" />
+                {file ? file.name : "Legg ved fil eller bilde"}
+                <input type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xlsx"
+                  onChange={(e) => setFile(e.target.files?.[0] || null)} />
+              </label>
+              {file && (
+                <button type="button" onClick={() => setFile(null)} className="text-muted-foreground hover:text-destructive">
+                  <X className="h-4 w-4" />
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* Resources */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tildel ressurser</label>
+            <div className="mt-1">
+              <TechnicianMultiSelect selectedIds={techIds} onChange={setTechIds} />
+            </div>
+          </div>
+
+          {/* Schedule */}
+          <div>
+            <label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Planlegging (valgfritt)</label>
+            <div className="mt-1 grid grid-cols-3 gap-3">
+              <div>
+                <label className="text-xs text-muted-foreground">Dato</label>
+                <Input type="date" value={scheduledDate} onChange={(e) => setScheduledDate(e.target.value)} className="mt-0.5" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Start</label>
+                <Input type="time" value={startTime} onChange={(e) => setStartTime(e.target.value)} className="mt-0.5" />
+              </div>
+              <div>
+                <label className="text-xs text-muted-foreground">Slutt</label>
+                <Input type="time" value={endTime} onChange={(e) => setEndTime(e.target.value)} className="mt-0.5" />
+              </div>
+            </div>
+            {scheduledDate && startTime && endTime && techIds.length > 0 && (
+              <p className="text-xs text-emerald-600 mt-2 flex items-center gap-1">
+                <CalendarPlus className="h-3 w-3" />
+                Vil automatisk vises i Ressursplan
+              </p>
+            )}
           </div>
         </div>
-        <div className="space-y-2">
-          <label className="text-[11px] uppercase tracking-wider text-muted-foreground font-medium">Tildel ressurser</label>
-          <TechnicianMultiSelect selectedIds={techIds} onChange={setTechIds} />
-        </div>
-      </div>
 
-      {/* File attachment */}
-      <div className="flex items-center gap-3">
-        <label className="cursor-pointer flex items-center gap-1.5 text-xs text-muted-foreground hover:text-foreground transition-colors border border-dashed border-border rounded-lg px-3 py-2">
-          <Paperclip className="h-3.5 w-3.5" />
-          {file ? file.name : "Legg ved fil eller bilde"}
-          <input type="file" className="hidden" accept="image/*,.pdf,.doc,.docx,.xlsx"
-            onChange={(e) => setFile(e.target.files?.[0] || null)} />
-        </label>
-        {file && (
-          <button type="button" onClick={() => setFile(null)} className="text-muted-foreground hover:text-destructive">
-            <X className="h-3.5 w-3.5" />
-          </button>
-        )}
-      </div>
-
-      {/* Submit */}
-      <div className="flex justify-end gap-2 pt-1">
-        <Button type="button" variant="ghost" size="sm" onClick={onCancel}>Avbryt</Button>
-        <Button type="submit" size="sm" disabled={!title.trim() || saving} className="gap-1.5 rounded-xl">
-          {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Plus className="h-3.5 w-3.5" />}
-          Opprett oppgave
-        </Button>
-      </div>
-    </form>
+        <SheetFooter className="mt-4">
+          <Button className="w-full gap-1.5" onClick={handleSubmit} disabled={!title.trim() || saving}>
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Plus className="h-4 w-4" />}
+            {scheduledDate && startTime && endTime && techIds.length > 0
+              ? "Opprett oppgave og planlegg"
+              : "Opprett oppgave"}
+          </Button>
+        </SheetFooter>
+      </SheetContent>
+    </Sheet>
   );
 }
 
@@ -511,7 +628,6 @@ function TaskRow({
     setNoteText("");
     setNoteFile(null);
 
-    // Refresh notes
     const { data } = await supabase.from("job_task_notes").select("*").eq("task_id", task.id)
       .order("created_at", { ascending: true });
     setNotes((data as TaskNote[]) || []);
@@ -523,6 +639,8 @@ function TaskRow({
     const { data } = supabase.storage.from("job-attachments").getPublicUrl(path);
     return data?.publicUrl || "";
   };
+
+  const hasSchedule = task.scheduled_date || task.start_time;
 
   return (
     <div className={cn("transition-colors", isDone && "bg-muted/20 opacity-75")}>
@@ -543,12 +661,14 @@ function TaskRow({
             <p className="text-xs text-muted-foreground truncate mt-0.5">{task.description}</p>
           )}
           <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-            {task.scheduled_date && (
+            {hasSchedule ? (
               <span className="text-[11px] text-muted-foreground flex items-center gap-1">
                 <Clock className="h-3 w-3" />
-                {format(new Date(task.scheduled_date), "d. MMM", { locale: nb })}
+                {task.scheduled_date && format(new Date(task.scheduled_date), "d. MMM", { locale: nb })}
                 {task.start_time && ` ${task.start_time.slice(0, 5)}–${(task.end_time || "").slice(0, 5)}`}
               </span>
+            ) : (
+              <span className="text-[11px] text-muted-foreground/50 italic">Uplanlagt</span>
             )}
             {assignedNames.length > 0 && (
               <span className="text-[11px] text-muted-foreground flex items-center gap-1">
@@ -595,11 +715,9 @@ function TaskRow({
       {/* Expanded: details + notes thread */}
       {expanded && (
         <div className="px-5 pb-4 pt-1 ml-8 space-y-4 border-t border-border/20">
-          {/* Schedule & resources (read-only summary + edit for admin) */}
+          {/* Schedule & resources (admin inline edit) */}
           {isAdmin && (
-            <TaskEditSection task={task} onUpdated={async () => {
-              // re-fetch parent would be ideal but we keep it light
-            }} />
+            <TaskEditSection task={task} onUpdated={() => {}} />
           )}
 
           {/* Notes thread */}
