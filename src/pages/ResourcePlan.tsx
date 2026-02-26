@@ -6,9 +6,10 @@ import { StatusLegend } from "@/components/StatusLegend";
 import { ResourceCalendar } from "@/components/ResourceCalendar";
 import { EventDrawer } from "@/components/EventDrawer";
 import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Plus, CalendarDays, ChevronLeft, ChevronRight, RotateCcw, UserCheck, UserMinus,
+  Plus, CalendarDays, ChevronLeft, ChevronRight, RotateCcw, UserCheck, UserMinus, Clock,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/useAuth";
@@ -16,7 +17,7 @@ import { useTechnicians } from "@/hooks/useTechnicians";
 import { useExternalBusy } from "@/hooks/useExternalBusy";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import { useCapacity } from "@/hooks/useCapacity";
-import { useTechnicianNowStatus } from "@/hooks/useTechnicianNowStatus";
+import { useTechnicianNowStatus, getContiguousFreeMinutes } from "@/hooks/useTechnicianNowStatus";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
@@ -26,6 +27,8 @@ export default function ResourcePlan() {
   const { technicians } = useTechnicians();
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
   const [capacityFilter, setCapacityFilter] = useState<"all" | "available" | "partial">("all");
+  const [externalBlocksCapacity, setExternalBlocksCapacity] = useState(true);
+  const [minFreeMinutes, setMinFreeMinutes] = useState<number | null>(null);
   const { busySlots, getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
 
   // Drawer state
@@ -44,7 +47,6 @@ export default function ResourcePlan() {
   const goToNextWeek = useCallback(() => setReferenceDate((d) => addWeeks(d, 1)), []);
   const goToToday = useCallback(() => setReferenceDate(new Date()), []);
 
-  // Open drawer for editing
   const handleEventClick = useCallback((event: CalendarEvent) => {
     setEditEvent(event);
     setPreselectedStart(null);
@@ -52,7 +54,6 @@ export default function ResourcePlan() {
     setDrawerOpen(true);
   }, []);
 
-  // Open drawer for new event from date selection
   const handleDateSelect = useCallback((start: Date, end: Date) => {
     if (!isAdmin) return;
     setEditEvent(null);
@@ -61,7 +62,6 @@ export default function ResourcePlan() {
     setDrawerOpen(true);
   }, [isAdmin]);
 
-  // Open drawer for new event from button
   const handleNewEvent = useCallback(() => {
     setEditEvent(null);
     setPreselectedStart(null);
@@ -69,16 +69,12 @@ export default function ResourcePlan() {
     setDrawerOpen(true);
   }, []);
 
-  // Handle drag/drop and resize directly updating DB
   const handleEventDrop = useCallback(async (eventId: string, newStart: Date, newEnd: Date) => {
     const { error } = await supabase.from("events")
       .update({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() })
       .eq("id", eventId);
-    if (error) {
-      toast.error("Kunne ikke flytte hendelsen");
-    } else {
-      toast.success("Hendelse flyttet");
-    }
+    if (error) toast.error("Kunne ikke flytte hendelsen");
+    else toast.success("Hendelse flyttet");
     setRefreshKey((k) => k + 1);
   }, []);
 
@@ -86,43 +82,30 @@ export default function ResourcePlan() {
     const { error } = await supabase.from("events")
       .update({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() })
       .eq("id", eventId);
-    if (error) {
-      toast.error("Kunne ikke endre varighet");
-    } else {
-      toast.success("Varighet oppdatert");
-    }
+    if (error) toast.error("Kunne ikke endre varighet");
+    else toast.success("Varighet oppdatert");
     setRefreshKey((k) => k + 1);
   }, []);
 
-  // Selected technician info
   const selectedTech = selectedTechId ? technicians.find((t) => t.id === selectedTechId) : null;
 
-  // Technician map for calendar
   const technicianMap = useMemo(() => {
     const map = new Map<string, { name: string; color: string | null }>();
-    for (const t of technicians) {
-      map.set(t.id, { name: t.name, color: t.color || null });
-    }
+    for (const t of technicians) map.set(t.id, { name: t.name, color: t.color || null });
     return map;
   }, [technicians]);
 
-  // Capacity calculation
   const techIds = useMemo(
     () => selectedTechId ? [selectedTechId] : technicians.map((t) => t.id),
     [selectedTechId, technicians]
   );
   const { events: calEvents } = useCalendarEvents(selectedTechId, referenceDate);
   const { aggregatedDays, techCapacities, availableTechIds, partialTechIds } = useCapacity(
-    calEvents,
-    busySlots,
-    referenceDate,
-    techIds
+    calEvents, busySlots, referenceDate, techIds
   );
 
-  // Real-time now status for sidebar
-  const nowStatusMap = useTechnicianNowStatus(calEvents, busySlots, techIds);
+  const nowStatusMap = useTechnicianNowStatus(calEvents, busySlots, techIds, externalBlocksCapacity);
 
-  // Today's day index (0=Mon)
   const todayDayIndex = useMemo(() => {
     const today = new Date();
     const ws = startOfWeek(referenceDate, { weekStartsOn: 1 });
@@ -130,18 +113,31 @@ export default function ResourcePlan() {
     return diff >= 0 && diff < 7 ? diff : 0;
   }, [referenceDate]);
 
-  // Filter technicians in sidebar based on capacity filter
+  // Filter technicians: capacity + min free minutes
   const filteredTechForSidebar = useMemo(() => {
-    if (capacityFilter === "all") return null; // no override
-    const ids = capacityFilter === "available"
-      ? availableTechIds(todayDayIndex)
-      : partialTechIds(todayDayIndex);
-    return new Set(ids);
-  }, [capacityFilter, availableTechIds, partialTechIds, todayDayIndex]);
+    let ids: string[] | null = null;
+
+    if (capacityFilter === "available") {
+      ids = availableTechIds(todayDayIndex);
+    } else if (capacityFilter === "partial") {
+      ids = partialTechIds(todayDayIndex);
+    }
+
+    // Apply "min free minutes" filter
+    if (minFreeMinutes) {
+      const candidateIds = ids || techIds;
+      ids = candidateIds.filter((techId) => {
+        const free = getContiguousFreeMinutes(techId, calEvents, busySlots, externalBlocksCapacity);
+        return free >= minFreeMinutes;
+      });
+    }
+
+    if (ids === null && capacityFilter === "all") return null;
+    return new Set(ids || []);
+  }, [capacityFilter, availableTechIds, partialTechIds, todayDayIndex, minFreeMinutes, techIds, calEvents, busySlots, externalBlocksCapacity]);
 
   return (
     <div className="flex flex-1 overflow-hidden h-full">
-      {/* Desktop: Technician sidebar */}
       {!isMobile && (
         <aside className="w-56 shrink-0 border-r border-border/30 bg-card/50 overflow-y-auto p-3">
           <TechnicianList
@@ -198,32 +194,34 @@ export default function ResourcePlan() {
 
             {/* Quick capacity filters */}
             <div className="flex items-center gap-1 border border-border/40 rounded-lg p-0.5">
-              <Button
-                variant={capacityFilter === "all" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 text-xs rounded-md px-2.5"
-                onClick={() => setCapacityFilter("all")}
-              >
-                Alle
+              <Button variant={capacityFilter === "all" ? "default" : "ghost"} size="sm" className="h-7 text-xs rounded-md px-2.5" onClick={() => setCapacityFilter("all")}>Alle</Button>
+              <Button variant={capacityFilter === "available" ? "default" : "ghost"} size="sm" className="h-7 text-xs rounded-md px-2.5 gap-1" onClick={() => setCapacityFilter("available")}>
+                <UserCheck className="h-3 w-3" />Ledige
               </Button>
-              <Button
-                variant={capacityFilter === "available" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 text-xs rounded-md px-2.5 gap-1"
-                onClick={() => setCapacityFilter("available")}
-              >
-                <UserCheck className="h-3 w-3" />
-                Ledige
+              <Button variant={capacityFilter === "partial" ? "default" : "ghost"} size="sm" className="h-7 text-xs rounded-md px-2.5 gap-1" onClick={() => setCapacityFilter("partial")}>
+                <UserMinus className="h-3 w-3" />Delvis
               </Button>
-              <Button
-                variant={capacityFilter === "partial" ? "default" : "ghost"}
-                size="sm"
-                className="h-7 text-xs rounded-md px-2.5 gap-1"
-                onClick={() => setCapacityFilter("partial")}
-              >
-                <UserMinus className="h-3 w-3" />
-                Delvis
-              </Button>
+            </div>
+
+            {/* Min free minutes filter */}
+            <Select value={minFreeMinutes?.toString() || "none"} onValueChange={(v) => setMinFreeMinutes(v === "none" ? null : Number(v))}>
+              <SelectTrigger className="w-[140px] h-7 text-xs rounded-lg border-border/40">
+                <Clock className="h-3 w-3 mr-1 text-muted-foreground" />
+                <SelectValue placeholder="Min. ledig" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Alle (ingen min.)</SelectItem>
+                <SelectItem value="30">Ledig 30+ min</SelectItem>
+                <SelectItem value="60">Ledig 60+ min</SelectItem>
+                <SelectItem value="90">Ledig 90+ min</SelectItem>
+                <SelectItem value="120">Ledig 120+ min</SelectItem>
+              </SelectContent>
+            </Select>
+
+            {/* External blocks capacity toggle */}
+            <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+              <Switch checked={externalBlocksCapacity} onCheckedChange={setExternalBlocksCapacity} className="scale-75" />
+              <span className="whitespace-nowrap">Ekstern blokkerer</span>
             </div>
 
             <StatusLegend />
@@ -281,7 +279,6 @@ export default function ResourcePlan() {
         />
       </div>
 
-      {/* Event Drawer (replaces both ResourceAssignDialog and JobQuickEditSheet) */}
       <EventDrawer
         open={drawerOpen}
         onOpenChange={setDrawerOpen}
