@@ -7,7 +7,7 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { ArrowLeft, Loader2, FolderKanban, ChevronDown, ChevronUp } from "lucide-react";
+import { ArrowLeft, Loader2, FolderKanban, ChevronDown, ChevronUp, Sparkles } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import { useCompanyContext } from "@/hooks/useCompanyContext";
@@ -55,13 +55,11 @@ export default function ProjectNewPage() {
   const [customers, setCustomers] = useState<CustomerOption[]>([]);
   const [parentProjects, setParentProjects] = useState<ProjectOption[]>([]);
   const [loadingCustomers, setLoadingCustomers] = useState(true);
+  const [customerSearch, setCustomerSearch] = useState("");
 
   useEffect(() => {
     const fetchCustomers = async () => {
-      const { data } = await supabase
-        .from("customers")
-        .select("id, name")
-        .order("name");
+      const { data } = await supabase.from("customers").select("id, name").order("name");
       if (data) setCustomers(data as any);
       setLoadingCustomers(false);
     };
@@ -69,7 +67,6 @@ export default function ProjectNewPage() {
   }, []);
 
   useEffect(() => {
-    // Fetch potential parent projects (only top-level, no parent themselves)
     const fetchParents = async () => {
       if (!customerId) { setParentProjects([]); return; }
       const { data } = await supabase
@@ -84,12 +81,15 @@ export default function ProjectNewPage() {
     fetchParents();
   }, [customerId]);
 
+  const filteredCustomers = customerSearch.trim()
+    ? customers.filter((c) => c.name.toLowerCase().includes(customerSearch.toLowerCase()))
+    : customers;
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!title.trim() || !customerId) return;
     setSaving(true);
 
-    // Default dates if not provided
     const now = new Date();
     const defaultStart = startDate ? `${startDate}T${startTime}` : now.toISOString();
     const defaultEnd = endDate ? `${endDate}T${endTime}` : new Date(now.getTime() + 8 * 3600000).toISOString();
@@ -107,17 +107,11 @@ export default function ProjectNewPage() {
       parent_project_id: parentProjectId || null,
       company_id: activeCompanyId || null,
       created_by: user?.id || null,
-      technician_id: techIds[0] || null, // Required FK, use first tech or null
+      technician_id: techIds[0] || null,
     };
 
-    // We need a valid technician_id for the events table FK constraint
-    // If no tech selected, get the first available
     if (!insertData.technician_id) {
-      const { data: firstTech } = await supabase
-        .from("technicians")
-        .select("id")
-        .limit(1)
-        .single();
+      const { data: firstTech } = await supabase.from("technicians").select("id").limit(1).single();
       if (firstTech) insertData.technician_id = firstTech.id;
     }
 
@@ -139,13 +133,11 @@ export default function ProjectNewPage() {
       return;
     }
 
-    // Add event_technicians entries
     if (techIds.length > 0) {
       await supabase.from("event_technicians").insert(
         techIds.map((tid) => ({ event_id: data.id, technician_id: tid }))
       );
     } else {
-      // Insert the default tech
       await supabase.from("event_technicians").insert({
         event_id: data.id,
         technician_id: insertData.technician_id,
@@ -156,8 +148,11 @@ export default function ProjectNewPage() {
     navigate(`/projects/${data.id}`);
   };
 
+  const selectedCustomerName = customers.find((c) => c.id === customerId)?.name;
+
   return (
     <div className="p-4 sm:p-6 lg:p-8 max-w-2xl mx-auto space-y-6">
+      {/* Header */}
       <div className="flex items-center gap-3">
         <Button variant="ghost" size="icon" onClick={() => navigate(-1)} className="rounded-xl h-8 w-8">
           <ArrowLeft className="h-4 w-4" />
@@ -167,29 +162,21 @@ export default function ProjectNewPage() {
             <FolderKanban className="h-5 w-5 text-primary" />
             Nytt prosjekt
           </h1>
-          <p className="text-sm text-muted-foreground">Opprett et nytt prosjekt</p>
+          <p className="text-sm text-muted-foreground">Fyll ut minimum og kom i gang på sekunder</p>
         </div>
       </div>
 
       <form onSubmit={handleSubmit}>
-        {/* Required section */}
-        <Card className="rounded-2xl">
-          <CardHeader className="pb-4">
-            <CardTitle className="text-base">Grunnleggende</CardTitle>
+        {/* Stage A – Required */}
+        <Card className="rounded-2xl border-primary/20">
+          <CardHeader className="pb-3">
+            <CardTitle className="text-base flex items-center gap-2">
+              <Sparkles className="h-4 w-4 text-primary" />
+              Grunnleggende
+            </CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
-            <div className="space-y-1.5">
-              <Label htmlFor="title">Prosjektnavn *</Label>
-              <Input
-                id="title"
-                value={title}
-                onChange={(e) => setTitle(e.target.value)}
-                placeholder="Navn på prosjektet"
-                required
-                autoFocus
-              />
-            </div>
-
+            {/* Customer */}
             <div className="space-y-1.5">
               <Label>Kunde *</Label>
               {loadingCustomers ? (
@@ -202,9 +189,21 @@ export default function ProjectNewPage() {
                     <SelectValue placeholder="Velg kunde" />
                   </SelectTrigger>
                   <SelectContent>
-                    {customers.map((c) => (
+                    <div className="px-2 pb-2">
+                      <Input
+                        placeholder="Søk kunde..."
+                        value={customerSearch}
+                        onChange={(e) => setCustomerSearch(e.target.value)}
+                        className="h-8 text-sm"
+                        onClick={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    {filteredCustomers.map((c) => (
                       <SelectItem key={c.id} value={c.id}>{c.name}</SelectItem>
                     ))}
+                    {filteredCustomers.length === 0 && (
+                      <p className="text-xs text-muted-foreground text-center py-2">Ingen treff</p>
+                    )}
                   </SelectContent>
                 </Select>
               )}
@@ -213,58 +212,82 @@ export default function ProjectNewPage() {
                   + Opprett kunde først
                 </Button>
               )}
+              {customers.length > 0 && (
+                <Button type="button" variant="link" className="text-xs p-0 h-auto text-muted-foreground" onClick={() => navigate("/customers/new")}>
+                  + Ny kunde
+                </Button>
+              )}
             </div>
 
+            {/* Title */}
             <div className="space-y-1.5">
-              <Label>Prosjekttype</Label>
-              <Select value={projectType} onValueChange={setProjectType}>
-                <SelectTrigger className="rounded-xl">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="service">Service</SelectItem>
-                  <SelectItem value="project">Prosjekt</SelectItem>
-                  <SelectItem value="internal">Internt</SelectItem>
-                  <SelectItem value="offer">Tilbud</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label htmlFor="title">Prosjektnavn *</Label>
+              <Input
+                id="title"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Navn på prosjektet"
+                required
+                autoFocus
+              />
+            </div>
+
+            {/* Type */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-1.5">
+                <Label>Prosjekttype</Label>
+                <Select value={projectType} onValueChange={setProjectType}>
+                  <SelectTrigger className="rounded-xl">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="service">Service</SelectItem>
+                    <SelectItem value="project">Prosjekt</SelectItem>
+                    <SelectItem value="internal">Internt</SelectItem>
+                    <SelectItem value="offer">Tilbud</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
             </div>
           </CardContent>
         </Card>
 
-        {/* Optional section toggle */}
+        {/* Submit – prominent */}
+        <div className="flex items-center justify-between mt-5 gap-3">
+          <Button type="button" variant="ghost" onClick={() => navigate(-1)} className="rounded-xl text-muted-foreground">
+            Avbryt
+          </Button>
+          <Button type="submit" disabled={saving || !title.trim() || !customerId} className="rounded-xl gap-1.5 px-6">
+            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
+            Opprett og gå til prosjekt
+          </Button>
+        </div>
+
+        {/* Stage B – Optional */}
         <Button
           type="button"
           variant="ghost"
-          className="w-full mt-4 gap-2 text-muted-foreground"
+          className="w-full mt-6 gap-2 text-muted-foreground text-xs"
           onClick={() => setShowOptional(!showOptional)}
         >
-          {showOptional ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
-          {showOptional ? "Skjul detaljer" : "Vis flere detaljer"}
+          {showOptional ? <ChevronUp className="h-3.5 w-3.5" /> : <ChevronDown className="h-3.5 w-3.5" />}
+          {showOptional ? "Skjul valgfrie detaljer" : "Legg til detaljer (adresse, montør, m.m.)"}
         </Button>
 
         {showOptional && (
-          <Card className="rounded-2xl mt-2">
-            <CardHeader className="pb-4">
-              <CardTitle className="text-base">Detaljer (valgfritt)</CardTitle>
+          <Card className="rounded-2xl mt-2 border-dashed">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm text-muted-foreground">Valgfritt – kan fylles ut senere</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-1.5">
                 <Label>Prosjektnummer</Label>
-                <Input
-                  value={projectNumber}
-                  onChange={(e) => setProjectNumber(e.target.value)}
-                  placeholder="F.eks. P-12345"
-                />
+                <Input value={projectNumber} onChange={(e) => setProjectNumber(e.target.value)} placeholder="F.eks. P-12345" />
               </div>
 
               <div className="space-y-1.5">
                 <Label>Adresse</Label>
-                <Input
-                  value={address}
-                  onChange={(e) => setAddress(e.target.value)}
-                  placeholder="Prosjektadresse"
-                />
+                <Input value={address} onChange={(e) => setAddress(e.target.value)} placeholder="Prosjektadresse" />
               </div>
 
               <TechnicianMultiSelect selectedIds={techIds} onChange={setTechIds} />
@@ -288,12 +311,7 @@ export default function ProjectNewPage() {
 
               <div className="space-y-1.5">
                 <Label>Beskrivelse</Label>
-                <Textarea
-                  value={description}
-                  onChange={(e) => setDescription(e.target.value)}
-                  placeholder="Beskrivelse av prosjektet..."
-                  rows={3}
-                />
+                <Textarea value={description} onChange={(e) => setDescription(e.target.value)} placeholder="Beskrivelse av prosjektet..." rows={3} />
               </div>
 
               {parentProjects.length > 0 && (
@@ -317,16 +335,6 @@ export default function ProjectNewPage() {
             </CardContent>
           </Card>
         )}
-
-        <div className="flex justify-end gap-3 mt-6">
-          <Button type="button" variant="outline" onClick={() => navigate(-1)} className="rounded-xl">
-            Avbryt
-          </Button>
-          <Button type="submit" disabled={saving || !title.trim() || !customerId} className="rounded-xl gap-1.5">
-            {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
-            Opprett prosjekt
-          </Button>
-        </div>
       </form>
     </div>
   );
