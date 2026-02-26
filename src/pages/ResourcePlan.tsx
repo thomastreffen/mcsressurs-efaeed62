@@ -1,5 +1,5 @@
-import { useState, useCallback, useMemo } from "react";
-import { addWeeks, startOfWeek, format, isSameWeek } from "date-fns";
+import { useState, useCallback, useMemo, useEffect } from "react";
+import { addWeeks, addDays, startOfWeek, startOfMonth, addMonths, format, isSameWeek } from "date-fns";
 import { nb } from "date-fns/locale";
 import { TechnicianList } from "@/components/TechnicianList";
 import { StatusLegend } from "@/components/StatusLegend";
@@ -10,6 +10,7 @@ import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
   Plus, CalendarDays, ChevronLeft, ChevronRight, RotateCcw, UserCheck, UserMinus, Clock,
+  Calendar, List,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/useAuth";
@@ -23,6 +24,24 @@ import { OutlookConflictDialog } from "@/components/OutlookConflictDialog";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
 
+type CalendarViewType = "timeGridDay" | "timeGridWeek" | "dayGridMonth" | "listWeek";
+
+const VIEW_STORAGE_KEY = "resourcePlanView";
+const VIEW_OPTIONS: { value: CalendarViewType; label: string; icon: typeof Calendar }[] = [
+  { value: "timeGridDay", label: "Dag", icon: Calendar },
+  { value: "timeGridWeek", label: "Uke", icon: CalendarDays },
+  { value: "dayGridMonth", label: "Måned", icon: Calendar },
+  { value: "listWeek", label: "Liste", icon: List },
+];
+
+function getStoredView(): CalendarViewType {
+  try {
+    const stored = localStorage.getItem(VIEW_STORAGE_KEY);
+    if (stored && VIEW_OPTIONS.some((v) => v.value === stored)) return stored as CalendarViewType;
+  } catch {}
+  return "timeGridWeek";
+}
+
 export default function ResourcePlan() {
   const isMobile = useIsMobile();
   const { isAdmin } = useAuth();
@@ -31,8 +50,14 @@ export default function ResourcePlan() {
   const [capacityFilter, setCapacityFilter] = useState<"all" | "available" | "partial">("all");
   const [externalBlocksCapacity, setExternalBlocksCapacity] = useState(true);
   const [minFreeMinutes, setMinFreeMinutes] = useState<number | null>(null);
+  const [calendarView, setCalendarView] = useState<CalendarViewType>(getStoredView);
   const { busySlots, getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
   const { syncUpdate, syncCreate, forceUpdate, acceptGraphVersion, conflict, dismissConflict } = useCalendarSync();
+
+  // Persist view choice
+  useEffect(() => {
+    localStorage.setItem(VIEW_STORAGE_KEY, calendarView);
+  }, [calendarView]);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -46,8 +71,35 @@ export default function ResourcePlan() {
   const isCurrentWeek = isSameWeek(referenceDate, new Date(), { weekStartsOn: 1 });
   const weekStart = startOfWeek(referenceDate, { weekStartsOn: 1 });
 
-  const goToPrevWeek = useCallback(() => setReferenceDate((d) => addWeeks(d, -1)), []);
-  const goToNextWeek = useCallback(() => setReferenceDate((d) => addWeeks(d, 1)), []);
+  const selectedTech = selectedTechId ? technicians.find((t) => t.id === selectedTechId) : null;
+
+  const technicianMap = useMemo(() => {
+    const map = new Map<string, { name: string; color: string | null }>();
+    for (const t of technicians) map.set(t.id, { name: t.name, color: t.color || null });
+    return map;
+  }, [technicians]);
+
+  const techIds = useMemo(
+    () => selectedTechId ? [selectedTechId] : technicians.map((t) => t.id),
+    [selectedTechId, technicians]
+  );
+  const { events: calEvents } = useCalendarEvents(selectedTechId, referenceDate);
+
+  // Navigation helpers – view-aware
+  const goToPrev = useCallback(() => {
+    setReferenceDate((d) => {
+      if (calendarView === "timeGridDay") return addDays(d, -1);
+      if (calendarView === "dayGridMonth") return addMonths(d, -1);
+      return addWeeks(d, -1);
+    });
+  }, [calendarView]);
+  const goToNext = useCallback(() => {
+    setReferenceDate((d) => {
+      if (calendarView === "timeGridDay") return addDays(d, 1);
+      if (calendarView === "dayGridMonth") return addMonths(d, 1);
+      return addWeeks(d, 1);
+    });
+  }, [calendarView]);
   const goToToday = useCallback(() => setReferenceDate(new Date()), []);
 
   const handleEventClick = useCallback((event: CalendarEvent) => {
@@ -73,42 +125,54 @@ export default function ResourcePlan() {
   }, []);
 
   const handleEventDrop = useCallback(async (eventId: string, newStart: Date, newEnd: Date) => {
+    const oldEvent = calEvents.find((e) => e.id === eventId);
     const { error } = await supabase.from("events")
       .update({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() })
       .eq("id", eventId);
     if (error) toast.error("Kunne ikke flytte hendelsen");
     else {
-      toast.success("Hendelse flyttet");
-      syncUpdate(eventId);
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+      await supabase.from("event_logs").insert({
+        event_id: eventId,
+        action_type: "time_changed",
+        performed_by: userId || null,
+        change_summary: `Flyttet fra ${oldEvent ? format(oldEvent.start, "dd.MM HH:mm") + "–" + format(oldEvent.end, "HH:mm") : "ukjent"} til ${format(newStart, "dd.MM HH:mm")}–${format(newEnd, "HH:mm")}`,
+      });
+      const result = await syncUpdate(eventId);
+      if (result === "synced") {
+        toast.success("Tidspunkt oppdatert. Outlook synkronisert ✓");
+      } else if (result !== "conflict") {
+        toast.success("Hendelse flyttet");
+      }
     }
     setRefreshKey((k) => k + 1);
-  }, [syncUpdate]);
+  }, [syncUpdate, calEvents]);
 
   const handleEventResize = useCallback(async (eventId: string, newStart: Date, newEnd: Date) => {
+    const oldEvent = calEvents.find((e) => e.id === eventId);
     const { error } = await supabase.from("events")
       .update({ start_time: newStart.toISOString(), end_time: newEnd.toISOString() })
       .eq("id", eventId);
     if (error) toast.error("Kunne ikke endre varighet");
     else {
-      toast.success("Varighet oppdatert");
-      syncUpdate(eventId);
+      const { data: session } = await supabase.auth.getSession();
+      const userId = session?.session?.user?.id;
+      await supabase.from("event_logs").insert({
+        event_id: eventId,
+        action_type: "duration_changed",
+        performed_by: userId || null,
+        change_summary: `Varighet endret fra ${oldEvent ? format(oldEvent.start, "HH:mm") + "–" + format(oldEvent.end, "HH:mm") : "ukjent"} til ${format(newStart, "HH:mm")}–${format(newEnd, "HH:mm")}`,
+      });
+      const result = await syncUpdate(eventId);
+      if (result === "synced") {
+        toast.success("Varighet oppdatert. Outlook synkronisert ✓");
+      } else if (result !== "conflict") {
+        toast.success("Varighet oppdatert");
+      }
     }
     setRefreshKey((k) => k + 1);
-  }, [syncUpdate]);
-
-  const selectedTech = selectedTechId ? technicians.find((t) => t.id === selectedTechId) : null;
-
-  const technicianMap = useMemo(() => {
-    const map = new Map<string, { name: string; color: string | null }>();
-    for (const t of technicians) map.set(t.id, { name: t.name, color: t.color || null });
-    return map;
-  }, [technicians]);
-
-  const techIds = useMemo(
-    () => selectedTechId ? [selectedTechId] : technicians.map((t) => t.id),
-    [selectedTechId, technicians]
-  );
-  const { events: calEvents } = useCalendarEvents(selectedTechId, referenceDate);
+  }, [syncUpdate, calEvents]);
   const { aggregatedDays, techCapacities, availableTechIds, partialTechIds } = useCapacity(
     calEvents, busySlots, referenceDate, techIds
   );
@@ -244,19 +308,40 @@ export default function ResourcePlan() {
           </div>
         </div>
 
-        {/* Week navigation */}
+        {/* View switcher + navigation */}
         <div className="flex items-center justify-between mb-4 bg-card/80 backdrop-blur-sm border border-border/30 rounded-xl px-4 py-2.5">
-          <Button variant="ghost" size="icon" onClick={goToPrevWeek} className="h-8 w-8 rounded-lg">
+          <Button variant="ghost" size="icon" onClick={goToPrev} className="h-8 w-8 rounded-lg">
             <ChevronLeft className="h-4 w-4" />
           </Button>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-4">
+            {/* View switcher */}
+            <div className="flex items-center gap-0.5 border border-border/40 rounded-lg p-0.5">
+              {VIEW_OPTIONS.map((v) => (
+                <Button
+                  key={v.value}
+                  variant={calendarView === v.value ? "default" : "ghost"}
+                  size="sm"
+                  className="h-7 text-xs rounded-md px-2.5"
+                  onClick={() => setCalendarView(v.value)}
+                >
+                  {v.label}
+                </Button>
+              ))}
+            </div>
+
             <div className="text-center">
               <p className="text-sm font-semibold text-foreground">
-                Uke {format(weekStart, "w", { locale: nb })}
+                {calendarView === "dayGridMonth"
+                  ? format(referenceDate, "MMMM yyyy", { locale: nb })
+                  : calendarView === "timeGridDay"
+                  ? format(referenceDate, "EEEE d. MMMM", { locale: nb })
+                  : `Uke ${format(weekStart, "w", { locale: nb })}`}
               </p>
-              <p className="text-xs text-muted-foreground">
-                {format(weekStart, "d. MMM", { locale: nb })} – {format(addWeeks(weekStart, 1), "d. MMM yyyy", { locale: nb })}
-              </p>
+              {(calendarView === "timeGridWeek" || calendarView === "listWeek") && (
+                <p className="text-xs text-muted-foreground">
+                  {format(weekStart, "d. MMM", { locale: nb })} – {format(addWeeks(weekStart, 1), "d. MMM yyyy", { locale: nb })}
+                </p>
+              )}
             </div>
             {!isCurrentWeek && (
               <Button variant="outline" size="sm" onClick={goToToday} className="gap-1.5 rounded-lg text-xs h-7">
@@ -265,7 +350,7 @@ export default function ResourcePlan() {
               </Button>
             )}
           </div>
-          <Button variant="ghost" size="icon" onClick={goToNextWeek} className="h-8 w-8 rounded-lg">
+          <Button variant="ghost" size="icon" onClick={goToNext} className="h-8 w-8 rounded-lg">
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
@@ -277,6 +362,7 @@ export default function ResourcePlan() {
             ? (filteredTechForSidebar.size === 1 ? Array.from(filteredTechForSidebar)[0] : selectedTechId)
             : selectedTechId}
           referenceDate={referenceDate}
+          calendarView={calendarView}
           technicianMap={technicianMap}
           getBusySlotsForDay={getBusySlotsForDay}
           dayCapacities={aggregatedDays}

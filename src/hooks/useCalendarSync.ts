@@ -41,17 +41,18 @@ export function useCalendarSync() {
     }
   }, []);
 
-  const syncUpdate = useCallback(async (eventId: string) => {
+  const syncUpdate = useCallback(async (eventId: string): Promise<"synced" | "conflict" | "error" | "no_token" | "unknown"> => {
     try {
       const { data, error } = await supabase.functions.invoke("calendar-write-sync", {
         body: { action: "update", event_id: eventId },
       });
       if (error) {
         console.error("[CalendarSync] update invoke error:", error);
-        return;
+        return "error";
       }
       if (data?.status === "updated" || data?.status === "created") {
         console.log("[CalendarSync] Outlook synced");
+        return "synced";
       } else if (data?.status === "conflict") {
         setConflict({
           eventId,
@@ -61,13 +62,19 @@ export function useCalendarSync() {
           description: "Hendelsen har blitt endret i Outlook. Velg hvilken versjon du vil beholde.",
           duration: 8000,
         });
+        return "conflict";
+      } else if (data?.status === "no_token") {
+        return "no_token";
       } else if (data?.status === "error") {
         toast.error("Outlook ble ikke oppdatert", {
           description: `Feilkode ${data.code}`,
         });
+        return "error";
       }
+      return "unknown";
     } catch (err) {
       console.error("[CalendarSync] update exception:", err);
+      return "error";
     }
   }, []);
 
@@ -100,7 +107,15 @@ export function useCalendarSync() {
         return;
       }
       if (data?.status === "force_updated") {
-        toast.success("Outlook oppdatert med systemtid");
+        toast.success("Konflikt løst. Valgt: Systemtid ✓", {
+          description: "Outlook er oppdatert med systemets tidspunkt.",
+        });
+        // Audit log
+        await supabase.from("event_logs").insert({
+          event_id: eventId,
+          action_type: "conflict_resolved",
+          change_summary: "Konflikt løst: Systemtid valgt (force_update)",
+        });
         setConflict(null);
       } else if (data?.status === "error") {
         toast.error("Kunne ikke tvinge Outlook-oppdatering");
@@ -112,13 +127,20 @@ export function useCalendarSync() {
 
   const acceptGraphVersion = useCallback(async (eventId: string, graphStart: string, graphEnd: string) => {
     try {
-      // Update DB with Graph times
       await supabase.from("events").update({
         start_time: new Date(graphStart).toISOString(),
         end_time: new Date(graphEnd).toISOString(),
       }).eq("id", eventId);
 
-      toast.success("DB oppdatert med Outlook-tid");
+      toast.success("Konflikt løst. Valgt: Outlook-tid ✓", {
+        description: "Databasen er oppdatert med Outlook-tidspunktet.",
+      });
+      // Audit log
+      await supabase.from("event_logs").insert({
+        event_id: eventId,
+        action_type: "conflict_resolved",
+        change_summary: `Konflikt løst: Outlook-tid valgt (${graphStart} – ${graphEnd})`,
+      });
       setConflict(null);
     } catch (err) {
       console.error("[CalendarSync] acceptGraph exception:", err);
