@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { MailboxConfig } from "@/components/admin/MailboxConfig";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -175,6 +176,9 @@ export default function IntegrationsDebug() {
           Microsoft 365 – {isAdmin ? "Status og feilsøking" : "Tilkoblingsstatus"}
         </p>
       </div>
+
+      {/* Postkontor mailbox config (admin only) */}
+      {isAdmin && <MailboxConfig />}
 
       {/* Post-connect assist banner */}
       {justConnected && failedJobCount > 0 && (

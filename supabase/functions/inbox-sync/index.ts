@@ -60,6 +60,33 @@ async function ensureValidMsToken(
   return tokenData.access_token;
 }
 
+async function fetchMailboxMessages(
+  msToken: string,
+  mailboxAddress: string,
+  sinceDate: string,
+  isShared: boolean
+): Promise<any[]> {
+  const filter = `receivedDateTime ge ${sinceDate}`;
+  // For shared mailboxes use /users/{email}/messages, for personal use /me/messages
+  const basePath = isShared
+    ? `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/messages`
+    : `${GRAPH_BASE}/me/messages`;
+  const url = `${basePath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft`;
+
+  const graphRes = await fetch(url, {
+    headers: { Authorization: `Bearer ${msToken}` },
+  });
+
+  if (!graphRes.ok) {
+    const errText = await graphRes.text();
+    console.error(`[inbox-sync] Graph error for ${mailboxAddress}: ${graphRes.status} ${errText.substring(0, 200)}`);
+    return [];
+  }
+
+  const graphData = await graphRes.json();
+  return (graphData.value || []).filter((m: any) => !m.isDraft);
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -108,71 +135,101 @@ Deno.serve(async (req) => {
       return respond({ error: "Microsoft-tilkobling mangler. Koble til via Integrasjoner.", ms_reauth: true }, 401);
     }
 
-    console.log(`[inbox-sync] Fetching messages for user ${userId}`);
+    // Fetch enabled mailboxes
+    const { data: mailboxes } = await supabaseAdmin
+      .from("mailboxes")
+      .select("address, display_name")
+      .eq("is_enabled", true);
 
-    // Fetch last 50 messages from inbox (last 7 days)
+    const enabledMailboxes = mailboxes || [];
+    
+    console.log(`[inbox-sync] Syncing ${enabledMailboxes.length} shared mailbox(es) for user ${userId}`);
+
     const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
-    const filter = `receivedDateTime ge ${sinceDate}`;
-    const url = `${GRAPH_BASE}/me/messages?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft`;
+    let totalFetched = 0;
+    let totalNew = 0;
+    let totalSkipped = 0;
 
-    const graphRes = await fetch(url, {
-      headers: { Authorization: `Bearer ${msToken}` },
-    });
+    for (const mb of enabledMailboxes) {
+      console.log(`[inbox-sync] Fetching from shared mailbox: ${mb.address}`);
+      const messages = await fetchMailboxMessages(msToken, mb.address, sinceDate, true);
+      console.log(`[inbox-sync] Got ${messages.length} messages from ${mb.address}`);
+      totalFetched += messages.length;
 
-    if (!graphRes.ok) {
-      const errText = await graphRes.text();
-      console.error(`[inbox-sync] Graph error: ${graphRes.status} ${errText.substring(0, 200)}`);
-      return respond({
-        error: "Kunne ikke hente e-post fra Outlook.",
-        ms_reauth: graphRes.status === 401 || graphRes.status === 403,
-      }, graphRes.status === 401 ? 401 : 500);
-    }
+      for (const msg of messages) {
+        const { error: upsertErr } = await supabaseAdmin
+          .from("inbox_messages")
+          .upsert(
+            {
+              external_id: msg.id,
+              subject: msg.subject || "(Ingen emne)",
+              from_name: msg.from?.emailAddress?.name || null,
+              from_email: msg.from?.emailAddress?.address || null,
+              received_at: msg.receivedDateTime || new Date().toISOString(),
+              body_preview: (msg.bodyPreview || "").substring(0, 500),
+              body_full: msg.body?.content || null,
+              has_attachments: msg.hasAttachments || false,
+              fetched_by: userId,
+              status: "new",
+              mailbox_address: mb.address,
+              visibility: "team",
+            },
+            { onConflict: "external_id", ignoreDuplicates: true }
+          );
 
-    const graphData = await graphRes.json();
-    const messages = (graphData.value || []).filter((m: any) => !m.isDraft);
-
-    console.log(`[inbox-sync] Got ${messages.length} messages from Graph`);
-
-    let newCount = 0;
-    let skipCount = 0;
-
-    for (const msg of messages) {
-      const externalId = msg.id;
-
-      // Upsert – skip if already exists
-      const { error: upsertErr } = await supabaseAdmin
-        .from("inbox_messages")
-        .upsert(
-          {
-            external_id: externalId,
-            subject: msg.subject || "(Ingen emne)",
-            from_name: msg.from?.emailAddress?.name || null,
-            from_email: msg.from?.emailAddress?.address || null,
-            received_at: msg.receivedDateTime || new Date().toISOString(),
-            body_preview: (msg.bodyPreview || "").substring(0, 500),
-            body_full: msg.body?.content || null,
-            has_attachments: msg.hasAttachments || false,
-            fetched_by: userId,
-            status: "new",
-          },
-          { onConflict: "external_id", ignoreDuplicates: true }
-        );
-
-      if (upsertErr) {
-        console.log(`[inbox-sync] Upsert error: ${upsertErr.message}`);
-        skipCount++;
-      } else {
-        newCount++;
+        if (upsertErr) {
+          console.log(`[inbox-sync] Upsert error: ${upsertErr.message}`);
+          totalSkipped++;
+        } else {
+          totalNew++;
+        }
       }
     }
 
-    console.log(`[inbox-sync] Done. New: ${newCount}, Skipped: ${skipCount}`);
+    // If no shared mailboxes configured, fall back to personal inbox (legacy)
+    if (enabledMailboxes.length === 0) {
+      console.log(`[inbox-sync] No shared mailboxes enabled. Fetching personal inbox as fallback.`);
+      const messages = await fetchMailboxMessages(msToken, "", sinceDate, false);
+      totalFetched = messages.length;
+      console.log(`[inbox-sync] Got ${messages.length} messages from personal inbox`);
+
+      for (const msg of messages) {
+        const { error: upsertErr } = await supabaseAdmin
+          .from("inbox_messages")
+          .upsert(
+            {
+              external_id: msg.id,
+              subject: msg.subject || "(Ingen emne)",
+              from_name: msg.from?.emailAddress?.name || null,
+              from_email: msg.from?.emailAddress?.address || null,
+              received_at: msg.receivedDateTime || new Date().toISOString(),
+              body_preview: (msg.bodyPreview || "").substring(0, 500),
+              body_full: msg.body?.content || null,
+              has_attachments: msg.hasAttachments || false,
+              fetched_by: userId,
+              status: "new",
+              mailbox_address: "personal",
+              visibility: "team",
+            },
+            { onConflict: "external_id", ignoreDuplicates: true }
+          );
+
+        if (upsertErr) {
+          totalSkipped++;
+        } else {
+          totalNew++;
+        }
+      }
+    }
+
+    console.log(`[inbox-sync] Done. Fetched: ${totalFetched}, New: ${totalNew}, Skipped: ${totalSkipped}`);
 
     return respond({
       success: true,
-      fetched: messages.length,
-      new_messages: newCount,
-      skipped: skipCount,
+      fetched: totalFetched,
+      new_messages: totalNew,
+      skipped: totalSkipped,
+      mailboxes_synced: enabledMailboxes.length || 1,
     });
   } catch (err) {
     console.error("[inbox-sync] Fatal error:", err);
