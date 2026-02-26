@@ -104,8 +104,8 @@ export default function PipelinePage() {
     <div className="p-4 sm:p-6 space-y-5">
       <div className="flex items-end justify-between gap-3">
         <div>
-          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Salgspipeline</h1>
-          <p className="text-sm text-muted-foreground/70">{cards.length} aktive leads</p>
+          <h1 className="text-xl sm:text-2xl font-semibold tracking-tight">Ordrepipeline</h1>
+          <p className="text-sm text-muted-foreground/70">{cards.length} aktive henvendelser</p>
         </div>
       </div>
 
@@ -160,7 +160,7 @@ export default function PipelinePage() {
                   </div>
                 ))}
                 {sc.length === 0 && (
-                  <p className="text-[11px] text-muted-foreground/40 text-center py-8">Ingen leads</p>
+                  <p className="text-[11px] text-muted-foreground/40 text-center py-8">Ingen henvendelser</p>
                 )}
               </div>
             </div>
