@@ -104,7 +104,14 @@ export default function FormBuilderPage() {
     setLoading(false);
   };
 
-  useEffect(() => { fetchTemplates(); }, []);
+  // Auto-open template from URL param ?edit=templateId
+  useEffect(() => {
+    fetchTemplates();
+    const editId = searchParams.get("edit");
+    if (editId) {
+      loadTemplate(editId);
+    }
+  }, []);
 
   const loadTemplate = async (templateId: string) => {
     setEditingTemplate(templateId);
