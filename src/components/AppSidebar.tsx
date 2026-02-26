@@ -43,6 +43,10 @@ const mainNav = [
   { title: "Integrasjoner", url: "/settings/integrations", icon: Plug },
 ];
 
+const customerNav = [
+  { title: "Alle kunder", url: "/customers", icon: Users },
+];
+
 const salesNav = [
   { title: "Sales Pulse", url: "/sales", icon: BarChart3 },
   { title: "Pipeline", url: "/sales/pipeline", icon: TrendingUp },
@@ -144,6 +148,7 @@ export function AppSidebar() {
 
       <SidebarContent className="px-1">
         <NavGroup items={mainNav} isActive={isActive} collapsed={collapsed} />
+        <NavGroup label="Kunder" items={customerNav} isActive={isActive} collapsed={collapsed} />
         {isAdmin && <NavGroup label="Salg" items={salesNav} isActive={isActive} collapsed={collapsed} />}
         <NavGroup label="Prosjekter" items={projectNav} isActive={isActive} collapsed={collapsed} />
         <NavGroup label="Fag & Forskrift" items={filteredFag} isActive={isActive} collapsed={collapsed} />

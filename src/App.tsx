@@ -53,6 +53,11 @@ import ContractDetail from "./pages/ContractDetail";
 import ContractCronPage from "./pages/ContractCronPage";
 import EmployeesPage from "./pages/EmployeesPage";
 import PersonnelDetailPage from "./pages/PersonnelDetailPage";
+import CustomersPage from "./pages/CustomersPage";
+import CustomerNewPage from "./pages/CustomerNewPage";
+import CustomerDetailPage from "./pages/CustomerDetailPage";
+import CustomerImportPage from "./pages/CustomerImportPage";
+import ProjectNewPage from "./pages/ProjectNewPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -84,10 +89,15 @@ const App = () => (
               <Route path="/overview" element={<OverviewPage />} />
               <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
               <Route path="/projects" element={<JobsPage />} />
+              <Route path="/projects/new" element={<ProjectNewPage />} />
               <Route path="/projects/:id" element={<JobDetail />} />
               <Route path="/projects/plan" element={<ResourcePlan />} />
               <Route path="/projects/contracts" element={<ContractsPage />} />
               <Route path="/projects/contracts/:id" element={<ContractDetail />} />
+              <Route path="/customers" element={<CustomersPage />} />
+              <Route path="/customers/new" element={<CustomerNewPage />} />
+              <Route path="/customers/import" element={<CustomerImportPage />} />
+              <Route path="/customers/:id" element={<CustomerDetailPage />} />
               {/* Legacy redirects */}
               <Route path="/jobs" element={<Navigate to="/projects" replace />} />
               <Route path="/jobs/:id" element={<RedirectJobToProject />} />
