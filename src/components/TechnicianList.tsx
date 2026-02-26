@@ -15,9 +15,10 @@ interface TechnicianListProps {
   selectedId: string | null;
   onSelect: (id: string | null) => void;
   allowDeselect?: boolean;
+  filterIds?: Set<string> | null;
 }
 
-export function TechnicianList({ selectedId, onSelect, allowDeselect }: TechnicianListProps) {
+export function TechnicianList({ selectedId, onSelect, allowDeselect, filterIds }: TechnicianListProps) {
   const [technicians, setTechnicians] = useState<DBTechnician[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -82,7 +83,9 @@ export function TechnicianList({ selectedId, onSelect, allowDeselect }: Technici
         </div>
       </button>
 
-      {technicians.map((tech) => {
+      {technicians
+        .filter((tech) => !filterIds || filterIds.has(tech.id))
+        .map((tech) => {
         const isSelected = selectedId === tech.id;
         const initial = tech.name.trim().charAt(0).toUpperCase();
 

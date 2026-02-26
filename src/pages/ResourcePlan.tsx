@@ -8,22 +8,24 @@ import { EventDrawer } from "@/components/EventDrawer";
 import { Button } from "@/components/ui/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import {
-  Plus, CalendarDays, ChevronLeft, ChevronRight, RotateCcw,
+  Plus, CalendarDays, ChevronLeft, ChevronRight, RotateCcw, UserCheck, UserMinus,
 } from "lucide-react";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { useAuth } from "@/hooks/useAuth";
 import { useTechnicians } from "@/hooks/useTechnicians";
 import { useExternalBusy } from "@/hooks/useExternalBusy";
+import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
+import { useCapacity } from "@/hooks/useCapacity";
 import { supabase } from "@/integrations/supabase/client";
 import { toast } from "sonner";
-import type { CalendarEvent } from "@/hooks/useCalendarEvents";
 
 export default function ResourcePlan() {
   const isMobile = useIsMobile();
   const { isAdmin } = useAuth();
   const { technicians } = useTechnicians();
   const [selectedTechId, setSelectedTechId] = useState<string | null>(null);
-  const { getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
+  const [capacityFilter, setCapacityFilter] = useState<"all" | "available" | "partial">("all");
+  const { busySlots, getBusySlotsForDay, getExternalBusyMinutesForDay } = useExternalBusy(selectedTechId);
 
   // Drawer state
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -103,12 +105,47 @@ export default function ResourcePlan() {
     return map;
   }, [technicians]);
 
+  // Capacity calculation
+  const techIds = useMemo(
+    () => selectedTechId ? [selectedTechId] : technicians.map((t) => t.id),
+    [selectedTechId, technicians]
+  );
+  const { events: calEvents } = useCalendarEvents(selectedTechId, referenceDate);
+  const { aggregatedDays, techCapacities, availableTechIds, partialTechIds } = useCapacity(
+    calEvents,
+    busySlots,
+    referenceDate,
+    techIds
+  );
+
+  // Today's day index (0=Mon)
+  const todayDayIndex = useMemo(() => {
+    const today = new Date();
+    const ws = startOfWeek(referenceDate, { weekStartsOn: 1 });
+    const diff = Math.floor((today.getTime() - ws.getTime()) / 86400000);
+    return diff >= 0 && diff < 7 ? diff : 0;
+  }, [referenceDate]);
+
+  // Filter technicians in sidebar based on capacity filter
+  const filteredTechForSidebar = useMemo(() => {
+    if (capacityFilter === "all") return null; // no override
+    const ids = capacityFilter === "available"
+      ? availableTechIds(todayDayIndex)
+      : partialTechIds(todayDayIndex);
+    return new Set(ids);
+  }, [capacityFilter, availableTechIds, partialTechIds, todayDayIndex]);
+
   return (
     <div className="flex flex-1 overflow-hidden h-full">
       {/* Desktop: Technician sidebar */}
       {!isMobile && (
         <aside className="w-56 shrink-0 border-r border-border/30 bg-card/50 overflow-y-auto p-3">
-          <TechnicianList selectedId={selectedTechId} onSelect={setSelectedTechId} allowDeselect />
+          <TechnicianList
+            selectedId={selectedTechId}
+            onSelect={setSelectedTechId}
+            allowDeselect
+            filterIds={filteredTechForSidebar}
+          />
         </aside>
       )}
 
@@ -154,6 +191,36 @@ export default function ResourcePlan() {
               </Select>
             )}
 
+            {/* Quick capacity filters */}
+            <div className="flex items-center gap-1 border border-border/40 rounded-lg p-0.5">
+              <Button
+                variant={capacityFilter === "all" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs rounded-md px-2.5"
+                onClick={() => setCapacityFilter("all")}
+              >
+                Alle
+              </Button>
+              <Button
+                variant={capacityFilter === "available" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs rounded-md px-2.5 gap-1"
+                onClick={() => setCapacityFilter("available")}
+              >
+                <UserCheck className="h-3 w-3" />
+                Ledige
+              </Button>
+              <Button
+                variant={capacityFilter === "partial" ? "default" : "ghost"}
+                size="sm"
+                className="h-7 text-xs rounded-md px-2.5 gap-1"
+                onClick={() => setCapacityFilter("partial")}
+              >
+                <UserMinus className="h-3 w-3" />
+                Delvis
+              </Button>
+            </div>
+
             <StatusLegend />
 
             {isAdmin && (
@@ -194,10 +261,13 @@ export default function ResourcePlan() {
         {/* Interactive FullCalendar */}
         <ResourceCalendar
           key={refreshKey}
-          technicianId={selectedTechId}
+          technicianId={capacityFilter !== "all" && filteredTechForSidebar
+            ? (filteredTechForSidebar.size === 1 ? Array.from(filteredTechForSidebar)[0] : selectedTechId)
+            : selectedTechId}
           referenceDate={referenceDate}
           technicianMap={technicianMap}
           getBusySlotsForDay={getBusySlotsForDay}
+          dayCapacities={aggregatedDays}
           onEventClick={handleEventClick}
           onDateSelect={handleDateSelect}
           onEventDrop={handleEventDrop}
