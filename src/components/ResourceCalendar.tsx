@@ -135,8 +135,13 @@ export function ResourceCalendar({
           byTech.set(s.technicianId, arr);
         }
         for (const [techId, techSlots] of byTech) {
-          const merged = mergeExternalSlots(techSlots);
+          // Only show busy slots for technicians in the active plannable set
           const tech = technicianMap.get(techId);
+          if (!tech) {
+            console.debug(`[ResourceCalendar] Skipping ${techSlots.length} busy slot(s) for non-plannable techId=${techId}`);
+            continue;
+          }
+          const merged = mergeExternalSlots(techSlots);
           for (const slot of merged) {
             const techName = tech?.name?.trim();
             const displayName = techName
