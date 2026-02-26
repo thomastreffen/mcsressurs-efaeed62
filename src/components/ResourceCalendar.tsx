@@ -78,13 +78,14 @@ export function ResourceCalendar({
     const result: EventInput[] = calendarEvents.map((ev) => {
       const techNames = ev.technicians.map((t) => t.name.split(" ")[0]).join(", ");
       const colors = statusColors[ev.status] || defaultStatusColor;
+      const firstTechColor = ev.technicians[0]?.color || null;
       return {
         id: ev.id,
         title: ev.title.replace("SERVICE – ", ""),
         start: ev.start,
         end: ev.end,
         backgroundColor: colors.bg,
-        borderColor: colors.border,
+        borderColor: firstTechColor || colors.border,
         textColor: colors.text,
         extendedProps: {
           calendarEvent: ev,
@@ -92,6 +93,7 @@ export function ResourceCalendar({
           status: ev.status,
           techNames,
           statusColors: colors,
+          techColor: firstTechColor,
         },
         editable: isAdmin,
       };
@@ -125,7 +127,10 @@ export function ResourceCalendar({
               borderColor: "#9CA3AF",
               textColor: "#4B5563",
               editable: false,
-              extendedProps: { isBusy: true },
+              extendedProps: {
+                isBusy: true,
+                techName: tech?.name?.split(" ")[0] || null,
+              },
             });
           }
         }
@@ -191,22 +196,34 @@ export function ResourceCalendar({
             return (
               <div className="fc-event-external flex items-center gap-1.5 px-2 py-1.5 cursor-default select-none">
                 <Lock className="h-3 w-3 opacity-50 shrink-0" />
-                <span className="text-[11px] font-medium truncate">Opptatt (ekstern)</span>
+                <div className="min-w-0 flex-1">
+                  {props.techName && (
+                    <p className="text-[11px] font-bold truncate">{props.techName}</p>
+                  )}
+                  <span className="text-[10px] font-medium truncate block">Opptatt (ekstern)</span>
+                  <span className="text-[9px] opacity-70">{arg.timeText}</span>
+                </div>
               </div>
             );
           }
+          const techColor = props.techColor as string | null;
           return (
-            <div className="fc-event-internal px-2 py-1.5 overflow-hidden h-full cursor-grab active:cursor-grabbing select-none">
-              <p className="text-[14px] font-bold leading-tight truncate text-white">
+            <div
+              className="fc-event-internal px-2 py-1.5 overflow-hidden h-full cursor-grab active:cursor-grabbing select-none"
+              style={techColor ? { borderLeft: `4px solid ${techColor}` } : undefined}
+            >
+              {props.techNames && (
+                <p className="text-[12px] font-bold leading-tight truncate text-white opacity-90">
+                  👤 {props.techNames}
+                </p>
+              )}
+              <p className="text-[14px] font-bold leading-tight truncate text-white mt-0.5">
                 {arg.event.title}
               </p>
               {props.customer && (
                 <p className="text-[11px] opacity-80 truncate mt-0.5">{props.customer}</p>
               )}
-              <div className="flex items-center gap-2 mt-1 text-[10px] opacity-70">
-                {props.techNames && <span className="truncate">👤 {props.techNames}</span>}
-                <span className="shrink-0">{arg.timeText}</span>
-              </div>
+              <span className="text-[10px] opacity-70 mt-0.5 block">{arg.timeText}</span>
             </div>
           );
         }}

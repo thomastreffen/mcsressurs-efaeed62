@@ -68,7 +68,7 @@ interface EventDrawerProps {
   projectId?: string | null;
   projectTitle?: string | null;
   /** Callbacks */
-  onSaved?: () => void;
+  onSaved?: (eventId?: string) => void;
 }
 
 export function EventDrawer({
@@ -248,6 +248,7 @@ export function EventDrawer({
         }
 
         toast.success("Hendelse oppdatert", { description: "Tid og ressurser er lagret." });
+        onSaved?.(editEvent.id);
       } else if (mode === "existing" && selectedJobId) {
         // Assign technicians to existing job
         if (date) {
@@ -269,6 +270,7 @@ export function EventDrawer({
         }
 
         toast.success("Montør(er) tildelt");
+        onSaved?.(selectedJobId);
       } else {
         // Create new event
         if (!title.trim() || techIds.length === 0 || !date) {
@@ -305,9 +307,9 @@ export function EventDrawer({
         toast.success("Hendelse opprettet og planlagt", {
           description: `${title} er tildelt ${techIds.length} montør(er).`,
         });
+        onSaved?.(created.id);
       }
 
-      onSaved?.();
       // Don't auto-close per spec
     } catch (err: any) {
       toast.error("Feil ved lagring", { description: err?.message });
