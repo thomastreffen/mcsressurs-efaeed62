@@ -62,13 +62,27 @@ export function useExternalBusy(technicianId: string | null) {
 
       const results: any[] = data?.results || [];
       const slots: ExternalBusySlot[] = [];
+      let totalSlots = 0;
+      let matchedSlots = 0;
+      let droppedSlots = 0;
 
       for (const entry of results) {
         const techId = entry.technician_id || userToTech.get(entry.user_id);
-        if (!techId) continue;
+        const entrySlots = entry.busy_slots || [];
+        totalSlots += entrySlots.length;
 
-        for (const slot of entry.busy_slots || []) {
-          if (!slot.start || !slot.end) continue;
+        if (!techId) {
+          droppedSlots += entrySlots.length;
+          console.warn(`[ExternalBusy] Dropped ${entrySlots.length} slots for user ${entry.user_id} – no matching technician`);
+          continue;
+        }
+
+        for (const slot of entrySlots) {
+          if (!slot.start || !slot.end) {
+            droppedSlots++;
+            continue;
+          }
+          matchedSlots++;
           slots.push({
             technicianId: techId,
             start: new Date(slot.start),
@@ -77,7 +91,7 @@ export function useExternalBusy(technicianId: string | null) {
         }
       }
 
-      console.log(`[ExternalBusy] Fetched ${slots.length} external busy slots`);
+      console.log(`[ExternalBusy] Total: ${totalSlots} slots fetched, ${matchedSlots} matched to technician, ${droppedSlots} dropped`);
       setBusySlots(slots);
     } catch (err: any) {
       console.error("[ExternalBusy] Exception:", err);

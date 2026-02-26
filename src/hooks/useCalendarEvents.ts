@@ -68,11 +68,21 @@ export function useCalendarEvents(technicianId: string | null, referenceDate?: D
 
       const allEvents = data ?? [];
 
+      // Filter out events with no technician links (orphan records)
+      const withTechs = allEvents.filter((e: any) =>
+        Array.isArray(e.event_technicians) && e.event_technicians.length > 0
+      );
+
+      const orphanCount = allEvents.length - withTechs.length;
+      if (orphanCount > 0) {
+        console.warn(`[Calendar] Dropped ${orphanCount} events without event_technicians (orphans)`);
+      }
+
       const filtered = technicianId
-        ? allEvents.filter((e: any) =>
+        ? withTechs.filter((e: any) =>
             e.event_technicians?.some((et: any) => et.technician_id === technicianId)
           )
-        : allEvents;
+        : withTechs;
 
       const uniqueMap = new Map<string, (typeof filtered)[0]>();
       for (const e of filtered) {
