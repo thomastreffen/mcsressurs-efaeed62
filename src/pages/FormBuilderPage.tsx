@@ -128,17 +128,25 @@ export default function FormBuilderPage() {
 
     if (vers) setVersions(vers as any);
 
-    if ((tpl as any)?.active_version_id) {
+    // Load fields: prefer active version, fallback to latest version, fallback to empty
+    const versionIdToLoad = (tpl as any)?.active_version_id
+      || (vers && vers.length > 0 ? (vers as any[])[0].id : null);
+
+    if (versionIdToLoad) {
       const { data: ver } = await supabase
         .from("form_template_versions")
         .select("fields, rules")
-        .eq("id", (tpl as any).active_version_id)
+        .eq("id", versionIdToLoad)
         .single();
       if (ver) {
         setFields(((ver as any).fields || []) as FormField[]);
         setRules(((ver as any).rules || []) as FormRule[]);
+      } else {
+        setFields([]);
+        setRules([]);
       }
     } else {
+      // No versions at all — start with empty draft
       setFields([]);
       setRules([]);
     }
