@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
 import { cn } from "@/lib/utils";
-import { User, Users, Loader2 } from "lucide-react";
+import { Users, Loader2 } from "lucide-react";
 
 interface DBTechnician {
   id: string;
@@ -84,6 +84,7 @@ export function TechnicianList({ selectedId, onSelect, allowDeselect }: Technici
 
       {technicians.map((tech) => {
         const isSelected = selectedId === tech.id;
+        const initial = tech.name.trim().charAt(0).toUpperCase();
 
         return (
           <button
@@ -97,24 +98,27 @@ export function TechnicianList({ selectedId, onSelect, allowDeselect }: Technici
             )}
           >
             <div
-              className="flex h-9 w-9 items-center justify-center rounded-full"
+              className="flex h-9 w-9 items-center justify-center rounded-full text-sm font-bold shrink-0"
               style={{
-                backgroundColor: tech.color ? `${tech.color}20` : undefined,
-                color: tech.color || undefined,
+                backgroundColor: tech.color ? `${tech.color}20` : "hsl(var(--muted))",
+                color: tech.color || "hsl(var(--muted-foreground))",
               }}
             >
-              <User className="h-4 w-4" />
+              {initial}
             </div>
             <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium truncate">{tech.name}</p>
-              <p className="text-xs text-muted-foreground truncate">{tech.email}</p>
+              <p className="text-sm font-bold truncate">{tech.name}</p>
+              <div className="mt-1 h-1.5 w-full rounded-full bg-muted overflow-hidden">
+                <div
+                  className="h-full rounded-full transition-all"
+                  style={{
+                    width: "45%",
+                    backgroundColor: tech.color || "hsl(var(--primary))",
+                    opacity: 0.7,
+                  }}
+                />
+              </div>
             </div>
-            {tech.color && (
-              <span
-                className="h-3 w-3 rounded-full shrink-0"
-                style={{ backgroundColor: tech.color }}
-              />
-            )}
           </button>
         );
       })}
