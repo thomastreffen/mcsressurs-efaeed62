@@ -350,6 +350,7 @@ export type Database = {
           priority: Database["public"]["Enums"]["case_priority"]
           project_id: string | null
           scope: Database["public"]["Enums"]["case_scope"]
+          service_job_id: string | null
           status: Database["public"]["Enums"]["case_status"]
           thread_id: string | null
           title: string
@@ -371,6 +372,7 @@ export type Database = {
           priority?: Database["public"]["Enums"]["case_priority"]
           project_id?: string | null
           scope?: Database["public"]["Enums"]["case_scope"]
+          service_job_id?: string | null
           status?: Database["public"]["Enums"]["case_status"]
           thread_id?: string | null
           title?: string
@@ -392,6 +394,7 @@ export type Database = {
           priority?: Database["public"]["Enums"]["case_priority"]
           project_id?: string | null
           scope?: Database["public"]["Enums"]["case_scope"]
+          service_job_id?: string | null
           status?: Database["public"]["Enums"]["case_status"]
           thread_id?: string | null
           title?: string
@@ -432,6 +435,13 @@ export type Database = {
             columns: ["project_id"]
             isOneToOne: false
             referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_service_job_id_fkey"
+            columns: ["service_job_id"]
+            isOneToOne: false
+            referencedRelation: "service_jobs"
             referencedColumns: ["id"]
           },
           {
@@ -3061,6 +3071,86 @@ export type Database = {
           name?: string
         }
         Relationships: []
+      }
+      service_jobs: {
+        Row: {
+          address: string | null
+          case_id: string | null
+          company_id: string
+          created_at: string
+          created_by: string | null
+          description: string | null
+          ends_at: string
+          id: string
+          project_id: string | null
+          starts_at: string
+          status: string
+          technician_id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          address?: string | null
+          case_id?: string | null
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at: string
+          id?: string
+          project_id?: string | null
+          starts_at: string
+          status?: string
+          technician_id: string
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          address?: string | null
+          case_id?: string | null
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          description?: string | null
+          ends_at?: string
+          id?: string
+          project_id?: string | null
+          starts_at?: string
+          status?: string
+          technician_id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "service_jobs_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_jobs_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_jobs_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "service_jobs_technician_id_fkey"
+            columns: ["technician_id"]
+            isOneToOne: false
+            referencedRelation: "technicians"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       settings: {
         Row: {

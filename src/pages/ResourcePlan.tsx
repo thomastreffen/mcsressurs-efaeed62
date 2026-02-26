@@ -147,7 +147,10 @@ export default function ResourcePlan() {
         performed_by: userId || null,
         change_summary: `Flyttet fra ${oldEvent ? format(oldEvent.start, "dd.MM HH:mm") + "–" + format(oldEvent.end, "HH:mm") : "ukjent"} til ${format(newStart, "dd.MM HH:mm")}–${format(newEnd, "HH:mm")}`,
       });
-      // Sync linked work_orders
+      // Sync linked service_jobs + work_orders
+      await supabase.from("service_jobs")
+        .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() } as any)
+        .eq("project_id", eventId);
       await supabase.from("work_orders")
         .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() } as any)
         .eq("project_id", eventId);
@@ -176,7 +179,10 @@ export default function ResourcePlan() {
         performed_by: userId || null,
         change_summary: `Varighet endret fra ${oldEvent ? format(oldEvent.start, "HH:mm") + "–" + format(oldEvent.end, "HH:mm") : "ukjent"} til ${format(newStart, "HH:mm")}–${format(newEnd, "HH:mm")}`,
       });
-      // Sync linked work_orders
+      // Sync linked service_jobs + work_orders
+      await supabase.from("service_jobs")
+        .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() } as any)
+        .eq("project_id", eventId);
       await supabase.from("work_orders")
         .update({ starts_at: newStart.toISOString(), ends_at: newEnd.toISOString() } as any)
         .eq("project_id", eventId);

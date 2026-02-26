@@ -6,12 +6,14 @@ import {
   AlertTriangle,
   DollarSign,
   Mail,
+  Hammer,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const TABS = [
   { key: "dash", label: "Dashboard", icon: LayoutDashboard },
   { key: "plan", label: "Plan", icon: CalendarCheck },
+  { key: "servicearbeid", label: "Servicearbeid", icon: Hammer },
   { key: "skjemaer", label: "Skjemaer", icon: ClipboardList },
   { key: "dokumenter", label: "Dokumenter", icon: FileText },
   { key: "risiko", label: "Risiko", icon: AlertTriangle },

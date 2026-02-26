@@ -723,7 +723,7 @@ function CaseDetail({
             <div className="flex flex-wrap gap-2">
               <Button size="sm" onClick={() => setPlanJobOpen(true)} className="gap-1.5">
                 <Hammer className="h-4 w-4" />
-                Planlegg jobb
+                Opprett servicearbeid
               </Button>
               <Button size="sm" variant="secondary" onClick={onConvertLead} className="gap-1.5">
                 <UserPlus className="h-4 w-4" />
