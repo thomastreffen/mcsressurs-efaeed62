@@ -6,52 +6,20 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import {
   Plus,
-  GripVertical,
-  Trash2,
   Save,
   ArrowLeft,
   Loader2,
   FileText,
-  CheckSquare,
-  ListChecks,
-  Type,
-  AlignLeft,
-  Hash,
-  Calendar,
-  PenTool,
-  Camera,
-  Heading,
-  Copy,
-  ChevronUp,
-  ChevronDown,
+  Trash2,
   Archive,
-  AlertTriangle,
 } from "lucide-react";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
 import type { FormField, FormFieldType, FormRule } from "@/lib/form-types";
 import { FIELD_TYPE_LABELS, fieldSupportsComment } from "@/lib/form-types";
-import { Switch } from "@/components/ui/switch";
-
-const FIELD_ICONS: Record<FormFieldType, React.ElementType> = {
-  section_header: Heading,
-  checkbox_yes_no: CheckSquare,
-  checkbox_list: ListChecks,
-  text: Type,
-  textarea: AlignLeft,
-  number: Hash,
-  date: Calendar,
-  signature: PenTool,
-  photo_upload: Camera,
-};
+import { FormFieldPalette } from "@/components/forms/FormFieldPalette";
+import { FormCanvas } from "@/components/forms/FormCanvas";
 
 interface Template {
   id: string;
@@ -87,7 +55,6 @@ export default function FormBuilderPage() {
       .order("created_at", { ascending: false });
     if (data) {
       setTemplates(data as any);
-      // Fetch instance counts for each template
       const ids = (data as any[]).map((t: any) => t.id);
       if (ids.length > 0) {
         const { data: instances } = await supabase
@@ -104,7 +71,6 @@ export default function FormBuilderPage() {
     setLoading(false);
   };
 
-  // Auto-open template from URL param ?edit=templateId
   useEffect(() => {
     fetchTemplates();
     const editId = searchParams.get("edit");
@@ -135,7 +101,6 @@ export default function FormBuilderPage() {
 
     if (vers) setVersions(vers as any);
 
-    // Load fields: prefer active version, fallback to latest version, fallback to empty
     const versionIdToLoad = (tpl as any)?.active_version_id
       || (vers && vers.length > 0 ? (vers as any[])[0].id : null);
 
@@ -153,7 +118,6 @@ export default function FormBuilderPage() {
         setRules([]);
       }
     } else {
-      // No versions at all — start with empty draft
       setFields([]);
       setRules([]);
     }
@@ -185,48 +149,34 @@ export default function FormBuilderPage() {
       });
       return;
     }
-    const reason = prompt("Begrunnelse for sletting (valgfri):");
     setDeleting(templateId);
-    const { error } = await supabase
+    await supabase
       .from("form_templates")
-      .update({
-        deleted_at: new Date().toISOString(),
-        // deleted_by and delete_reason would need columns - using description fallback
-      })
+      .update({ deleted_at: new Date().toISOString() })
       .eq("id", templateId);
-
-    if (error) {
-      toast.error("Kunne ikke slette", { description: error.message });
-    } else {
-      toast.success("Mal slettet");
-      if (editingTemplate === templateId) {
-        setEditingTemplate(null);
-        setFields([]);
-        setRules([]);
-      }
-      fetchTemplates();
+    toast.success("Mal slettet");
+    if (editingTemplate === templateId) {
+      setEditingTemplate(null);
+      setFields([]);
+      setRules([]);
     }
+    fetchTemplates();
     setDeleting(null);
   };
 
   const handleArchiveTemplate = async (templateId: string) => {
-    // Soft-archive by setting deleted_at (same pattern, templates are hidden from dropdowns)
     setDeleting(templateId);
-    const { error } = await supabase
+    await supabase
       .from("form_templates")
       .update({ deleted_at: new Date().toISOString() })
       .eq("id", templateId);
-    if (error) {
-      toast.error("Kunne ikke arkivere", { description: error.message });
-    } else {
-      toast.success("Mal arkivert");
-      if (editingTemplate === templateId) {
-        setEditingTemplate(null);
-        setFields([]);
-        setRules([]);
-      }
-      fetchTemplates();
+    toast.success("Mal arkivert");
+    if (editingTemplate === templateId) {
+      setEditingTemplate(null);
+      setFields([]);
+      setRules([]);
     }
+    fetchTemplates();
     setDeleting(null);
   };
 
@@ -236,38 +186,13 @@ export default function FormBuilderPage() {
       type,
       label: FIELD_TYPE_LABELS[type],
       order: fields.length,
-      required: type !== "section_header",
+      required: type !== "section_header" && !type.startsWith("smart_"),
       allow_comment: fieldSupportsComment(type),
     };
-    if (type === "checkbox_list") {
+    if (type === "checkbox_list" || type === "dropdown" || type === "radio") {
       newField.options = ["Alternativ 1", "Alternativ 2"];
     }
     setFields([...fields, newField]);
-  };
-
-  const updateField = (id: string, updates: Partial<FormField>) => {
-    setFields(fields.map((f) => (f.id === id ? { ...f, ...updates } : f)));
-  };
-
-  const removeField = (id: string) => {
-    setFields(fields.filter((f) => f.id !== id));
-    setRules(rules.filter((r) => r.field_id !== id));
-  };
-
-  const duplicateField = (idx: number) => {
-    const source = fields[idx];
-    const dup: FormField = { ...source, id: crypto.randomUUID(), label: `${source.label} (kopi)`, order: fields.length };
-    const newFields = [...fields];
-    newFields.splice(idx + 1, 0, dup);
-    setFields(newFields.map((f, i) => ({ ...f, order: i })));
-  };
-
-  const moveField = (fromIdx: number, toIdx: number) => {
-    if (toIdx < 0 || toIdx >= fields.length) return;
-    const newFields = [...fields];
-    const [moved] = newFields.splice(fromIdx, 1);
-    newFields.splice(toIdx, 0, moved);
-    setFields(newFields.map((f, i) => ({ ...f, order: i })));
   };
 
   const saveVersion = async (setActive = true) => {
@@ -321,7 +246,7 @@ export default function FormBuilderPage() {
     loadTemplate(editingTemplate);
   };
 
-  // Template list view
+  // ─── Template list view ───
   if (!editingTemplate) {
     return (
       <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8">
@@ -374,28 +299,13 @@ export default function FormBuilderPage() {
                     <Badge variant={tpl.active_version_id ? "default" : "secondary"} className="text-[10px]">
                       {tpl.active_version_id ? "Aktiv" : "Ingen versjon"}
                     </Badge>
-                    {/* Delete / Archive buttons */}
                     <div className="opacity-0 group-hover:opacity-100 transition-opacity flex gap-1" onClick={(e) => e.stopPropagation()}>
                       {count > 0 ? (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 rounded-lg"
-                          onClick={() => handleArchiveTemplate(tpl.id)}
-                          disabled={deleting === tpl.id}
-                          title="Arkiver mal"
-                        >
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => handleArchiveTemplate(tpl.id)} disabled={deleting === tpl.id} title="Arkiver mal">
                           <Archive className="h-3.5 w-3.5 text-muted-foreground" />
                         </Button>
                       ) : (
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 rounded-lg"
-                          onClick={() => handleDeleteTemplate(tpl.id)}
-                          disabled={deleting === tpl.id}
-                          title="Slett mal"
-                        >
+                        <Button variant="ghost" size="icon" className="h-7 w-7 rounded-lg" onClick={() => handleDeleteTemplate(tpl.id)} disabled={deleting === tpl.id} title="Slett mal">
                           <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
                         </Button>
                       )}
@@ -410,16 +320,16 @@ export default function FormBuilderPage() {
     );
   }
 
-  // Builder view
+  // ─── Builder view (two-panel layout) ───
   return (
-    <div className="mx-auto max-w-4xl px-4 sm:px-6 py-8">
-      {/* Header */}
-      <div className="flex items-center justify-between mb-6">
-        <div className="flex items-center gap-3">
+    <div className="h-[calc(100vh-3.5rem)] flex flex-col">
+      {/* Top bar */}
+      <div className="shrink-0 border-b border-border bg-card px-4 py-2.5 flex items-center justify-between gap-4">
+        <div className="flex items-center gap-3 min-w-0">
           <Button
             variant="ghost"
             size="icon"
-            className="rounded-xl"
+            className="rounded-xl shrink-0"
             onClick={() => {
               setEditingTemplate(null);
               setFields([]);
@@ -429,29 +339,32 @@ export default function FormBuilderPage() {
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>
-          <div>
-            <h1 className="text-lg font-bold">Skjemabygger</h1>
+          <div className="min-w-0">
+            <Input
+              value={title}
+              onChange={(e) => setTitle(e.target.value)}
+              className="border-none bg-transparent text-sm font-bold p-0 h-auto focus-visible:ring-0"
+              placeholder="Malnavn..."
+            />
             <div className="flex items-center gap-2 mt-0.5">
-              <p className="text-xs text-muted-foreground">
-                {versions.length > 0
-                  ? `${versions.length} versjon${versions.length > 1 ? "er" : ""}`
-                  : "Ingen versjoner"}
-              </p>
-              {activeVersionId && versions.length > 0 && (
+              {versions.length > 0 && (
+                <span className="text-[10px] text-muted-foreground">
+                  {versions.length} versjon{versions.length > 1 ? "er" : ""}
+                </span>
+              )}
+              {activeVersionId && (
                 <Badge variant="default" className="text-[9px] px-1.5 py-0">
                   Aktiv v{versions.find(v => v.id === activeVersionId)?.version_number || "?"}
                 </Badge>
               )}
               {!activeVersionId && versions.length > 0 && (
-                <Badge variant="destructive" className="text-[9px] px-1.5 py-0">
-                  Ingen aktiv
-                </Badge>
+                <Badge variant="destructive" className="text-[9px] px-1.5 py-0">Ingen aktiv</Badge>
               )}
             </div>
           </div>
         </div>
-        <div className="flex items-center gap-2">
-          {/* Delete/archive in builder */}
+
+        <div className="flex items-center gap-2 shrink-0">
           {editingTemplate && (
             <Button
               variant="ghost"
@@ -467,277 +380,64 @@ export default function FormBuilderPage() {
               {(instanceCounts[editingTemplate] || 0) > 0 ? "Arkiver" : "Slett"}
             </Button>
           )}
+
+          {/* Version selector */}
+          {versions.length > 1 && (
+            <div className="flex gap-1">
+              {versions.slice(0, 5).map((v) => (
+                <button
+                  key={v.id}
+                  onClick={() => setVersionActive(v.id)}
+                  className={`inline-flex items-center rounded-lg px-2 py-1 text-[10px] font-medium border transition-colors ${
+                    v.id === activeVersionId
+                      ? "bg-primary/10 text-primary border-primary/30"
+                      : "bg-card text-muted-foreground border-border hover:border-primary/20"
+                  }`}
+                >
+                  v{v.version_number}
+                  {v.id === activeVersionId && " ✓"}
+                </button>
+              ))}
+            </div>
+          )}
+
           <Button size="sm" className="rounded-xl gap-1.5" onClick={() => saveVersion(true)} disabled={saving}>
             {saving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Save className="h-3.5 w-3.5" />}
-            Lagre versjon
+            Lagre & publiser
           </Button>
         </div>
       </div>
 
-      {/* Template meta */}
-      <div className="rounded-xl border border-border bg-card p-4 space-y-3 mb-6">
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Malnavn</label>
-          <Input value={title} onChange={(e) => setTitle(e.target.value)} className="rounded-xl h-9" />
+      {/* Two-panel layout */}
+      <div className="flex-1 flex overflow-hidden">
+        {/* Left: Field palette */}
+        <div className="w-64 shrink-0 border-r border-border bg-background overflow-y-auto p-3">
+          <p className="text-xs font-semibold text-foreground mb-3">Felt</p>
+          <FormFieldPalette onAddField={addField} />
         </div>
-        <div className="space-y-1.5">
-          <label className="text-xs font-medium text-muted-foreground">Beskrivelse</label>
-          <Textarea
-            value={description}
-            onChange={(e) => setDescription(e.target.value)}
-            className="rounded-xl min-h-[60px]"
-            rows={2}
-          />
-        </div>
-      </div>
 
-      {/* Version list (if multiple) */}
-      {versions.length > 1 && (
-        <div className="rounded-xl border border-border bg-card p-3 mb-4">
-          <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-2">Versjoner</p>
-          <div className="flex flex-wrap gap-1.5">
-            {versions.map((v) => (
-              <button
-                key={v.id}
-                onClick={() => setVersionActive(v.id)}
-                className={`inline-flex items-center rounded-lg px-2.5 py-1 text-xs font-medium border transition-colors ${
-                  v.id === activeVersionId
-                    ? "bg-primary/10 text-primary border-primary/30"
-                    : "bg-card text-muted-foreground border-border hover:border-primary/20"
-                }`}
-              >
-                v{v.version_number}
-                {v.id === activeVersionId && <span className="ml-1 text-[9px]">✓</span>}
-              </button>
-            ))}
+        {/* Right: Canvas */}
+        <div className="flex-1 overflow-y-auto bg-background p-6">
+          <div className="max-w-2xl mx-auto space-y-4">
+            {/* Description */}
+            <Textarea
+              value={description}
+              onChange={(e) => setDescription(e.target.value)}
+              className="rounded-xl text-xs bg-card border-border"
+              rows={2}
+              placeholder="Beskrivelse av skjemaet (valgfri)..."
+            />
+
+            {/* Canvas */}
+            <FormCanvas
+              fields={fields}
+              rules={rules}
+              templateTitle={title}
+              onFieldsChange={setFields}
+              onRulesChange={setRules}
+            />
           </div>
         </div>
-      )}
-
-      {/* Field palette */}
-      <div className="mb-4">
-        <p className="text-xs font-medium text-muted-foreground mb-2">Legg til felt</p>
-        <div className="flex flex-wrap gap-1.5">
-          {(Object.keys(FIELD_TYPE_LABELS) as FormFieldType[]).map((type) => {
-            const Icon = FIELD_ICONS[type];
-            return (
-              <Button
-                key={type}
-                variant="outline"
-                size="sm"
-                className="rounded-xl gap-1.5 text-xs h-8"
-                onClick={() => addField(type)}
-              >
-                <Icon className="h-3.5 w-3.5" />
-                {FIELD_TYPE_LABELS[type]}
-              </Button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Fields list */}
-      <div className="space-y-2">
-        {fields.length === 0 ? (
-          <div className="rounded-xl border-2 border-dashed border-border bg-muted/20 p-8 text-center">
-            <p className="text-sm text-muted-foreground">
-              Klikk på felt-typene over for å bygge skjemaet
-            </p>
-          </div>
-        ) : (
-          fields.map((field, idx) => {
-            const Icon = FIELD_ICONS[field.type];
-            return (
-              <div
-                key={field.id}
-                className="rounded-xl border border-border bg-card p-3 flex items-start gap-3 group"
-              >
-                {/* Move buttons */}
-                <div className="flex flex-col gap-0.5 pt-1 shrink-0">
-                  <button
-                    className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
-                    disabled={idx === 0}
-                    onClick={() => moveField(idx, idx - 1)}
-                    title="Flytt opp"
-                  >
-                    <ChevronUp className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    className="text-muted-foreground hover:text-foreground disabled:opacity-30 p-0.5"
-                    disabled={idx === fields.length - 1}
-                    onClick={() => moveField(idx, idx + 1)}
-                    title="Flytt ned"
-                  >
-                    <ChevronDown className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-
-                {/* Field config */}
-                <div className="flex-1 space-y-2 min-w-0">
-                  <div className="flex items-center gap-2">
-                    <Icon className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                    <span className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider">
-                      {FIELD_TYPE_LABELS[field.type]}
-                    </span>
-                  </div>
-                  <Input
-                    value={field.label}
-                    onChange={(e) => updateField(field.id, { label: e.target.value })}
-                    className="rounded-lg h-8 text-sm font-medium"
-                    placeholder="Feltnavn..."
-                  />
-
-                  {/* Checkbox list items */}
-                  {field.type === "checkbox_list" && (
-                    <div className="space-y-3 pl-1">
-                      <div className="space-y-1">
-                        <p className="text-[10px] text-muted-foreground font-medium">Sjekkpunkter</p>
-                        {(field.options || []).map((opt, optIdx) => (
-                          <div key={optIdx} className="flex items-center gap-1.5 group/item">
-                            <GripVertical className="h-3 w-3 text-muted-foreground/40 shrink-0" />
-                            <Input
-                              value={opt}
-                              onChange={(e) => {
-                                const newOpts = [...(field.options || [])];
-                                newOpts[optIdx] = e.target.value;
-                                updateField(field.id, { options: newOpts });
-                              }}
-                              className="rounded-lg h-7 text-xs flex-1"
-                              placeholder="Sjekkpunkt..."
-                            />
-                            <button
-                              className="text-muted-foreground hover:text-destructive opacity-0 group-hover/item:opacity-100 transition-opacity p-0.5"
-                              onClick={() => {
-                                const newOpts = (field.options || []).filter((_, i) => i !== optIdx);
-                                updateField(field.id, { options: newOpts });
-                              }}
-                            >
-                              <Trash2 className="h-3 w-3" />
-                            </button>
-                          </div>
-                        ))}
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          className="rounded-lg gap-1 text-[10px] h-6 px-2 text-muted-foreground"
-                          onClick={() => {
-                            const newOpts = [...(field.options || []), `Punkt ${(field.options || []).length + 1}`];
-                            updateField(field.id, { options: newOpts });
-                          }}
-                        >
-                          <Plus className="h-3 w-3" />
-                          Legg til punkt
-                        </Button>
-                      </div>
-
-                      <div className="space-y-2 border-t border-border pt-2">
-                        <p className="text-[10px] text-muted-foreground font-medium">Innstillinger</p>
-                        <label className="flex items-center justify-between gap-2">
-                          <span className="text-xs text-muted-foreground">Tillat kommentar per punkt</span>
-                          <Switch
-                            checked={field.allow_comment !== false}
-                            onCheckedChange={(v) => updateField(field.id, { allow_comment: v })}
-                          />
-                        </label>
-                        <label className="flex items-center justify-between gap-2">
-                          <span className="text-xs text-muted-foreground">Krev bilde ved Avvik</span>
-                          <Switch
-                            checked={!!field.require_photo_on_deviation}
-                            onCheckedChange={(v) => updateField(field.id, { require_photo_on_deviation: v })}
-                          />
-                        </label>
-                        <label className="flex items-center justify-between gap-2">
-                          <span className="text-xs text-muted-foreground">Aktiver risiko-gradering</span>
-                          <Switch
-                            checked={!!field.enable_risk_grading}
-                            onCheckedChange={(v) => updateField(field.id, { enable_risk_grading: v })}
-                          />
-                        </label>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Checkbox yes/no settings */}
-                  {field.type === "checkbox_yes_no" && (
-                    <div className="space-y-2 pl-1 border-t border-border pt-2">
-                      <label className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">Tillat kommentar</span>
-                        <Switch
-                          checked={field.allow_comment !== false}
-                          onCheckedChange={(v) => updateField(field.id, { allow_comment: v })}
-                        />
-                      </label>
-                      <div className="flex items-center gap-2 text-xs text-muted-foreground">
-                        <input
-                          type="checkbox"
-                          checked={rules.some(
-                            (r) => r.field_id === field.id && r.action === "require_comment"
-                          )}
-                          onChange={(e) => {
-                            if (e.target.checked) {
-                              setRules([
-                                ...rules,
-                                {
-                                  id: crypto.randomUUID(),
-                                  field_id: field.id,
-                                  condition: "equals",
-                                  value: "no",
-                                  action: "require_comment",
-                                },
-                              ]);
-                            } else {
-                              setRules(
-                                rules.filter(
-                                  (r) =>
-                                    !(r.field_id === field.id && r.action === "require_comment")
-                                )
-                              );
-                            }
-                          }}
-                          className="rounded"
-                        />
-                        <span>Krev kommentar ved "Nei"</span>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Generic allow_comment for other types */}
-                  {fieldSupportsComment(field.type) && field.type !== "checkbox_yes_no" && field.type !== "checkbox_list" && (
-                    <div className="pl-1 border-t border-border pt-2">
-                      <label className="flex items-center justify-between gap-2">
-                        <span className="text-xs text-muted-foreground">
-                          {field.type === "photo_upload" ? "Tillat bildetekst" : "Tillat intern kommentar"}
-                        </span>
-                        <Switch
-                          checked={field.allow_comment !== false}
-                          onCheckedChange={(v) => updateField(field.id, { allow_comment: v })}
-                        />
-                      </label>
-                    </div>
-                  )}
-                </div>
-
-                {/* Field actions */}
-                <div className="flex flex-col gap-0.5 shrink-0 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <button
-                    className="text-muted-foreground hover:text-foreground p-1"
-                    onClick={() => duplicateField(idx)}
-                    title="Dupliser"
-                  >
-                    <Copy className="h-3.5 w-3.5" />
-                  </button>
-                  <button
-                    className="text-muted-foreground hover:text-destructive p-1"
-                    onClick={() => removeField(field.id)}
-                    title="Slett felt"
-                  >
-                    <Trash2 className="h-3.5 w-3.5" />
-                  </button>
-                </div>
-              </div>
-            );
-          })
-        )}
       </div>
     </div>
   );
