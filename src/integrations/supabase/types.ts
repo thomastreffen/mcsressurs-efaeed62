@@ -203,6 +203,236 @@ export type Database = {
           },
         ]
       }
+      case_items: {
+        Row: {
+          body_html: string | null
+          body_preview: string | null
+          case_id: string
+          company_id: string
+          created_at: string
+          created_by: string | null
+          external_id: string | null
+          from_email: string | null
+          id: string
+          received_at: string | null
+          subject: string | null
+          to_emails: string[] | null
+          type: string
+        }
+        Insert: {
+          body_html?: string | null
+          body_preview?: string | null
+          case_id: string
+          company_id: string
+          created_at?: string
+          created_by?: string | null
+          external_id?: string | null
+          from_email?: string | null
+          id?: string
+          received_at?: string | null
+          subject?: string | null
+          to_emails?: string[] | null
+          type?: string
+        }
+        Update: {
+          body_html?: string | null
+          body_preview?: string | null
+          case_id?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string | null
+          external_id?: string | null
+          from_email?: string | null
+          id?: string
+          received_at?: string | null
+          subject?: string | null
+          to_emails?: string[] | null
+          type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_items_case_id_fkey"
+            columns: ["case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "case_items_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      case_routing_rules: {
+        Row: {
+          ai_category_in: string[] | null
+          body_contains: string | null
+          company_id: string
+          created_at: string
+          from_contains: string | null
+          id: string
+          is_enabled: boolean
+          mailbox_address: string | null
+          name: string
+          next_action_set:
+            | Database["public"]["Enums"]["case_next_action"]
+            | null
+          owner_user_id_set: string | null
+          priority_set: Database["public"]["Enums"]["case_priority"] | null
+          scope_set: Database["public"]["Enums"]["case_scope"] | null
+          status_set: Database["public"]["Enums"]["case_status"] | null
+          subject_contains: string | null
+        }
+        Insert: {
+          ai_category_in?: string[] | null
+          body_contains?: string | null
+          company_id: string
+          created_at?: string
+          from_contains?: string | null
+          id?: string
+          is_enabled?: boolean
+          mailbox_address?: string | null
+          name: string
+          next_action_set?:
+            | Database["public"]["Enums"]["case_next_action"]
+            | null
+          owner_user_id_set?: string | null
+          priority_set?: Database["public"]["Enums"]["case_priority"] | null
+          scope_set?: Database["public"]["Enums"]["case_scope"] | null
+          status_set?: Database["public"]["Enums"]["case_status"] | null
+          subject_contains?: string | null
+        }
+        Update: {
+          ai_category_in?: string[] | null
+          body_contains?: string | null
+          company_id?: string
+          created_at?: string
+          from_contains?: string | null
+          id?: string
+          is_enabled?: boolean
+          mailbox_address?: string | null
+          name?: string
+          next_action_set?:
+            | Database["public"]["Enums"]["case_next_action"]
+            | null
+          owner_user_id_set?: string | null
+          priority_set?: Database["public"]["Enums"]["case_priority"] | null
+          scope_set?: Database["public"]["Enums"]["case_scope"] | null
+          status_set?: Database["public"]["Enums"]["case_status"] | null
+          subject_contains?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "case_routing_rules_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      cases: {
+        Row: {
+          company_id: string
+          created_at: string
+          customer_id: string | null
+          due_at: string | null
+          id: string
+          lead_id: string | null
+          mailbox_address: string | null
+          next_action: Database["public"]["Enums"]["case_next_action"]
+          offer_id: string | null
+          owner_user_id: string | null
+          participant_user_ids: string[] | null
+          priority: Database["public"]["Enums"]["case_priority"]
+          project_id: string | null
+          scope: Database["public"]["Enums"]["case_scope"]
+          status: Database["public"]["Enums"]["case_status"]
+          thread_id: string | null
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          customer_id?: string | null
+          due_at?: string | null
+          id?: string
+          lead_id?: string | null
+          mailbox_address?: string | null
+          next_action?: Database["public"]["Enums"]["case_next_action"]
+          offer_id?: string | null
+          owner_user_id?: string | null
+          participant_user_ids?: string[] | null
+          priority?: Database["public"]["Enums"]["case_priority"]
+          project_id?: string | null
+          scope?: Database["public"]["Enums"]["case_scope"]
+          status?: Database["public"]["Enums"]["case_status"]
+          thread_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          customer_id?: string | null
+          due_at?: string | null
+          id?: string
+          lead_id?: string | null
+          mailbox_address?: string | null
+          next_action?: Database["public"]["Enums"]["case_next_action"]
+          offer_id?: string | null
+          owner_user_id?: string | null
+          participant_user_ids?: string[] | null
+          priority?: Database["public"]["Enums"]["case_priority"]
+          project_id?: string | null
+          scope?: Database["public"]["Enums"]["case_scope"]
+          status?: Database["public"]["Enums"]["case_status"]
+          thread_id?: string | null
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "cases_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_customer_id_fkey"
+            columns: ["customer_id"]
+            isOneToOne: false
+            referencedRelation: "customers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_lead_id_fkey"
+            columns: ["lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_offer_id_fkey"
+            columns: ["offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       communication_logs: {
         Row: {
           bcc_recipients: Json | null
@@ -2452,6 +2682,7 @@ export type Database = {
           address: string
           created_at: string
           display_name: string
+          graph_delta_link: string | null
           id: string
           is_enabled: boolean
         }
@@ -2459,6 +2690,7 @@ export type Database = {
           address: string
           created_at?: string
           display_name?: string
+          graph_delta_link?: string | null
           id?: string
           is_enabled?: boolean
         }
@@ -2466,6 +2698,7 @@ export type Database = {
           address?: string
           created_at?: string
           display_name?: string
+          graph_delta_link?: string | null
           id?: string
           is_enabled?: boolean
         }
@@ -3146,6 +3379,25 @@ export type Database = {
         | "accepted"
         | "rejected"
         | "converted"
+      case_next_action:
+        | "call"
+        | "quote"
+        | "clarify"
+        | "order"
+        | "schedule"
+        | "document"
+        | "none"
+      case_priority: "low" | "normal" | "high" | "critical"
+      case_scope: "company" | "department" | "project" | "private"
+      case_status:
+        | "new"
+        | "triage"
+        | "assigned"
+        | "waiting_customer"
+        | "waiting_internal"
+        | "converted"
+        | "closed"
+        | "archived"
       event_status: "pending" | "accepted" | "declined" | "change_request"
       job_status:
         | "requested"
@@ -3319,6 +3571,27 @@ export const Constants = {
         "accepted",
         "rejected",
         "converted",
+      ],
+      case_next_action: [
+        "call",
+        "quote",
+        "clarify",
+        "order",
+        "schedule",
+        "document",
+        "none",
+      ],
+      case_priority: ["low", "normal", "high", "critical"],
+      case_scope: ["company", "department", "project", "private"],
+      case_status: [
+        "new",
+        "triage",
+        "assigned",
+        "waiting_customer",
+        "waiting_internal",
+        "converted",
+        "closed",
+        "archived",
       ],
       event_status: ["pending", "accepted", "declined", "change_request"],
       job_status: [
