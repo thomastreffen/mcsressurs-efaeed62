@@ -3,6 +3,7 @@ import FullCalendar from "@fullcalendar/react";
 import dayGridPlugin from "@fullcalendar/daygrid";
 import timeGridPlugin from "@fullcalendar/timegrid";
 import interactionPlugin from "@fullcalendar/interaction";
+import listPlugin from "@fullcalendar/list";
 import type { EventInput, EventDropArg, DateSelectArg, EventClickArg } from "@fullcalendar/core";
 import { useCalendarEvents, type CalendarEvent } from "@/hooks/useCalendarEvents";
 import type { ExternalBusySlot } from "@/hooks/useExternalBusy";
@@ -17,6 +18,7 @@ interface TechLookup {
 interface ResourceCalendarProps {
   technicianId: string | null;
   referenceDate: Date;
+  calendarView?: string;
   technicianMap: Map<string, TechLookup>;
   getBusySlotsForDay?: (date: Date) => ExternalBusySlot[];
   dayCapacities?: DayCapacity[];
@@ -57,6 +59,7 @@ const defaultStatusColor = { bg: "#1E3A8A", border: "#1E3A8A", text: "#FFFFFF" }
 export function ResourceCalendar({
   technicianId,
   referenceDate,
+  calendarView = "timeGridWeek",
   technicianMap,
   getBusySlotsForDay,
   dayCapacities,
@@ -69,10 +72,26 @@ export function ResourceCalendar({
   const calendarRef = useRef<FullCalendar>(null);
   const { events: calendarEvents } = useCalendarEvents(technicianId, referenceDate);
 
+  const isMonthView = calendarView === "dayGridMonth";
+  const isDayView = calendarView === "timeGridDay";
+
   useEffect(() => {
     const api = calendarRef.current?.getApi();
-    if (api) api.gotoDate(referenceDate);
-  }, [referenceDate]);
+    if (api) {
+      api.gotoDate(referenceDate);
+      if (api.view.type !== calendarView) {
+        api.changeView(calendarView);
+      }
+    }
+  }, [referenceDate, calendarView]);
+
+  // Scroll to current time in day view
+  useEffect(() => {
+    if (isDayView) {
+      const api = calendarRef.current?.getApi();
+      if (api) api.scrollToTime(new Date().toTimeString().slice(0, 8));
+    }
+  }, [isDayView, calendarView]);
 
   const fcEvents: EventInput[] = useMemo(() => {
     const result: EventInput[] = calendarEvents.map((ev) => {
@@ -103,11 +122,11 @@ export function ResourceCalendar({
     if (getBusySlotsForDay) {
       const weekStart = new Date(referenceDate);
       weekStart.setDate(weekStart.getDate() - weekStart.getDay() + 1);
-      for (let i = 0; i < 7; i++) {
+      const daysToRender = isMonthView ? 42 : 7;
+      for (let i = 0; i < daysToRender; i++) {
         const day = new Date(weekStart);
         day.setDate(day.getDate() + i);
         const rawSlots = getBusySlotsForDay(day);
-        // Group by technician, then merge overlapping
         const byTech = new Map<string, ExternalBusySlot[]>();
         for (const s of rawSlots) {
           const arr = byTech.get(s.technicianId) || [];
@@ -138,7 +157,7 @@ export function ResourceCalendar({
     }
 
     return result;
-  }, [calendarEvents, getBusySlotsForDay, technicianMap, referenceDate, isAdmin]);
+  }, [calendarEvents, getBusySlotsForDay, technicianMap, referenceDate, isAdmin, isMonthView]);
 
   const handleEventClick = useCallback((info: EventClickArg) => {
     const calEvent = info.event.extendedProps.calendarEvent as CalendarEvent | undefined;
@@ -163,8 +182,8 @@ export function ResourceCalendar({
     <div className="fc-wrapper rounded-2xl border border-border/40 bg-card shadow-sm overflow-hidden">
       <FullCalendar
         ref={calendarRef}
-        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin]}
-        initialView="timeGridWeek"
+        plugins={[dayGridPlugin, timeGridPlugin, interactionPlugin, listPlugin]}
+        initialView={calendarView}
         initialDate={referenceDate}
         headerToolbar={false}
         locale="nb"
@@ -192,6 +211,29 @@ export function ResourceCalendar({
         eventMinHeight={36}
         eventContent={(arg) => {
           const props = arg.event.extendedProps;
+
+          // List view – simple text
+          if (calendarView === "listWeek") return undefined;
+
+          // Month view – compact
+          if (isMonthView) {
+            if (props.isBusy) {
+              return (
+                <div className="flex items-center gap-1 px-1 py-0.5 text-[10px] truncate">
+                  <Lock className="h-2.5 w-2.5 opacity-50 shrink-0" />
+                  <span className="truncate">{props.techName || "Opptatt"}</span>
+                </div>
+              );
+            }
+            return (
+              <div className="flex items-center gap-1 px-1 py-0.5 overflow-hidden" style={props.techColor ? { borderLeft: `3px solid ${props.techColor}` } : undefined}>
+                <span className="text-[10px] font-semibold truncate text-white">{arg.event.title}</span>
+                {props.techNames && <span className="text-[9px] opacity-70 truncate">· {props.techNames}</span>}
+              </div>
+            );
+          }
+
+          // Day/Week view – detailed
           if (props.isBusy) {
             return (
               <div className="fc-event-external flex items-center gap-1.5 px-2 py-1.5 cursor-default select-none">
@@ -240,7 +282,7 @@ export function ResourceCalendar({
               <div className={`text-lg font-bold ${isToday ? "text-primary" : ""}`}>
                 {arg.date.getDate()}
               </div>
-              {dayCap && (
+              {dayCap && !isMonthView && (
                 <div className="mt-1 flex flex-col items-center gap-0.5">
                   <div className="w-10 h-1.5 rounded-full bg-muted overflow-hidden">
                     <div
