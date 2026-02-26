@@ -1249,6 +1249,274 @@ export type Database = {
           },
         ]
       }
+      form_instances: {
+        Row: {
+          activity_id: string | null
+          answers: Json
+          assigned_to: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string
+          id: string
+          locked_at: string | null
+          locked_by: string | null
+          project_id: string | null
+          status: string
+          template_id: string
+          unlock_reason: string | null
+          updated_at: string
+          version_id: string
+        }
+        Insert: {
+          activity_id?: string | null
+          answers?: Json
+          assigned_to?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by: string
+          id?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          project_id?: string | null
+          status?: string
+          template_id: string
+          unlock_reason?: string | null
+          updated_at?: string
+          version_id: string
+        }
+        Update: {
+          activity_id?: string | null
+          answers?: Json
+          assigned_to?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          locked_at?: string | null
+          locked_by?: string | null
+          project_id?: string | null
+          status?: string
+          template_id?: string
+          unlock_reason?: string | null
+          updated_at?: string
+          version_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_instances_activity_id_fkey"
+            columns: ["activity_id"]
+            isOneToOne: false
+            referencedRelation: "job_tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_instances_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_instances_project_id_fkey"
+            columns: ["project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_instances_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "form_templates"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_instances_version_id_fkey"
+            columns: ["version_id"]
+            isOneToOne: false
+            referencedRelation: "form_template_versions"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      form_pdf_imports: {
+        Row: {
+          confidence: number | null
+          created_at: string
+          created_by: string
+          id: string
+          parsed_json: Json
+          source_document_id: string | null
+          status: string
+          template_id: string | null
+        }
+        Insert: {
+          confidence?: number | null
+          created_at?: string
+          created_by: string
+          id?: string
+          parsed_json?: Json
+          source_document_id?: string | null
+          status?: string
+          template_id?: string | null
+        }
+        Update: {
+          confidence?: number | null
+          created_at?: string
+          created_by?: string
+          id?: string
+          parsed_json?: Json
+          source_document_id?: string | null
+          status?: string
+          template_id?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_pdf_imports_source_document_id_fkey"
+            columns: ["source_document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_pdf_imports_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "form_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      form_signatures: {
+        Row: {
+          id: string
+          instance_id: string
+          ip_address: string | null
+          signature_data: string
+          signed_at: string
+          signer_name: string
+          signer_role: string | null
+        }
+        Insert: {
+          id?: string
+          instance_id: string
+          ip_address?: string | null
+          signature_data: string
+          signed_at?: string
+          signer_name: string
+          signer_role?: string | null
+        }
+        Update: {
+          id?: string
+          instance_id?: string
+          ip_address?: string | null
+          signature_data?: string
+          signed_at?: string
+          signer_name?: string
+          signer_role?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_signatures_instance_id_fkey"
+            columns: ["instance_id"]
+            isOneToOne: false
+            referencedRelation: "form_instances"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      form_template_versions: {
+        Row: {
+          created_at: string
+          created_by: string
+          fields: Json
+          id: string
+          rules: Json
+          template_id: string
+          version_number: number
+        }
+        Insert: {
+          created_at?: string
+          created_by: string
+          fields?: Json
+          id?: string
+          rules?: Json
+          template_id: string
+          version_number?: number
+        }
+        Update: {
+          created_at?: string
+          created_by?: string
+          fields?: Json
+          id?: string
+          rules?: Json
+          template_id?: string
+          version_number?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_template_versions_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "form_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      form_templates: {
+        Row: {
+          active_version_id: string | null
+          category: string | null
+          company_id: string | null
+          created_at: string
+          created_by: string
+          deleted_at: string | null
+          description: string | null
+          id: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          active_version_id?: string | null
+          category?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          active_version_id?: string | null
+          category?: string | null
+          company_id?: string | null
+          created_at?: string
+          created_by?: string
+          deleted_at?: string | null
+          description?: string | null
+          id?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "form_templates_active_version_fkey"
+            columns: ["active_version_id"]
+            isOneToOne: false
+            referencedRelation: "form_template_versions"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "form_templates_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       inbox_messages: {
         Row: {
           ai_category: string | null

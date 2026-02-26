@@ -56,6 +56,7 @@ import {
   Mail,
   Send,
   FileSignature,
+  ClipboardList,
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
@@ -73,6 +74,7 @@ import {
 import type { OutlookSyncStatus } from "@/lib/mock-data";
 import { useIsMobile } from "@/hooks/use-mobile";
 import { MobileActionBar } from "@/components/MobileActionBar";
+import { ProjectFormsTab } from "@/components/forms/ProjectFormsTab";
 
 /* ─── Sync Status Badge (small pill) ─── */
 const SYNC_STATUS_MAP: Record<string, { label: string; variant: "ok" | "warn" | "error" | "muted" }> = {
@@ -739,6 +741,10 @@ export default function JobDetail() {
                   <FileSignature className="h-4 w-4" />
                   Tillegg
                 </TabsTrigger>
+                <TabsTrigger value="skjemaer" className="text-sm font-medium px-4 py-2.5 rounded-xl data-[state=active]:bg-primary data-[state=active]:text-primary-foreground data-[state=active]:shadow-sm gap-2">
+                  <ClipboardList className="h-4 w-4" />
+                  Skjemaer
+                </TabsTrigger>
               </TabsList>
             </div>
 
@@ -991,6 +997,13 @@ export default function JobDetail() {
                   currency={econData.currency}
                   onTotalsChange={(approved, pending) => { setCoApproved(approved); setCoPending(pending); }}
                 />
+              </SectionCard>
+            </TabsContent>
+
+            {/* ── SKJEMAER ── */}
+            <TabsContent value="skjemaer" className="mt-6 min-h-[400px]">
+              <SectionCard>
+                <ProjectFormsTab projectId={id!} isAdmin={isAdmin} />
               </SectionCard>
             </TabsContent>
           </Tabs>

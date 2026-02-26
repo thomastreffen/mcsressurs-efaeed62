@@ -59,6 +59,8 @@ import CustomerDetailPage from "./pages/CustomerDetailPage";
 import CustomerImportPage from "./pages/CustomerImportPage";
 import ProjectNewPage from "./pages/ProjectNewPage";
 import InboxPage from "./pages/InboxPage";
+import FormBuilderPage from "./pages/FormBuilderPage";
+import FormFillPage from "./pages/FormFillPage";
 import { CompanyProvider } from "@/hooks/useCompanyContext";
 
 const queryClient = new QueryClient();
@@ -109,6 +111,15 @@ const App = () => (
               <Route path="/sales/dashboard" element={<Navigate to="/sales" replace />} />
               <Route path="/notifications" element={<NotificationsPage />} />
               <Route path="/fag" element={<RegulationPage />} />
+              <Route path="/forms/:id" element={<FormFillPage />} />
+              <Route
+                path="/admin/forms"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <FormBuilderPage />
+                  </ProtectedRoute>
+                }
+              />
 
               {/* Sales module - admin only */}
               <Route
