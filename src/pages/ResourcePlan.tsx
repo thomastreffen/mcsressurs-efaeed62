@@ -73,11 +73,19 @@ export default function ResourcePlan() {
 
   const selectedTech = selectedTechId ? technicians.find((t) => t.id === selectedTechId) : null;
 
+  const [colorOverrides, setColorOverrides] = useState<Map<string, string>>(new Map());
+
   const technicianMap = useMemo(() => {
     const map = new Map<string, { name: string; color: string | null }>();
-    for (const t of technicians) map.set(t.id, { name: t.name, color: t.color || null });
+    for (const t of technicians) {
+      map.set(t.id, { name: t.name, color: colorOverrides.get(t.id) || t.color || null });
+    }
     return map;
-  }, [technicians]);
+  }, [technicians, colorOverrides]);
+
+  const handleTechColorChange = useCallback((techId: string, color: string) => {
+    setColorOverrides((prev) => new Map(prev).set(techId, color));
+  }, []);
 
   const techIds = useMemo(
     () => selectedTechId ? [selectedTechId] : technicians.map((t) => t.id),
@@ -219,6 +227,7 @@ export default function ResourcePlan() {
             allowDeselect
             filterIds={filteredTechForSidebar}
             nowStatusMap={nowStatusMap}
+            onColorChange={handleTechColorChange}
           />
         </aside>
       )}
