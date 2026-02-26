@@ -474,6 +474,99 @@ export default function FormFillPage() {
                   {field.required && <span className="text-destructive ml-1">*</span>}
                 </label>
 
+                {/* Smart/auto fields */}
+                {field.type.startsWith("smart_") && (
+                  <div className="rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-primary">
+                    ⚡ {field.type === "smart_project_name" && "Prosjektnavn (auto)"}
+                    {field.type === "smart_customer_name" && "Kundenavn (auto)"}
+                    {field.type === "smart_project_number" && "Prosjektnummer (auto)"}
+                    {field.type === "smart_address" && "Prosjektadresse (auto)"}
+                    {field.type === "smart_date" && new Date().toLocaleDateString("nb-NO")}
+                  </div>
+                )}
+
+                {field.type === "email" && (
+                  <Input
+                    type="email"
+                    value={value || ""}
+                    onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                    disabled={isLocked}
+                    className="rounded-xl h-9"
+                    placeholder={field.placeholder || "navn@eksempel.no"}
+                  />
+                )}
+
+                {field.type === "phone" && (
+                  <Input
+                    type="tel"
+                    value={value || ""}
+                    onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                    disabled={isLocked}
+                    className="rounded-xl h-9"
+                    placeholder={field.placeholder || "+47 000 00 000"}
+                  />
+                )}
+
+                {field.type === "time" && (
+                  <Input
+                    type="time"
+                    value={value || ""}
+                    onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                    disabled={isLocked}
+                    className="rounded-xl h-9"
+                  />
+                )}
+
+                {field.type === "address" && (
+                  <Textarea
+                    value={value || ""}
+                    onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                    disabled={isLocked}
+                    className="rounded-xl"
+                    rows={2}
+                    placeholder={field.placeholder || "Gateadresse, postnr., sted"}
+                  />
+                )}
+
+                {field.type === "dropdown" && (
+                  <select
+                    value={value || ""}
+                    onChange={(e) => handleAnswerChange(field.id, e.target.value)}
+                    disabled={isLocked}
+                    className="w-full rounded-xl border border-input bg-background px-3 py-2 text-sm"
+                  >
+                    <option value="">Velg...</option>
+                    {(field.options || []).map((opt, i) => (
+                      <option key={i} value={opt}>{opt}</option>
+                    ))}
+                  </select>
+                )}
+
+                {field.type === "radio" && (
+                  <div className="space-y-1.5">
+                    {(field.options || []).map((opt, i) => (
+                      <label key={i} className="flex items-center gap-2 text-sm cursor-pointer">
+                        <input
+                          type="radio"
+                          name={field.id}
+                          value={opt}
+                          checked={value === opt}
+                          onChange={() => handleAnswerChange(field.id, opt)}
+                          disabled={isLocked}
+                          className="accent-primary"
+                        />
+                        {opt}
+                      </label>
+                    ))}
+                  </div>
+                )}
+
+                {field.type === "file_upload" && (
+                  <div className="rounded-lg border-2 border-dashed border-border bg-muted/10 p-4 text-center">
+                    <p className="text-xs text-muted-foreground">📎 Filopplasting (kommer snart)</p>
+                  </div>
+                )}
+
                 {field.type === "checkbox_yes_no" && (
                   <div className="flex gap-2">
                     {[
