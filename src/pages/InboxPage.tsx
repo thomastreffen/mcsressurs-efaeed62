@@ -38,8 +38,11 @@ import {
   Timer,
   ReceiptText,
   Hammer,
+  ArrowRightLeft,
 } from "lucide-react";
 import { PlanJobDialog } from "@/components/PlanJobDialog";
+import { CaseAssignmentBanner } from "@/components/cases/CaseAssignmentBanner";
+import { CaseOfferConversionDrawer } from "@/components/cases/CaseOfferConversionDrawer";
 import { format, formatDistanceToNow, isPast, differenceInHours } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -67,6 +70,8 @@ type Case = {
   due_at: string | null;
   next_action: CaseNextAction;
   owner_user_id: string | null;
+  assigned_to_user_id: string | null;
+  assigned_at: string | null;
   participant_user_ids: string[];
   scope: CaseScope;
   mailbox_address: string | null;
@@ -76,6 +81,9 @@ type Case = {
   project_id: string | null;
   offer_id: string | null;
   work_order_id: string | null;
+  service_job_id: string | null;
+  archived_at: string | null;
+  archived_by: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -223,10 +231,20 @@ export default function InboxPage() {
     if (!participants.includes(user.id)) participants.push(user.id);
     await supabase.from("cases").update({
       owner_user_id: user.id,
+      assigned_to_user_id: user.id,
+      assigned_at: new Date().toISOString(),
       participant_user_ids: participants,
       status: "assigned",
     } as any).eq("id", c.id);
-    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: user.id, participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
+    // Audit log
+    const myName = companyUsers.find(u => u.id === user.id)?.name || "Ukjent";
+    await supabase.from("case_items").insert({
+      case_id: c.id, company_id: c.company_id, type: "system",
+      subject: "Tildelt",
+      body_preview: `${myName} tildelte seg denne henvendelsen`,
+      created_by: user.id,
+    } as any);
+    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: user.id, assigned_to_user_id: user.id, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
     toast.success("Tildelt deg");
   };
 
@@ -235,17 +253,88 @@ export default function InboxPage() {
     if (!participants.includes(targetUserId)) participants.push(targetUserId);
     await supabase.from("cases").update({
       owner_user_id: targetUserId,
+      assigned_to_user_id: targetUserId,
+      assigned_at: new Date().toISOString(),
       participant_user_ids: participants,
       status: "assigned",
     } as any).eq("id", c.id);
     const name = companyUsers.find((u) => u.id === targetUserId)?.name || "bruker";
-    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: targetUserId, participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
+    // Audit log
+    await supabase.from("case_items").insert({
+      case_id: c.id, company_id: c.company_id, type: "system",
+      subject: "Tildelt",
+      body_preview: `Henvendelsen ble tildelt ${name}`,
+      created_by: user?.id,
+    } as any);
+    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: targetUserId, assigned_to_user_id: targetUserId, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
     toast.success(`Tildelt ${name}`);
     setAssigningTo(null);
   };
 
+  const unassignCase = async (c: Case) => {
+    if (!user) return;
+    const prevName = companyUsers.find(u => u.id === c.assigned_to_user_id)?.name || "Ukjent";
+    await supabase.from("cases").update({
+      assigned_to_user_id: null,
+      assigned_at: null,
+    } as any).eq("id", c.id);
+    await supabase.from("case_items").insert({
+      case_id: c.id, company_id: c.company_id, type: "system",
+      subject: "Frigjort",
+      body_preview: `${prevName} ble fjernet som tildelt`,
+      created_by: user.id,
+    } as any);
+    setCases((prev) => prev.map(x => x.id === c.id ? { ...x, assigned_to_user_id: null, assigned_at: null } : x));
+    toast.success("Henvendelse frigjort");
+  };
+
+  const archiveCase = async (c: Case) => {
+    if (!user) return;
+    await supabase.from("cases").update({
+      status: "archived",
+      archived_at: new Date().toISOString(),
+      archived_by: user.id,
+    } as any).eq("id", c.id);
+    await supabase.from("case_items").insert({
+      case_id: c.id, company_id: c.company_id, type: "system",
+      subject: "Arkivert",
+      body_preview: "Henvendelsen ble arkivert",
+      created_by: user.id,
+    } as any);
+    setCases(prev => prev.filter(x => x.id !== c.id));
+    setSelectedId(null);
+    toast.success("Henvendelse arkivert");
+  };
+
   const updateCaseField = async (c: Case, updates: Partial<Case>) => {
     await supabase.from("cases").update(updates as any).eq("id", c.id);
+    // Audit trail: log each changed field
+    if (user) {
+      const fieldLabels: Record<string, string> = {
+        status: "Status", priority: "Prioritet", next_action: "Neste steg", due_at: "Frist", scope: "Omfang",
+      };
+      const statusLabels: Record<string, string> = { ...CASE_STATUS_LABELS };
+      const priorityLabels: Record<string, string> = { ...CASE_PRIORITY_LABELS };
+      const nextActionLabels: Record<string, string> = { ...CASE_NEXT_ACTION_LABELS };
+      const allLabels: Record<string, Record<string, string>> = {
+        status: statusLabels, priority: priorityLabels, next_action: nextActionLabels,
+      };
+
+      for (const [key, val] of Object.entries(updates)) {
+        if (fieldLabels[key]) {
+          const oldVal = (c as any)[key];
+          const labelMap = allLabels[key];
+          const oldLabel = labelMap ? (labelMap[oldVal] || oldVal) : oldVal;
+          const newLabel = labelMap ? (labelMap[val as string] || val) : val;
+          await supabase.from("case_items").insert({
+            case_id: c.id, company_id: c.company_id, type: "system",
+            subject: `${fieldLabels[key]} endret`,
+            body_preview: `${fieldLabels[key]}: ${oldLabel || "(tom)"} → ${newLabel || "(tom)"}`,
+            created_by: user.id,
+          } as any);
+        }
+      }
+    }
     setCases((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...updates } : x)));
   };
 
@@ -502,10 +591,12 @@ export default function InboxPage() {
               items={selectedItems}
               onAssignToMe={() => assignToMe(selectedCase)}
               onAssignToUser={(uid) => assignToUser(selectedCase, uid)}
+              onUnassign={() => unassignCase(selectedCase)}
               onUpdateField={(updates) => updateCaseField(selectedCase, updates)}
               onConvertProject={() => convertToProject(selectedCase)}
               onConvertLead={() => convertToLead(selectedCase)}
-              onCaseUpdated={() => fetchCases()}
+              onArchive={() => archiveCase(selectedCase)}
+              onCaseUpdated={() => { fetchCases(); fetchItems(selectedCase.id); }}
               companyUsers={companyUsers}
               currentUserId={user?.id || ""}
               isAdmin={isAdmin}
@@ -553,9 +644,11 @@ function CaseDetail({
   items,
   onAssignToMe,
   onAssignToUser,
+  onUnassign,
   onUpdateField,
   onConvertProject,
   onConvertLead,
+  onArchive,
   onCaseUpdated,
   companyUsers,
   currentUserId,
@@ -566,9 +659,11 @@ function CaseDetail({
   items: CaseItem[];
   onAssignToMe: () => void;
   onAssignToUser: (uid: string) => void;
+  onUnassign: () => void;
   onUpdateField: (updates: Partial<Case>) => void;
   onConvertProject: () => void;
   onConvertLead: () => void;
+  onArchive: () => void;
   onCaseUpdated: () => void;
   companyUsers: { id: string; name: string }[];
   currentUserId: string;
@@ -578,6 +673,7 @@ function CaseDetail({
   const navigate = useNavigate();
   const [showAssignPicker, setShowAssignPicker] = useState(false);
   const [planJobOpen, setPlanJobOpen] = useState(false);
+  const [offerDrawerOpen, setOfferDrawerOpen] = useState(false);
 
   return (
     <ScrollArea className="flex-1">
@@ -615,6 +711,16 @@ function CaseDetail({
               ))}
             </div>
           </Card>
+        )}
+
+        {/* Assignment banner */}
+        {caseData.assigned_to_user_id && caseData.assigned_at && (
+          <CaseAssignmentBanner
+            assignedName={ownerName(caseData.assigned_to_user_id) || "Ukjent"}
+            assignedAt={caseData.assigned_at}
+            isCurrentUser={caseData.assigned_to_user_id === currentUserId}
+            onUnassign={caseData.assigned_to_user_id === currentUserId || isAdmin ? onUnassign : undefined}
+          />
         )}
 
         {/* Title & meta */}
@@ -734,9 +840,13 @@ function CaseDetail({
                 <FolderKanban className="h-4 w-4" />
                 Opprett prosjekt
               </Button>
-              <Button size="sm" variant="outline" className="gap-1.5" disabled>
+              <Button size="sm" variant="outline" onClick={() => setOfferDrawerOpen(true)} className="gap-1.5">
                 <ReceiptText className="h-4 w-4" />
                 Opprett tilbud
+              </Button>
+              <Button size="sm" variant="ghost" onClick={onArchive} className="gap-1.5 text-muted-foreground">
+                <Lock className="h-4 w-4" />
+                Arkiver
               </Button>
             </div>
           </Card>
@@ -752,6 +862,17 @@ function CaseDetail({
           onPlanned={(projectId, workOrderId) => {
             onCaseUpdated();
           }}
+        />
+
+        <CaseOfferConversionDrawer
+          open={offerDrawerOpen}
+          onOpenChange={setOfferDrawerOpen}
+          caseId={caseData.id}
+          caseTitle={caseData.title}
+          companyId={caseData.company_id}
+          items={items}
+          currentUserId={currentUserId}
+          onConverted={() => onCaseUpdated()}
         />
 
         {/* Timeline */}
@@ -770,6 +891,8 @@ function CaseDetail({
                     <div className="mt-0.5">
                       {item.type === "email" ? (
                         <Mail className="h-4 w-4 text-primary" />
+                      ) : item.type === "system" ? (
+                        <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
                       ) : item.type === "note" ? (
                         <FileText className="h-4 w-4 text-muted-foreground" />
                       ) : (
