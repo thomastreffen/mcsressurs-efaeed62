@@ -381,8 +381,8 @@ export default function CalculationDetail() {
       const path = `${calc.id}/${Date.now()}-${file.name}`;
       const { error } = await supabase.storage.from("calculation-attachments").upload(path, file);
       if (error) { toast.error(`Feil: ${file.name}`); continue; }
-      const { data: urlData } = supabase.storage.from("calculation-attachments").getPublicUrl(path);
-      newAtts.push({ name: file.name, url: urlData.publicUrl, size: file.size });
+      const { data: signedData } = await supabase.storage.from("calculation-attachments").createSignedUrl(path, 3600);
+      newAtts.push({ name: file.name, url: signedData?.signedUrl || "", path, size: file.size });
     }
     const all = [...existing, ...newAtts];
     await supabase.from("calculations").update({ attachments: all }).eq("id", calc.id);
@@ -935,7 +935,17 @@ export default function CalculationDetail() {
               {attachments.map((att: any, i: number) => (
                 <div key={i} className="flex items-center gap-2 rounded-lg bg-secondary px-2.5 py-1.5 text-sm">
                   {/\.(jpg|jpeg|png|gif|webp|svg)$/i.test(att.name) ? <ImageIcon className="h-3.5 w-3.5 text-muted-foreground shrink-0" /> : <FileText className="h-3.5 w-3.5 text-muted-foreground shrink-0" />}
-                  <a href={att.url} target="_blank" rel="noopener noreferrer" className="truncate flex-1 hover:underline">{att.name}</a>
+                  <button
+                    className="truncate flex-1 hover:underline text-left"
+                    onClick={async () => {
+                      if (att.path) {
+                        const { data } = await supabase.storage.from("calculation-attachments").createSignedUrl(att.path, 3600);
+                        if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                      } else if (att.url) {
+                        window.open(att.url, "_blank");
+                      }
+                    }}
+                  >{att.name}</button>
                   {isAdmin && (
                     <button onClick={() => removeAttachment(att.url)} className="text-muted-foreground hover:text-destructive"><X className="h-3.5 w-3.5" /></button>
                   )}
