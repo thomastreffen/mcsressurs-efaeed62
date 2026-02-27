@@ -1583,6 +1583,125 @@ export type Database = {
           },
         ]
       }
+      fag_answers: {
+        Row: {
+          answer_markdown: string
+          company_id: string
+          created_at: string
+          created_by: string
+          fag_request_id: string
+          id: string
+          model: string | null
+          tokens_in: number | null
+          tokens_out: number | null
+        }
+        Insert: {
+          answer_markdown: string
+          company_id: string
+          created_at?: string
+          created_by?: string
+          fag_request_id: string
+          id?: string
+          model?: string | null
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Update: {
+          answer_markdown?: string
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          fag_request_id?: string
+          id?: string
+          model?: string | null
+          tokens_in?: number | null
+          tokens_out?: number | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fag_answers_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fag_answers_fag_request_id_fkey"
+            columns: ["fag_request_id"]
+            isOneToOne: false
+            referencedRelation: "fag_requests"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fag_requests: {
+        Row: {
+          ai_confidence: number | null
+          ai_followup_questions: string[]
+          ai_summary: string | null
+          company_id: string
+          created_at: string
+          created_by_user_id: string
+          id: string
+          image_paths: string[]
+          last_activity_at: string
+          linked_case_id: string | null
+          linked_offer_id: string | null
+          linked_project_id: string | null
+          priority: Database["public"]["Enums"]["fag_priority"]
+          question: string
+          regime: Database["public"]["Enums"]["fag_regime"]
+          status: Database["public"]["Enums"]["fag_status"]
+          updated_at: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_followup_questions?: string[]
+          ai_summary?: string | null
+          company_id: string
+          created_at?: string
+          created_by_user_id: string
+          id?: string
+          image_paths?: string[]
+          last_activity_at?: string
+          linked_case_id?: string | null
+          linked_offer_id?: string | null
+          linked_project_id?: string | null
+          priority?: Database["public"]["Enums"]["fag_priority"]
+          question: string
+          regime: Database["public"]["Enums"]["fag_regime"]
+          status?: Database["public"]["Enums"]["fag_status"]
+          updated_at?: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_followup_questions?: string[]
+          ai_summary?: string | null
+          company_id?: string
+          created_at?: string
+          created_by_user_id?: string
+          id?: string
+          image_paths?: string[]
+          last_activity_at?: string
+          linked_case_id?: string | null
+          linked_offer_id?: string | null
+          linked_project_id?: string | null
+          priority?: Database["public"]["Enums"]["fag_priority"]
+          question?: string
+          regime?: Database["public"]["Enums"]["fag_regime"]
+          status?: Database["public"]["Enums"]["fag_status"]
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fag_requests_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       form_instances: {
         Row: {
           activity_id: string | null
@@ -3752,6 +3871,9 @@ export type Database = {
         | "archived"
         | "in_progress"
       event_status: "pending" | "accepted" | "declined" | "change_request"
+      fag_priority: "normal" | "viktig"
+      fag_regime: "nek" | "fel" | "fse" | "fsl" | "annet"
+      fag_status: "new" | "analyzing" | "answered" | "needs_followup" | "error"
       job_status:
         | "requested"
         | "approved"
@@ -3958,6 +4080,9 @@ export const Constants = {
         "in_progress",
       ],
       event_status: ["pending", "accepted", "declined", "change_request"],
+      fag_priority: ["normal", "viktig"],
+      fag_regime: ["nek", "fel", "fse", "fsl", "annet"],
+      fag_status: ["new", "analyzing", "answered", "needs_followup", "error"],
       job_status: [
         "requested",
         "approved",
