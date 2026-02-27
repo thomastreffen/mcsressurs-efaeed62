@@ -365,6 +365,29 @@ async function logSuggestedLink(admin: any, caseId: string, companyId: string, m
   });
 }
 
+/** Check if a case has an existing manual link for a given field (set via LinkToExistingDialog or user action) */
+async function hasManualLink(admin: any, caseId: string, field: string): Promise<boolean> {
+  // A manual link is indicated by a system event from user action (not auto_link_success)
+  const { data } = await admin.from("case_items")
+    .select("id")
+    .eq("case_id", caseId)
+    .eq("type", "system")
+    .in("subject", ["Koblet til eksisterende", "Tildelt", "Konvertert til lead"])
+    .limit(1);
+  return (data && data.length > 0);
+}
+
+/** Log a suggested link when auto-link is blocked by existing manual link */
+async function logSuggestedAutoLink(admin: any, caseId: string, companyId: string, link: ResolvedLink) {
+  await admin.from("case_items").insert({
+    case_id: caseId,
+    company_id: companyId,
+    type: "system",
+    subject: "suggested_link",
+    body_preview: `Auto-kobling til ${link.displayRef} (${link.type}) blokkert – eksisterende manuell kobling bevart. Verifiser manuelt om ønskelig.`,
+  });
+}
+
 // ── Download & store email attachments ──
 async function downloadAndStoreAttachments(
   msToken: string,
@@ -633,20 +656,54 @@ Deno.serve(async (req) => {
           }
 
           if (caseId) {
-            // Update existing case
+            // Update existing case — protect manual links from being overwritten
             const updatePayload: any = {
               updated_at: new Date().toISOString(),
               last_activity_at: new Date().toISOString(),
             };
+
+            // Check if case already has a manual link for each field
+            const safeLinkedUpdates: Record<string, string> = {};
+            const blockedLinks: ResolvedLink[] = [];
+
             if (Object.keys(linkedUpdates).length > 0) {
-              Object.assign(updatePayload, linkedUpdates);
-              totalLinked++;
+              // Fetch current case to check existing links
+              const { data: currentCase } = await supabaseAdmin
+                .from("cases")
+                .select("linked_work_order_id, linked_project_id, linked_lead_id, linked_offer_id")
+                .eq("id", caseId)
+                .single();
+
+              for (const [field, id] of Object.entries(linkedUpdates)) {
+                const existingValue = currentCase?.[field as keyof typeof currentCase];
+                if (existingValue && existingValue !== id) {
+                  // Field already has a different link — check if it was manual
+                  const isManual = await hasManualLink(supabaseAdmin, caseId, field);
+                  if (isManual) {
+                    // Don't overwrite manual link, log suggestion instead
+                    const link = resolvedLinks.find(l => l.field === field);
+                    if (link) blockedLinks.push(link);
+                    console.log(`[inbox-sync] Blocked auto-link ${field}=${id} on case ${caseId} — manual link exists (${existingValue})`);
+                    continue;
+                  }
+                }
+                safeLinkedUpdates[field] = id;
+              }
+
+              if (Object.keys(safeLinkedUpdates).length > 0) {
+                Object.assign(updatePayload, safeLinkedUpdates);
+                totalLinked++;
+              }
             }
             await supabaseAdmin.from("cases").update(updatePayload).eq("id", caseId);
 
-            // Log successful auto-links
+            // Log successful auto-links (only the ones that were applied)
             for (const link of resolvedLinks) {
-              await logAutoLinkSuccess(supabaseAdmin, caseId, companyId, link);
+              if (blockedLinks.includes(link)) {
+                await logSuggestedAutoLink(supabaseAdmin, caseId, companyId, link);
+              } else if (safeLinkedUpdates[link.field]) {
+                await logAutoLinkSuccess(supabaseAdmin, caseId, companyId, link);
+              }
             }
             // Log failed matches
             for (const f of failedMatches) {
