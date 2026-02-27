@@ -391,7 +391,7 @@ export default function OverviewPage() {
     // ── POSTKONTORET KPI ──
     const now4h = subHours(now, 4);
     const now24h = subDays(now, 1);
-    const activeStatArr: ("new" | "triage" | "assigned" | "waiting_customer" | "waiting_internal")[] = ["new", "triage", "assigned", "waiting_customer", "waiting_internal"];
+    const activeStatArr = ["new", "triage", "in_progress", "waiting_customer", "waiting_internal"] as const;
 
     const [casesAllRes, myCasesRes] = await Promise.all([
       supabase.from("cases").select("id, priority, status, assigned_to_user_id, created_at, title, case_number, last_activity_at").is("archived_at", null).in("status", activeStatArr),
