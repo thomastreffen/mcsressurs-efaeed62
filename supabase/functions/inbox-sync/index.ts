@@ -57,20 +57,18 @@ async function fetchMailboxMessages(
     console.log(`[inbox-sync][DEBUG] Using deltaLink for ${mailboxAddress}`);
   } else if (isShared) {
     const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages/delta`;
-    url = `${inboxPath}?$top=50&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
+    url = `${inboxPath}?$top=50&$select=id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,hasAttachments,isDraft,conversationId,internetMessageId`;
     console.log(`[inbox-sync][DEBUG] Shared mailbox endpoint: /users/${mailboxAddress}/mailFolders/Inbox/messages/delta`);
   } else {
-    // Personal mailbox — use /users/{address} with app token, NOT /me
     const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages`;
     const filter = `receivedDateTime ge ${sinceDate}`;
-    url = `${inboxPath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
+    url = `${inboxPath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,hasAttachments,isDraft,conversationId,internetMessageId`;
     console.log(`[inbox-sync][DEBUG] Personal mailbox endpoint: /users/${mailboxAddress}/mailFolders/Inbox/messages`);
   }
 
   const allMessages: any[] = [];
   let newDeltaLink: string | null = null;
 
-  // Paginate through results
   let nextLink: string | null = url;
   while (nextLink) {
     const graphRes = await fetch(nextLink, {
@@ -85,7 +83,7 @@ async function fetchMailboxMessages(
 
     const graphData = await graphRes.json();
     const msgs = (graphData.value || []).filter((m: any) => !m.isDraft);
-    console.log(`[inbox-sync][DEBUG] Page returned ${msgs.length} messages (raw: ${(graphData.value || []).length}, after draft filter: ${msgs.length})`);
+    console.log(`[inbox-sync][DEBUG] Page returned ${msgs.length} messages`);
     if (msgs.length > 0) {
       console.log(`[inbox-sync][DEBUG] First subject: "${msgs[0].subject}"`);
     }
@@ -100,7 +98,7 @@ async function fetchMailboxMessages(
   return { messages: allMessages, newDeltaLink };
 }
 
-// AI classification heuristics for MCS tavle/skinne world
+// AI classification heuristics
 function classifyMessage(subject: string, bodyPreview: string): {
   category: string;
   urgency: string;
@@ -176,6 +174,107 @@ function applyRoutingRules(
   return result;
 }
 
+// ── Normalize subject: strip reply/forward prefixes ──
+function normalizeSubject(raw: string): string {
+  let s = raw.trim();
+  // Repeatedly strip re:/sv:/vs:/fw:/fwd: prefixes (case-insensitive)
+  while (/^(re|sv|vs|fw|fwd)\s*:\s*/i.test(s)) {
+    s = s.replace(/^(re|sv|vs|fw|fwd)\s*:\s*/i, "").trim();
+  }
+  return s;
+}
+
+// ── Strip HTML tags for plain text extraction ──
+function stripHtml(html: string): string {
+  return html.replace(/<[^>]*>/g, " ").replace(/\s+/g, " ").trim();
+}
+
+// ── ID matching engine ──
+interface IdMatch {
+  type: "case" | "job" | "offer" | "lead";
+  pattern: string;
+  rawMatch: string;
+  lookupValue: string; // The normalized value to search for in DB
+}
+
+function extractIds(text: string): IdMatch[] {
+  const matches: IdMatch[] = [];
+  const seen = new Set<string>();
+
+  // CASE: [CASE-000001] or CASE-000001
+  for (const m of text.matchAll(/[\[\(]?(CASE-(\d{6}))[\]\)]?/gi)) {
+    const key = `case:CASE-${m[2]}`;
+    if (!seen.has(key)) { seen.add(key); matches.push({ type: "case", pattern: "full_case", rawMatch: m[0], lookupValue: `CASE-${m[2]}` }); }
+  }
+
+  // JOB: JOB-000010
+  for (const m of text.matchAll(/\bJOB-(\d{6})\b/gi)) {
+    const key = `job:JOB-${m[1]}`;
+    if (!seen.has(key)) { seen.add(key); matches.push({ type: "job", pattern: "full_job", rawMatch: m[0], lookupValue: `JOB-${m[1]}` }); }
+  }
+
+  // OFFER: MCS-2026-0001 format
+  for (const m of text.matchAll(/\bMCS-(\d{4})-(\d{4})\b/gi)) {
+    const key = `offer:${m[0].toUpperCase()}`;
+    if (!seen.has(key)) { seen.add(key); matches.push({ type: "offer", pattern: "mcs_offer", rawMatch: m[0], lookupValue: m[0].toUpperCase() }); }
+  }
+
+  // LEAD: LEAD-2026-000001
+  for (const m of text.matchAll(/\bLEAD-(\d{4})-(\d{6})\b/gi)) {
+    const key = `lead:${m[0].toUpperCase()}`;
+    if (!seen.has(key)) { seen.add(key); matches.push({ type: "lead", pattern: "full_lead", rawMatch: m[0], lookupValue: m[0].toUpperCase() }); }
+  }
+
+  // Standalone 6-digit (only if no other matches found yet for dedup)
+  if (matches.length === 0) {
+    const sixMatch = text.match(/\b(\d{6})\b/);
+    if (sixMatch) {
+      matches.push({ type: "case", pattern: "6_digit", rawMatch: sixMatch[0], lookupValue: `CASE-${sixMatch[1]}` });
+    }
+  }
+
+  // Short prefix: #1, case 1, sak 1
+  if (matches.length === 0) {
+    const shortMatch = text.match(/(?:#|(?:case|sak)\s+)(\d{1,5})\b/i);
+    if (shortMatch) {
+      matches.push({ type: "case", pattern: "short_prefix", rawMatch: shortMatch[0], lookupValue: `CASE-${shortMatch[1].padStart(6, "0")}` });
+    }
+  }
+
+  return matches;
+}
+
+async function resolveIdMatch(
+  match: IdMatch,
+  companyId: string,
+  supabaseAdmin: any
+): Promise<{ linkedField: string; linkedId: string; objectLabel: string } | null> {
+  switch (match.type) {
+    case "case": {
+      const { data } = await supabaseAdmin
+        .from("cases").select("id").eq("case_number", match.lookupValue).eq("company_id", companyId).maybeSingle();
+      return data ? { linkedField: "case_id", linkedId: data.id, objectLabel: match.lookupValue } : null;
+    }
+    case "job": {
+      // Search by internal_number (JOB-XXXXXX) or job_number
+      const { data } = await supabaseAdmin
+        .from("events").select("id").or(`internal_number.eq.${match.lookupValue},job_number.eq.${match.lookupValue}`).eq("company_id", companyId).maybeSingle();
+      return data ? { linkedField: "linked_work_order_id", linkedId: data.id, objectLabel: match.lookupValue } : null;
+    }
+    case "offer": {
+      const { data } = await supabaseAdmin
+        .from("offers").select("id").eq("offer_number", match.lookupValue).maybeSingle();
+      return data ? { linkedField: "linked_offer_id", linkedId: data.id, objectLabel: match.lookupValue } : null;
+    }
+    case "lead": {
+      const { data } = await supabaseAdmin
+        .from("leads").select("id").eq("lead_ref_code", match.lookupValue).maybeSingle();
+      return data ? { linkedField: "linked_lead_id", linkedId: data.id, objectLabel: match.lookupValue } : null;
+    }
+  }
+  return null;
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { headers: corsHeaders });
@@ -210,14 +309,12 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    // Acquire APPLICATION token (client_credentials) — not the user's delegated token
     const msToken = await getAppToken();
     if (!msToken) {
       return respond({ error: "Kunne ikke hente applikasjonstoken for Microsoft Graph. Sjekk Azure-konfigurasjon." }, 500);
     }
-    console.log("[inbox-sync] Auth mode: APPLICATION (client_credentials). User validated via Supabase JWT only.");
+    console.log("[inbox-sync] Auth mode: APPLICATION (client_credentials).");
 
-    // Fetch enabled mailboxes
     const { data: mailboxes } = await supabaseAdmin
       .from("mailboxes")
       .select("address, display_name, graph_delta_link, id")
@@ -225,7 +322,6 @@ Deno.serve(async (req) => {
 
     const enabledMailboxes = mailboxes || [];
 
-    // Fetch routing rules
     const { data: routingRules } = await supabaseAdmin
       .from("case_routing_rules")
       .select("*")
@@ -233,7 +329,6 @@ Deno.serve(async (req) => {
 
     const rules = routingRules || [];
 
-    // Get first active company for tenant
     const { data: companies } = await supabaseAdmin
       .from("internal_companies")
       .select("id")
@@ -244,7 +339,6 @@ Deno.serve(async (req) => {
       return respond({ error: "No active company found" }, 400);
     }
 
-    // Fetch superoffice_settings for defaults
     const { data: soSettings } = await supabaseAdmin
       .from("superoffice_settings")
       .select("*")
@@ -258,14 +352,13 @@ Deno.serve(async (req) => {
     const autoAssignEnabled = soSettings?.auto_assign_enabled || false;
     const autoAssignSalesUserId = soSettings?.auto_assign_sales_user_id || null;
     const autoAssignServiceUserId = soSettings?.auto_assign_service_user_id || null;
-    const catchallEnabled = soSettings?.catchall_enabled || false;
-    const catchallAddress = soSettings?.catchall_mailbox_address || null;
 
     const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let totalFetched = 0;
     let totalNewCases = 0;
     let totalNewItems = 0;
     let totalSkipped = 0;
+    let totalLinked = 0;
 
     for (const mb of enabledMailboxes) {
       console.log(`[inbox-sync] Fetching from: ${mb.address}`);
@@ -279,7 +372,6 @@ Deno.serve(async (req) => {
       totalFetched += messages.length;
       mbCount = messages.length;
 
-      // Save delta link
       if (newDeltaLink) {
         await supabaseAdmin
           .from("mailboxes")
@@ -288,7 +380,6 @@ Deno.serve(async (req) => {
       }
 
       for (const msg of messages) {
-        // Check if case_item already exists (dedup via external_id)
         const { data: existingItem } = await supabaseAdmin
           .from("case_items")
           .select("id, case_id")
@@ -301,60 +392,53 @@ Deno.serve(async (req) => {
         }
 
         const threadId = msg.conversationId || msg.id;
-        const subject = msg.subject || "(Ingen emne)";
+        const originalSubject = msg.subject || "(Ingen emne)";
+        const normalizedSubject = normalizeSubject(originalSubject);
         const fromEmail = msg.from?.emailAddress?.address || "";
         const fromName = msg.from?.emailAddress?.name || "";
         const bodyPreview = (msg.bodyPreview || "").substring(0, 500);
         const bodyHtml = msg.body?.content || null;
+        const bodyText = bodyHtml ? stripHtml(bodyHtml).substring(0, 5000) : bodyPreview;
+        const sentAt = msg.sentDateTime || msg.receivedDateTime || null;
+        const internetMessageId = msg.internetMessageId || null;
+        const conversationId = msg.conversationId || null;
 
-        // Find existing case by subject pattern, then thread_id
+        // Extract to/cc recipients
+        const toRecipients = (msg.toRecipients || []).map((r: any) => r.emailAddress?.address).filter(Boolean);
+        const ccRecipients = (msg.ccRecipients || []).map((r: any) => r.emailAddress?.address).filter(Boolean);
+
+        // ── Build matchText from normalized subject + body ──
+        const matchText = normalizedSubject + "\n" + bodyText;
+
+        // ── Extract IDs from matchText ──
+        const idMatches = extractIds(matchText);
         let caseId: string | null = null;
-        let subjectMatchPattern: string | null = null;
+        let linkedUpdates: Record<string, string> = {};
+        let matchLog: string | null = null;
 
-        // --- Priority 1: Full case number (case-insensitive, flexible brackets) ---
-        const fullMatch = subject.match(/[\[\(]?(CASE-(\d{6}))[\]\)]?/i);
-        if (fullMatch) {
-          const caseNumber = `CASE-${fullMatch[2]}`;
-          const { data: matchedCase } = await supabaseAdmin
-            .from("cases").select("id").eq("case_number", caseNumber).eq("company_id", companyId).maybeSingle();
-          if (matchedCase) {
-            caseId = matchedCase.id;
-            subjectMatchPattern = `full: ${fullMatch[0]}`;
-            console.log(`[inbox-sync] Matched to ${caseNumber} via full pattern`);
-          }
-        }
-
-        // --- Priority 2: Standalone 6-digit number ---
-        if (!caseId) {
-          const sixDigitMatch = subject.match(/\b(\d{6})\b/);
-          if (sixDigitMatch) {
-            const caseNumber = `CASE-${sixDigitMatch[1]}`;
-            const { data: matchedCase } = await supabaseAdmin
-              .from("cases").select("id").eq("case_number", caseNumber).eq("company_id", companyId).maybeSingle();
-            if (matchedCase) {
-              caseId = matchedCase.id;
-              subjectMatchPattern = `6-digit: ${sixDigitMatch[0]}`;
-              console.log(`[inbox-sync] Matched to ${caseNumber} via 6-digit number`);
+        // Try to resolve each ID match
+        for (const idm of idMatches) {
+          const resolved = await resolveIdMatch(idm, companyId, supabaseAdmin);
+          if (resolved) {
+            if (idm.type === "case") {
+              // Direct case match — attach to that case
+              caseId = resolved.linkedId;
+              matchLog = `Matchet ${resolved.objectLabel} via ${idm.pattern} i ${idm.rawMatch}`;
+              console.log(`[inbox-sync] ${matchLog}`);
+              break;
+            } else {
+              // JOB/OFFER/LEAD — link to case
+              linkedUpdates[resolved.linkedField] = resolved.linkedId;
+              matchLog = `Matchet ${resolved.objectLabel} (${idm.type}) via ${idm.pattern} — koblet til ${resolved.linkedField}`;
+              console.log(`[inbox-sync] ${matchLog}`);
             }
+          } else {
+            // ID found but object doesn't exist
+            console.warn(`[inbox-sync] ID funnet men objekt ikke funnet: ${idm.lookupValue} (${idm.type})`);
           }
         }
 
-        // --- Priority 3: Short numeric with prefix token (#1, case 1, sak 1) ---
-        if (!caseId) {
-          const shortMatch = subject.match(/(?:#|(?:case|sak)\s+)(\d{1,5})\b/i);
-          if (shortMatch) {
-            const caseNumber = `CASE-${shortMatch[1].padStart(6, "0")}`;
-            const { data: matchedCase } = await supabaseAdmin
-              .from("cases").select("id").eq("case_number", caseNumber).eq("company_id", companyId).maybeSingle();
-            if (matchedCase) {
-              caseId = matchedCase.id;
-              subjectMatchPattern = `short: ${shortMatch[0]}`;
-              console.log(`[inbox-sync] Matched to ${caseNumber} via short prefix`);
-            }
-          }
-        }
-
-        // 2) Fallback: match by conversationId/thread_id
+        // If we have linked updates (JOB/OFFER/LEAD) but no case yet, find by conversationId or create new
         if (!caseId) {
           const { data: existingCase } = await supabaseAdmin
             .from("cases")
@@ -368,31 +452,33 @@ Deno.serve(async (req) => {
         }
 
         if (caseId) {
-          // Update case updated_at and last_activity_at
-          await supabaseAdmin
-            .from("cases")
-            .update({
-              updated_at: new Date().toISOString(),
-              last_activity_at: new Date().toISOString(),
-            })
-            .eq("id", caseId);
+          // Update existing case
+          const updatePayload: any = {
+            updated_at: new Date().toISOString(),
+            last_activity_at: new Date().toISOString(),
+          };
+          // Apply linked entity updates
+          if (Object.keys(linkedUpdates).length > 0) {
+            Object.assign(updatePayload, linkedUpdates);
+            totalLinked++;
+          }
+          await supabaseAdmin.from("cases").update(updatePayload).eq("id", caseId);
 
-          // Log system timeline item if matched via subject pattern
-          if (subjectMatchPattern) {
+          // Log system item for match
+          if (matchLog) {
             await supabaseAdmin.from("case_items").insert({
               case_id: caseId,
               company_id: companyId,
               type: "system",
-              subject: "E-post knyttet til sak via emne",
-              body_preview: `Match: ${subjectMatchPattern} — "${subject}"`,
+              subject: "Automatisk kobling",
+              body_preview: matchLog,
             });
           }
         } else {
           // Create new case
-          const ai = autoTriageEnabled ? classifyMessage(subject, bodyPreview) : { category: "general", urgency: "normal", recommended_next_action: "none" };
-          const routing = applyRoutingRules(rules, subject, bodyPreview, fromEmail, mb.address);
+          const ai = autoTriageEnabled ? classifyMessage(originalSubject, bodyPreview) : { category: "general", urgency: "normal", recommended_next_action: "none" };
+          const routing = applyRoutingRules(rules, originalSubject, bodyPreview, fromEmail, mb.address);
 
-          // Determine auto-assign owner
           let autoOwner = routing.owner_user_id || null;
           if (!autoOwner && autoAssignEnabled) {
             if (["quote_request", "order"].includes(ai.category) && autoAssignSalesUserId) {
@@ -402,16 +488,20 @@ Deno.serve(async (req) => {
             }
           }
 
-          const newCase = {
+          // If we have linked updates, set status to triage
+          const hasLinks = Object.keys(linkedUpdates).length > 0;
+
+          const newCase: any = {
             company_id: companyId,
-            title: subject,
-            status: routing.status || (autoTriageEnabled && ai.urgency !== "normal" ? "triage" : defaultStatus),
+            title: originalSubject,
+            status: routing.status || (hasLinks ? "triage" : (autoTriageEnabled && ai.urgency !== "normal" ? "triage" : defaultStatus)),
             priority: routing.priority || (autoTriageEnabled ? (ai.urgency === "critical" ? "critical" : ai.urgency === "high" ? "high" : defaultPriority) : defaultPriority),
             next_action: routing.next_action || (autoTriageEnabled ? ai.recommended_next_action : "none") || "none",
             scope: routing.scope || defaultScope,
             mailbox_address: mb.address,
             thread_id: threadId,
             owner_user_id: autoOwner,
+            ...linkedUpdates,
           };
 
           const { data: createdCase, error: caseErr } = await supabaseAdmin
@@ -427,9 +517,35 @@ Deno.serve(async (req) => {
           }
           caseId = createdCase.id;
           totalNewCases++;
+          if (hasLinks) totalLinked++;
+
+          // Log ID match on new case
+          if (matchLog) {
+            await supabaseAdmin.from("case_items").insert({
+              case_id: caseId,
+              company_id: companyId,
+              type: "system",
+              subject: "Automatisk kobling",
+              body_preview: matchLog,
+            });
+          }
+
+          // Log unresolved IDs
+          for (const idm of idMatches) {
+            const resolved = await resolveIdMatch(idm, companyId, supabaseAdmin);
+            if (!resolved) {
+              await supabaseAdmin.from("case_items").insert({
+                case_id: caseId,
+                company_id: companyId,
+                type: "system",
+                subject: "ID funnet, men objekt ikke funnet",
+                body_preview: `${idm.lookupValue} (${idm.type}) ble funnet i e-post, men objektet finnes ikke i systemet.`,
+              });
+            }
+          }
         }
 
-        // Create case_item
+        // Create case_item with full email data
         const { error: itemErr } = await supabaseAdmin
           .from("case_items")
           .insert({
@@ -437,10 +553,17 @@ Deno.serve(async (req) => {
             case_id: caseId,
             type: "email",
             external_id: msg.id,
-            subject: subject,
+            subject: originalSubject,
             from_email: fromEmail || fromName || null,
+            from_name: fromName || null,
             body_preview: bodyPreview,
             body_html: bodyHtml,
+            body_text: bodyText,
+            sent_at: sentAt,
+            internet_message_id: internetMessageId,
+            conversation_id: conversationId,
+            to_emails: toRecipients.length > 0 ? toRecipients : null,
+            cc_emails: ccRecipients.length > 0 ? ccRecipients : null,
             received_at: msg.receivedDateTime || new Date().toISOString(),
             created_by: userId,
           });
@@ -458,7 +581,7 @@ Deno.serve(async (req) => {
           .upsert(
             {
               external_id: msg.id,
-              subject: subject,
+              subject: originalSubject,
               from_name: fromName || null,
               from_email: fromEmail || null,
               received_at: msg.receivedDateTime || new Date().toISOString(),
@@ -478,7 +601,6 @@ Deno.serve(async (req) => {
         console.error(`[inbox-sync] Error syncing ${mb.address}: ${mbError}`);
       }
 
-      // Update mailbox sync metadata
       await supabaseAdmin
         .from("mailboxes")
         .update({
@@ -489,16 +611,17 @@ Deno.serve(async (req) => {
         .eq("id", mb.id);
     }
     if (enabledMailboxes.length === 0) {
-      console.log(`[inbox-sync] No shared mailboxes configured. Nothing to sync with app token. Configure mailboxes in Postkontoret.`);
+      console.log(`[inbox-sync] No shared mailboxes configured.`);
     }
 
-    console.log(`[inbox-sync] Done. Fetched: ${totalFetched}, New cases: ${totalNewCases}, New items: ${totalNewItems}, Skipped: ${totalSkipped}`);
+    console.log(`[inbox-sync] Done. Fetched: ${totalFetched}, New cases: ${totalNewCases}, New items: ${totalNewItems}, Linked: ${totalLinked}, Skipped: ${totalSkipped}`);
 
     return respond({
       success: true,
       fetched: totalFetched,
       new_cases: totalNewCases,
       new_items: totalNewItems,
+      linked: totalLinked,
       skipped: totalSkipped,
       mailboxes_synced: enabledMailboxes.length || 1,
     });

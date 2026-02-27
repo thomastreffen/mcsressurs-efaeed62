@@ -45,6 +45,8 @@ import { CaseAssignmentBanner } from "@/components/cases/CaseAssignmentBanner";
 import { CaseOfferConversionDrawer } from "@/components/cases/CaseOfferConversionDrawer";
 import { CaseCloseDrawer } from "@/components/cases/CaseCloseDrawer";
 import { CaseLinkedEntities } from "@/components/cases/CaseLinkedEntities";
+import { LinkToExistingDialog } from "@/components/cases/LinkToExistingDialog";
+import { CaseEmailViewer } from "@/components/cases/CaseEmailViewer";
 import { format, formatDistanceToNow, isPast, differenceInHours } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -106,11 +108,19 @@ type CaseItem = {
   type: string;
   subject: string | null;
   from_email: string | null;
+  from_name: string | null;
   body_preview: string | null;
   body_html: string | null;
+  body_text: string | null;
   received_at: string | null;
+  sent_at: string | null;
   created_by: string | null;
   created_at: string;
+  conversation_id: string | null;
+  to_emails: string[] | null;
+  cc_emails: string[] | null;
+  internet_message_id: string | null;
+  attachments_meta: any[] | null;
 };
 
 type Mailbox = {
@@ -732,6 +742,7 @@ function CaseDetail({
   const [planJobOpen, setPlanJobOpen] = useState(false);
   const [offerDrawerOpen, setOfferDrawerOpen] = useState(false);
   const [closeDrawerOpen, setCloseDrawerOpen] = useState(false);
+  const [linkDialogOpen, setLinkDialogOpen] = useState(false);
 
   return (
     <ScrollArea className="flex-1">
@@ -914,11 +925,15 @@ function CaseDetail({
           </Card>
         )}
 
-        {/* Convert actions */}
+        {/* Convert & Link actions */}
         {!["converted", "closed", "archived"].includes(caseData.status) && (
           <Card className="p-4">
-            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Konverter</p>
+            <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Handlinger</p>
             <div className="flex flex-wrap gap-2">
+              <Button size="sm" variant="outline" onClick={() => setLinkDialogOpen(true)} className="gap-1.5">
+                <ArrowRightLeft className="h-4 w-4" />
+                Koble til eksisterende
+              </Button>
               <Button size="sm" onClick={() => setPlanJobOpen(true)} className="gap-1.5">
                 <Hammer className="h-4 w-4" />
                 Opprett servicearbeid
@@ -994,7 +1009,18 @@ function CaseDetail({
           }}
         />
 
-        {/* Timeline */}
+        <LinkToExistingDialog
+          open={linkDialogOpen}
+          onOpenChange={setLinkDialogOpen}
+          caseId={caseData.id}
+          companyId={caseData.company_id}
+          onLinked={(field, id) => {
+            onUpdateField({ [field]: id } as any);
+            onCaseUpdated();
+          }}
+        />
+
+        {/* Timeline / Email Viewer */}
         <div>
           <p className="text-xs font-medium text-muted-foreground uppercase tracking-wide mb-3">Tidslinje</p>
           {items.length === 0 ? (
@@ -1003,38 +1029,7 @@ function CaseDetail({
               <p className="text-sm">Ingen aktivitet ennå</p>
             </div>
           ) : (
-            <div className="space-y-3">
-              {items.map((item) => (
-                <Card key={item.id} className="p-4">
-                  <div className="flex items-start gap-3">
-                    <div className="mt-0.5">
-                      {item.type === "email" ? (
-                        <Mail className="h-4 w-4 text-primary" />
-                      ) : item.type === "system" ? (
-                        <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-                      ) : item.type === "note" ? (
-                        <FileText className="h-4 w-4 text-muted-foreground" />
-                      ) : (
-                        <Clock className="h-4 w-4 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      {item.subject && <p className="text-sm font-medium text-foreground">{item.subject}</p>}
-                      {item.from_email && <p className="text-xs text-muted-foreground">{item.from_email}</p>}
-                      {item.body_preview && (
-                        <p className="text-sm text-muted-foreground mt-1 line-clamp-3">{item.body_preview}</p>
-                      )}
-                      {item.body_html && !item.body_preview && (
-                        <div className="prose prose-sm max-w-none text-foreground mt-2" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.body_html, { ALLOWED_TAGS: ['p','br','b','i','u','strong','em','a','ul','ol','li','span','div','table','tr','td','th','thead','tbody','h1','h2','h3','h4','h5','h6','blockquote','pre','code','img','hr'], ALLOWED_ATTR: ['href','target','src','alt','class','style'] }) }} />
-                      )}
-                      <span className="text-xs text-muted-foreground mt-1 block">
-                        {format(new Date(item.received_at || item.created_at), "d. MMM yyyy, HH:mm", { locale: nb })}
-                      </span>
-                    </div>
-                  </div>
-                </Card>
-              ))}
-            </div>
+            <CaseEmailViewer items={items} />
           )}
         </div>
       </div>

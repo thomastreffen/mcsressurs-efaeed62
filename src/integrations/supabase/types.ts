@@ -225,46 +225,67 @@ export type Database = {
       }
       case_items: {
         Row: {
+          attachments_meta: Json | null
           body_html: string | null
           body_preview: string | null
+          body_text: string | null
           case_id: string
+          cc_emails: string[] | null
           company_id: string
+          conversation_id: string | null
           created_at: string
           created_by: string | null
           external_id: string | null
           from_email: string | null
+          from_name: string | null
           id: string
+          internet_message_id: string | null
           received_at: string | null
+          sent_at: string | null
           subject: string | null
           to_emails: string[] | null
           type: string
         }
         Insert: {
+          attachments_meta?: Json | null
           body_html?: string | null
           body_preview?: string | null
+          body_text?: string | null
           case_id: string
+          cc_emails?: string[] | null
           company_id: string
+          conversation_id?: string | null
           created_at?: string
           created_by?: string | null
           external_id?: string | null
           from_email?: string | null
+          from_name?: string | null
           id?: string
+          internet_message_id?: string | null
           received_at?: string | null
+          sent_at?: string | null
           subject?: string | null
           to_emails?: string[] | null
           type?: string
         }
         Update: {
+          attachments_meta?: Json | null
           body_html?: string | null
           body_preview?: string | null
+          body_text?: string | null
           case_id?: string
+          cc_emails?: string[] | null
           company_id?: string
+          conversation_id?: string | null
           created_at?: string
           created_by?: string | null
           external_id?: string | null
           from_email?: string | null
+          from_name?: string | null
           id?: string
+          internet_message_id?: string | null
           received_at?: string | null
+          sent_at?: string | null
           subject?: string | null
           to_emails?: string[] | null
           type?: string
