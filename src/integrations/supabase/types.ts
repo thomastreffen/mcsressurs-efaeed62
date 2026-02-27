@@ -369,6 +369,10 @@ export type Database = {
           last_activity_at: string | null
           last_activity_by_user_id: string | null
           lead_id: string | null
+          linked_lead_id: string | null
+          linked_offer_id: string | null
+          linked_project_id: string | null
+          linked_work_order_id: string | null
           mailbox_address: string | null
           next_action: Database["public"]["Enums"]["case_next_action"]
           offer_id: string | null
@@ -376,6 +380,7 @@ export type Database = {
           participant_user_ids: string[] | null
           priority: Database["public"]["Enums"]["case_priority"]
           project_id: string | null
+          resolution_type: string | null
           scope: Database["public"]["Enums"]["case_scope"]
           service_job_id: string | null
           status: Database["public"]["Enums"]["case_status"]
@@ -398,6 +403,10 @@ export type Database = {
           last_activity_at?: string | null
           last_activity_by_user_id?: string | null
           lead_id?: string | null
+          linked_lead_id?: string | null
+          linked_offer_id?: string | null
+          linked_project_id?: string | null
+          linked_work_order_id?: string | null
           mailbox_address?: string | null
           next_action?: Database["public"]["Enums"]["case_next_action"]
           offer_id?: string | null
@@ -405,6 +414,7 @@ export type Database = {
           participant_user_ids?: string[] | null
           priority?: Database["public"]["Enums"]["case_priority"]
           project_id?: string | null
+          resolution_type?: string | null
           scope?: Database["public"]["Enums"]["case_scope"]
           service_job_id?: string | null
           status?: Database["public"]["Enums"]["case_status"]
@@ -427,6 +437,10 @@ export type Database = {
           last_activity_at?: string | null
           last_activity_by_user_id?: string | null
           lead_id?: string | null
+          linked_lead_id?: string | null
+          linked_offer_id?: string | null
+          linked_project_id?: string | null
+          linked_work_order_id?: string | null
           mailbox_address?: string | null
           next_action?: Database["public"]["Enums"]["case_next_action"]
           offer_id?: string | null
@@ -434,6 +448,7 @@ export type Database = {
           participant_user_ids?: string[] | null
           priority?: Database["public"]["Enums"]["case_priority"]
           project_id?: string | null
+          resolution_type?: string | null
           scope?: Database["public"]["Enums"]["case_scope"]
           service_job_id?: string | null
           status?: Database["public"]["Enums"]["case_status"]
@@ -462,6 +477,34 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_linked_lead_id_fkey"
+            columns: ["linked_lead_id"]
+            isOneToOne: false
+            referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_linked_offer_id_fkey"
+            columns: ["linked_offer_id"]
+            isOneToOne: false
+            referencedRelation: "offers"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_linked_project_id_fkey"
+            columns: ["linked_project_id"]
+            isOneToOne: false
+            referencedRelation: "events"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "cases_linked_work_order_id_fkey"
+            columns: ["linked_work_order_id"]
+            isOneToOne: false
+            referencedRelation: "work_orders"
             referencedColumns: ["id"]
           },
           {
@@ -3688,6 +3731,15 @@ export type Database = {
         | "document"
         | "none"
       case_priority: "low" | "normal" | "high" | "critical"
+      case_resolution_type:
+        | "converted_to_offer"
+        | "converted_to_project"
+        | "converted_to_service"
+        | "converted_to_lead"
+        | "resolved_email_only"
+        | "rejected"
+        | "spam"
+        | "duplicate"
       case_scope: "company" | "department" | "project" | "private"
       case_status:
         | "new"
@@ -3698,6 +3750,7 @@ export type Database = {
         | "converted"
         | "closed"
         | "archived"
+        | "in_progress"
       event_status: "pending" | "accepted" | "declined" | "change_request"
       job_status:
         | "requested"
@@ -3882,6 +3935,16 @@ export const Constants = {
         "none",
       ],
       case_priority: ["low", "normal", "high", "critical"],
+      case_resolution_type: [
+        "converted_to_offer",
+        "converted_to_project",
+        "converted_to_service",
+        "converted_to_lead",
+        "resolved_email_only",
+        "rejected",
+        "spam",
+        "duplicate",
+      ],
       case_scope: ["company", "department", "project", "private"],
       case_status: [
         "new",
@@ -3892,6 +3955,7 @@ export const Constants = {
         "converted",
         "closed",
         "archived",
+        "in_progress",
       ],
       event_status: ["pending", "accepted", "declined", "change_request"],
       job_status: [

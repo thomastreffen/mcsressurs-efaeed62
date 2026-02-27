@@ -1,15 +1,24 @@
-export type CaseStatus = "new" | "triage" | "assigned" | "waiting_customer" | "waiting_internal" | "converted" | "closed" | "archived";
+export type CaseStatus = "new" | "triage" | "in_progress" | "waiting_customer" | "waiting_internal" | "converted" | "closed" | "archived";
 export type CasePriority = "low" | "normal" | "high" | "critical";
 export type CaseNextAction = "call" | "quote" | "clarify" | "order" | "schedule" | "document" | "none";
 export type CaseScope = "company" | "department" | "project" | "private";
+export type CaseResolutionType =
+  | "converted_to_offer"
+  | "converted_to_project"
+  | "converted_to_service"
+  | "converted_to_lead"
+  | "resolved_email_only"
+  | "rejected"
+  | "spam"
+  | "duplicate";
 
 export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
   new: "Ny",
   triage: "Sortering",
-  assigned: "Tildelt",
+  in_progress: "Under arbeid",
   waiting_customer: "Avventer kunde",
   waiting_internal: "Avventer internt",
-  converted: "Opprettet jobb",
+  converted: "Konvertert",
   closed: "Lukket",
   archived: "Arkivert",
 };
@@ -17,7 +26,7 @@ export const CASE_STATUS_LABELS: Record<CaseStatus, string> = {
 export const CASE_STATUS_COLOR: Record<CaseStatus, string> = {
   new: "bg-primary/10 text-primary",
   triage: "bg-amber-500/10 text-amber-600",
-  assigned: "bg-blue-500/10 text-blue-600",
+  in_progress: "bg-blue-500/10 text-blue-600",
   waiting_customer: "bg-orange-500/10 text-orange-600",
   waiting_internal: "bg-purple-500/10 text-purple-600",
   converted: "bg-emerald-500/10 text-emerald-600",
@@ -56,6 +65,25 @@ export const CASE_SCOPE_LABELS: Record<CaseScope, string> = {
   private: "Privat",
 };
 
-export const ALL_CASE_STATUSES: CaseStatus[] = ["new", "triage", "assigned", "waiting_customer", "waiting_internal", "converted", "closed", "archived"];
+export const CASE_RESOLUTION_LABELS: Record<CaseResolutionType, string> = {
+  converted_to_offer: "Konvertert til tilbud",
+  converted_to_project: "Konvertert til prosjekt",
+  converted_to_service: "Konvertert til servicejobb",
+  converted_to_lead: "Konvertert til lead",
+  resolved_email_only: "Løst via e-post",
+  rejected: "Avvist",
+  spam: "Spam",
+  duplicate: "Duplikat",
+};
+
+export const CLOSE_RESOLUTION_TYPES: CaseResolutionType[] = [
+  "resolved_email_only",
+  "rejected",
+  "spam",
+  "duplicate",
+];
+
+/** Statuses shown in the main dropdown (excludes archived which is a separate action) */
+export const ALL_CASE_STATUSES: CaseStatus[] = ["new", "triage", "in_progress", "waiting_customer", "waiting_internal", "converted", "closed"];
 export const ALL_CASE_PRIORITIES: CasePriority[] = ["low", "normal", "high", "critical"];
 export const ALL_CASE_NEXT_ACTIONS: CaseNextAction[] = ["call", "quote", "clarify", "order", "schedule", "document", "none"];

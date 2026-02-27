@@ -43,6 +43,8 @@ import {
 import { PlanJobDialog } from "@/components/PlanJobDialog";
 import { CaseAssignmentBanner } from "@/components/cases/CaseAssignmentBanner";
 import { CaseOfferConversionDrawer } from "@/components/cases/CaseOfferConversionDrawer";
+import { CaseCloseDrawer } from "@/components/cases/CaseCloseDrawer";
+import { CaseLinkedEntities } from "@/components/cases/CaseLinkedEntities";
 import { format, formatDistanceToNow, isPast, differenceInHours } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
@@ -58,6 +60,8 @@ import {
   type CasePriority,
   type CaseNextAction,
   type CaseScope,
+  type CaseResolutionType,
+  CASE_RESOLUTION_LABELS,
 } from "@/lib/case-labels";
 
 // ─── Types ───────────────────────────────────
@@ -83,6 +87,11 @@ type Case = {
   offer_id: string | null;
   work_order_id: string | null;
   service_job_id: string | null;
+  resolution_type: CaseResolutionType | null;
+  linked_offer_id: string | null;
+  linked_project_id: string | null;
+  linked_work_order_id: string | null;
+  linked_lead_id: string | null;
   archived_at: string | null;
   archived_by: string | null;
   last_activity_at: string | null;
@@ -254,13 +263,14 @@ export default function InboxPage() {
       assigned_to_user_id: user.id,
       assigned_at: new Date().toISOString(),
       participant_user_ids: participants,
-      status: "assigned",
+      status: c.status === "new" ? "triage" : c.status,
       last_activity_at: new Date().toISOString(),
       last_activity_by_user_id: user.id,
     } as any).eq("id", c.id);
     const myName = companyUsers.find(u => u.id === user.id)?.name || "Ukjent";
     await logSystemItem(c, "Tildelt", `${myName} tildelte seg denne henvendelsen`);
-    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: user.id, assigned_to_user_id: user.id, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
+    const newStatus = (c.status === "new" ? "triage" : c.status) as CaseStatus;
+    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: user.id, assigned_to_user_id: user.id, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: newStatus } : x));
     toast.success("Tildelt deg");
   };
 
@@ -272,13 +282,14 @@ export default function InboxPage() {
       assigned_to_user_id: targetUserId,
       assigned_at: new Date().toISOString(),
       participant_user_ids: participants,
-      status: "assigned",
+      status: c.status === "new" ? "triage" : c.status,
       last_activity_at: new Date().toISOString(),
       last_activity_by_user_id: user?.id,
     } as any).eq("id", c.id);
     const name = companyUsers.find((u) => u.id === targetUserId)?.name || "bruker";
     await logSystemItem(c, "Tildelt", `Henvendelsen ble tildelt ${name}`);
-    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: targetUserId, assigned_to_user_id: targetUserId, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
+    const newStatus = (c.status === "new" ? "triage" : c.status) as CaseStatus;
+    setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: targetUserId, assigned_to_user_id: targetUserId, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: newStatus } : x));
     toast.success(`Tildelt ${name}`);
     setAssigningTo(null);
   };
@@ -384,7 +395,13 @@ export default function InboxPage() {
         .select("id")
         .single();
       if (error) throw error;
-      await doUpdateCaseField(c, { status: "converted" as CaseStatus, lead_id: data.id });
+      await doUpdateCaseField(c, {
+        status: "converted" as CaseStatus,
+        resolution_type: "converted_to_lead",
+        linked_lead_id: data.id,
+        lead_id: data.id,
+      } as any);
+      await logSystemItem(c, "Konvertert til lead", `Henvendelse konvertert til lead. Lead ID: ${data.id}`);
       toast.success("Lead opprettet!");
       navigate(`/sales/leads/${data.id}`);
     } catch (err: any) {
@@ -700,6 +717,7 @@ function CaseDetail({
   const [showAssignPicker, setShowAssignPicker] = useState(false);
   const [planJobOpen, setPlanJobOpen] = useState(false);
   const [offerDrawerOpen, setOfferDrawerOpen] = useState(false);
+  const [closeDrawerOpen, setCloseDrawerOpen] = useState(false);
 
   return (
     <ScrollArea className="flex-1">
@@ -766,6 +784,11 @@ function CaseDetail({
           <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground flex-wrap">
             <Badge className={CASE_STATUS_COLOR[caseData.status]}>{CASE_STATUS_LABELS[caseData.status]}</Badge>
             <Badge className={CASE_PRIORITY_COLOR[caseData.priority]}>{CASE_PRIORITY_LABELS[caseData.priority]}</Badge>
+            {caseData.resolution_type && (
+              <Badge variant="secondary" className="text-xs">
+                {CASE_RESOLUTION_LABELS[caseData.resolution_type as CaseResolutionType] || caseData.resolution_type}
+              </Badge>
+            )}
             {caseData.due_at && (
               <span className="text-xs">
                 Frist: {format(new Date(caseData.due_at), "d. MMM yyyy", { locale: nb })}
@@ -778,6 +801,16 @@ function CaseDetail({
               </Badge>
             )}
           </div>
+          <CaseLinkedEntities
+            linkedOfferId={caseData.linked_offer_id}
+            linkedProjectId={caseData.linked_project_id}
+            linkedWorkOrderId={caseData.linked_work_order_id}
+            linkedLeadId={caseData.linked_lead_id}
+            offerId={caseData.offer_id}
+            projectId={caseData.project_id}
+            serviceJobId={caseData.service_job_id}
+            leadId={caseData.lead_id}
+          />
         </div>
 
         <Separator />
@@ -786,7 +819,13 @@ function CaseDetail({
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="text-xs font-medium text-muted-foreground">Status</label>
-            <Select value={caseData.status} onValueChange={(v) => onUpdateField({ status: v as CaseStatus })}>
+            <Select value={caseData.status} onValueChange={(v) => {
+              if (v === "closed" && !caseData.resolution_type) {
+                setCloseDrawerOpen(true);
+                return;
+              }
+              onUpdateField({ status: v as CaseStatus });
+            }}>
               <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
                 {ALL_CASE_STATUSES.map((s) => (
@@ -835,26 +874,25 @@ function CaseDetail({
           <Card className="p-4 bg-emerald-500/5 border-emerald-500/20">
             <div className="flex items-center gap-2 text-emerald-600">
               <CheckCircle2 className="h-5 w-5" />
-              <span className="font-medium text-sm">Opprettet jobb</span>
+              <span className="font-medium text-sm">Konvertert</span>
+              {caseData.resolution_type && (
+                <Badge variant="secondary" className="text-xs ml-2">
+                  {CASE_RESOLUTION_LABELS[caseData.resolution_type as CaseResolutionType] || caseData.resolution_type}
+                </Badge>
+              )}
             </div>
-            <div className="flex gap-2 mt-2 flex-wrap">
-              {caseData.project_id && (
-                <Button variant="outline" size="sm" onClick={() => navigate(`/projects/${caseData.project_id}`)}>
-                  <FolderKanban className="h-4 w-4 mr-1" />
-                  Gå til prosjekt
-                </Button>
-              )}
-              {caseData.project_id && (
-                <Button variant="outline" size="sm" onClick={() => navigate("/resource-plan")}>
-                  <CalendarDays className="h-4 w-4 mr-1" />
-                  Se i ressursplan
-                </Button>
-              )}
-              {caseData.lead_id && (
-                <Button variant="outline" size="sm" onClick={() => navigate(`/sales/leads/${caseData.lead_id}`)}>
-                  <UserPlus className="h-4 w-4 mr-1" />
-                  Gå til lead
-                </Button>
+          </Card>
+        )}
+
+        {caseData.status === "closed" && (
+          <Card className="p-4 border-muted">
+            <div className="flex items-center gap-2 text-muted-foreground">
+              <Lock className="h-5 w-5" />
+              <span className="font-medium text-sm">Lukket</span>
+              {caseData.resolution_type && (
+                <Badge variant="secondary" className="text-xs ml-2">
+                  {CASE_RESOLUTION_LABELS[caseData.resolution_type as CaseResolutionType] || caseData.resolution_type}
+                </Badge>
               )}
             </div>
           </Card>
@@ -881,6 +919,10 @@ function CaseDetail({
                 <ReceiptText className="h-4 w-4" />
                 Opprett tilbud
               </Button>
+              <Button size="sm" variant="outline" onClick={() => setCloseDrawerOpen(true)} className="gap-1.5 text-muted-foreground">
+                <Lock className="h-4 w-4" />
+                Lukk sak
+              </Button>
               <Button size="sm" variant="ghost" onClick={onArchive} className="gap-1.5 text-muted-foreground">
                 <Lock className="h-4 w-4" />
                 Arkiver
@@ -897,6 +939,12 @@ function CaseDetail({
           companyId={caseData.company_id}
           existingProjectId={caseData.project_id}
           onPlanned={(projectId, workOrderId) => {
+            onUpdateField({
+              status: "converted" as CaseStatus,
+              resolution_type: "converted_to_service",
+              linked_project_id: projectId || undefined,
+              linked_work_order_id: workOrderId || undefined,
+            } as any);
             onCaseUpdated();
           }}
         />
@@ -909,7 +957,25 @@ function CaseDetail({
           companyId={caseData.company_id}
           items={items}
           currentUserId={currentUserId}
-          onConverted={() => onCaseUpdated()}
+          onConverted={(offerId) => {
+            onUpdateField({
+              status: "converted" as CaseStatus,
+              resolution_type: "converted_to_offer",
+              linked_offer_id: offerId,
+            } as any);
+            onCaseUpdated();
+          }}
+        />
+
+        <CaseCloseDrawer
+          open={closeDrawerOpen}
+          onOpenChange={setCloseDrawerOpen}
+          onConfirm={(resolutionType) => {
+            onUpdateField({
+              status: "closed" as CaseStatus,
+              resolution_type: resolutionType,
+            } as any);
+          }}
         />
 
         {/* Timeline */}
