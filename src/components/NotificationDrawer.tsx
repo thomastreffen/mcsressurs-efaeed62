@@ -52,6 +52,12 @@ export function NotificationDrawer({
     if (!notification.read) {
       onMarkAsRead(notification.id);
     }
+    // Use link_url if available (e.g. task notifications)
+    if (notification.link_url) {
+      navigate(notification.link_url);
+      onOpenChange(false);
+      return;
+    }
     if (notification.type === "ms_connect_request") {
       navigate("/settings/integrations");
       onOpenChange(false);

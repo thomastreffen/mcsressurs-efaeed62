@@ -25,7 +25,7 @@ export default function NotificationsPage() {
           notifications.map((n) => (
             <a
               key={n.id}
-              href={n.event_id ? `/projects/${n.event_id}` : "#"}
+              href={n.link_url || (n.event_id ? `/projects/${n.event_id}` : "#")}
               onClick={() => !n.read && markAsRead(n.id)}
               className={`block rounded-lg border p-3 transition-colors hover:bg-secondary/50 ${
                 !n.read ? "border-primary/20 bg-primary/5" : ""

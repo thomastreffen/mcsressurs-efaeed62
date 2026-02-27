@@ -1,0 +1,119 @@
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
+
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type",
+};
+
+Deno.serve(async (req) => {
+  if (req.method === "OPTIONS") return new Response(null, { headers: corsHeaders });
+
+  try {
+    const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+    const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+    const sb = createClient(supabaseUrl, serviceKey);
+
+    // Auth check
+    const authHeader = req.headers.get("Authorization");
+    if (!authHeader) throw new Error("Missing auth");
+    const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: { user }, error: authErr } = await userClient.auth.getUser();
+    if (authErr || !user) throw new Error("Unauthorized");
+
+    const { task_id } = await req.json();
+    if (!task_id) throw new Error("task_id required");
+
+    // Fetch task + assignees
+    const [taskRes, assigneesRes] = await Promise.all([
+      sb.from("tasks").select("*").eq("id", task_id).single(),
+      sb.from("task_assignees").select("*").eq("task_id", task_id),
+    ]);
+
+    const task = taskRes.data;
+    if (!task) throw new Error("Task not found");
+    if (!task.planned_start_at || !task.planned_end_at) {
+      return new Response(JSON.stringify({ status: "skipped", reason: "no schedule" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    const assignees = assigneesRes.data || [];
+    if (assignees.length === 0) {
+      return new Response(JSON.stringify({ status: "skipped", reason: "no assignees" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Check if Microsoft integration is available
+    const azureClientId = Deno.env.get("AZURE_CLIENT_ID");
+    const azureTenantId = Deno.env.get("AZURE_TENANT_ID");
+    const azureClientSecret = Deno.env.get("AZURE_CLIENT_SECRET");
+    const hasMsIntegration = !!(azureClientId && azureTenantId && azureClientSecret);
+
+    const results: any[] = [];
+
+    for (const assignee of assignees) {
+      if (hasMsIntegration) {
+        // Get user's MS tokens
+        const { data: userData } = await sb.auth.admin.getUserById(assignee.user_id);
+        const msTokens = userData?.user?.user_metadata?.ms_tokens;
+
+        if (msTokens?.access_token) {
+          try {
+            const eventBody = {
+              subject: `[Oppgave] ${task.title}`,
+              body: { contentType: "Text", content: task.description || "" },
+              start: { dateTime: task.planned_start_at, timeZone: "Europe/Oslo" },
+              end: { dateTime: task.planned_end_at, timeZone: "Europe/Oslo" },
+              isReminderOn: true,
+              reminderMinutesBeforeStart: 15,
+            };
+
+            const existingEventId = assignee.calendar_event_id;
+            const method = existingEventId ? "PATCH" : "POST";
+            const url = existingEventId
+              ? `https://graph.microsoft.com/v1.0/me/events/${existingEventId}`
+              : "https://graph.microsoft.com/v1.0/me/events";
+
+            const msRes = await fetch(url, {
+              method,
+              headers: {
+                Authorization: `Bearer ${msTokens.access_token}`,
+                "Content-Type": "application/json",
+              },
+              body: JSON.stringify(eventBody),
+            });
+
+            if (msRes.ok) {
+              const msEvent = await msRes.json();
+              await sb.from("task_assignees")
+                .update({ calendar_event_id: msEvent.id })
+                .eq("id", assignee.id);
+              results.push({ user_id: assignee.user_id, status: "synced", provider: "microsoft" });
+            } else {
+              results.push({ user_id: assignee.user_id, status: "ms_error", code: msRes.status });
+            }
+          } catch (e: any) {
+            results.push({ user_id: assignee.user_id, status: "ms_error", message: e.message });
+          }
+        } else {
+          results.push({ user_id: assignee.user_id, status: "no_ms_token" });
+        }
+      } else {
+        // Internal-only: just mark as notified
+        results.push({ user_id: assignee.user_id, status: "internal_only" });
+      }
+    }
+
+    return new Response(JSON.stringify({ status: "ok", results }), {
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message }), {
+      status: 400,
+      headers: { ...corsHeaders, "Content-Type": "application/json" },
+    });
+  }
+});
