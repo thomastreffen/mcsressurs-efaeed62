@@ -72,7 +72,7 @@ const fagNav = [
 const adminNav = [
   { title: "Firma", url: "/admin/company", icon: Building, requireSuperAdmin: true },
   { title: "Ansatte", url: "/admin/ansatte", icon: HardHat, requireAdmin: true },
-  { title: "Superoffice", url: "/admin/superoffice", icon: Inbox, requireAdmin: true },
+  { title: "Postkontoret", url: "/admin/superoffice", icon: Inbox, requireAdmin: true },
   { title: "Skjemamaler", url: "/admin/forms", icon: BookOpen, requireAdmin: true },
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
   { title: "Tilgangsstyring", url: "/admin/access", icon: ShieldCheck, requireSuperAdmin: true },

@@ -343,7 +343,7 @@ export default function InboxPage() {
             </div>
             <div>
               <h1 className="text-lg font-semibold text-foreground">Henvendelser</h1>
-              <p className="text-xs text-muted-foreground">MCS Superoffice – Kommandosentral</p>
+              <p className="text-xs text-muted-foreground">Postkontoret – Kommandosentral</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
