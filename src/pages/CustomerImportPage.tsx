@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { Button } from "@/components/ui/button";
@@ -106,11 +106,11 @@ export default function CustomerImportPage() {
   }, [headers]);
 
   // Trigger auto-map when headers are set
-  useState(() => {
+  useEffect(() => {
     if (headers.length > 0 && mappings.length === 0) {
       handleAutoMap();
     }
-  });
+  }, [headers, mappings.length, handleAutoMap]);
 
   const updateMapping = (index: number, field: string) => {
     setMappings((prev) => prev.map((m, i) => (i === index ? { ...m, field } : m)));
@@ -235,11 +235,7 @@ export default function CustomerImportPage() {
               <p className="text-sm text-muted-foreground mt-1">Støtter CSV-filer med kolonnehoder</p>
             </div>
             <label className="cursor-pointer">
-              <input type="file" accept=".csv,.txt" className="hidden" onChange={(e) => {
-                handleFileUpload(e).then(() => {
-                  if (headers.length > 0) handleAutoMap();
-                });
-              }} />
+              <input type="file" accept=".csv,.txt" className="hidden" onChange={handleFileUpload} />
               <div className="inline-flex items-center gap-2 px-6 py-2.5 bg-primary text-primary-foreground rounded-xl text-sm font-medium hover:bg-primary/90 transition-colors">
                 <Upload className="h-4 w-4" />
                 Velg fil
