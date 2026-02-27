@@ -123,8 +123,8 @@ type Mailbox = {
 type FilterType = "mine" | "team" | "needs_action" | "waiting_customer" | "waiting_internal" | "converted" | "closed";
 
 const FILTER_OPTIONS: { key: FilterType; label: string; icon: React.ElementType }[] = [
-  { key: "mine", label: "Mine henvendelser", icon: UserCheck },
-  { key: "team", label: "Teamets henvendelser", icon: Users },
+  { key: "mine", label: "Mine saker", icon: UserCheck },
+  { key: "team", label: "Teamets saker", icon: Users },
   { key: "needs_action", label: "Krever handling", icon: AlertCircle },
   { key: "waiting_customer", label: "Avventer kunde", icon: Clock },
   { key: "waiting_internal", label: "Avventer internt", icon: Timer },
@@ -305,7 +305,7 @@ export default function InboxPage() {
     } as any).eq("id", c.id);
     await logSystemItem(c, "Frigjort", `${prevName} ble fjernet som tildelt`);
     setCases((prev) => prev.map(x => x.id === c.id ? { ...x, assigned_to_user_id: null, assigned_at: null } : x));
-    toast.success("Henvendelse frigjort");
+    toast.success("Sak frigjort");
   };
 
   const archiveCase = async (c: Case) => {
@@ -320,7 +320,7 @@ export default function InboxPage() {
     await logSystemItem(c, "Arkivert", "Henvendelsen ble arkivert");
     setCases(prev => prev.filter(x => x.id !== c.id));
     setSelectedId(null);
-    toast.success("Henvendelse arkivert");
+    toast.success("Sak arkivert");
   };
 
   /** Check if another user owns this case and prompt for override */
@@ -483,8 +483,8 @@ export default function InboxPage() {
               <Building2 className="h-5 w-5 text-primary" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold text-foreground">Henvendelser</h1>
-              <p className="text-xs text-muted-foreground">Postkontoret – Kommandosentral</p>
+              <h1 className="text-lg font-semibold text-foreground">Postkontoret</h1>
+              <p className="text-xs text-muted-foreground">Kommandosentral for alle saker</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
@@ -508,7 +508,7 @@ export default function InboxPage() {
 
         {/* KPI cards */}
         <div className="grid grid-cols-4 gap-3">
-          <KpiCard label="Åpne henvendelser" value={openCount} icon={Mail} />
+          <KpiCard label="Åpne saker" value={openCount} icon={Mail} />
           <KpiCard label="Kritiske" value={criticalCount} icon={AlertTriangle} variant={criticalCount > 0 ? "destructive" : "default"} />
           <KpiCard label="Over frist" value={overdueCount} icon={Timer} variant={overdueCount > 0 ? "warning" : "default"} />
           <KpiCard label="Ubehandlet > 24t" value={unhandled24h} icon={Clock} variant={unhandled24h > 0 ? "warning" : "default"} />
@@ -541,7 +541,7 @@ export default function InboxPage() {
           <div className="p-3 border-b border-border">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Søk henvendelser..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
+              <Input placeholder="Søk saker..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
             </div>
           </div>
 
@@ -559,7 +559,7 @@ export default function InboxPage() {
             ) : filtered.length === 0 ? (
               <div className="flex flex-col items-center justify-center h-64 text-muted-foreground">
                 <Mail className="h-10 w-10 mb-3 opacity-40" />
-                <p className="text-sm font-medium">Ingen henvendelser</p>
+                <p className="text-sm font-medium">Ingen saker</p>
                 <p className="text-xs mt-1">Klikk «Synk e-post» for å hente fra postboksen</p>
               </div>
             ) : (
@@ -662,7 +662,7 @@ export default function InboxPage() {
           ) : (
             <div className="flex flex-col items-center justify-center h-full text-muted-foreground">
               <Building2 className="h-12 w-12 mb-4 opacity-30" />
-              <p className="text-sm font-medium">Velg en henvendelse</p>
+              <p className="text-sm font-medium">Velg en sak</p>
               <p className="text-xs mt-1">Velg fra listen for å se detaljer og handlinger</p>
             </div>
           )}

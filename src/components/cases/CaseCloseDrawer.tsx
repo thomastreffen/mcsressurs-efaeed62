@@ -38,7 +38,7 @@ export function CaseCloseDrawer({ open, onOpenChange, onConfirm }: CaseCloseDraw
     <Drawer open={open} onOpenChange={onOpenChange}>
       <DrawerContent>
         <DrawerHeader>
-          <DrawerTitle>Lukk henvendelse</DrawerTitle>
+          <DrawerTitle>Lukk sak</DrawerTitle>
           <DrawerDescription>Velg årsak for lukking</DrawerDescription>
         </DrawerHeader>
         <div className="px-4 pb-4 grid grid-cols-2 gap-2">
