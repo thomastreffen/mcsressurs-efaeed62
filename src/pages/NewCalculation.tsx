@@ -42,7 +42,7 @@ export default function NewCalculation() {
   // Step 3
   const [files, setFiles] = useState<File[]>([]);
   const [uploading, setUploading] = useState(false);
-  const [uploadedAttachments, setUploadedAttachments] = useState<{ name: string; url: string; size: number }[]>([]);
+  const [uploadedAttachments, setUploadedAttachments] = useState<{ name: string; url: string; path?: string; size: number }[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
 
   // Step 4
@@ -123,8 +123,8 @@ export default function NewCalculation() {
         toast.error(`Feil ved opplasting: ${file.name}`);
         continue;
       }
-      const { data: urlData } = supabase.storage.from("calculation-attachments").getPublicUrl(path);
-      newAttachments.push({ name: file.name, url: urlData.publicUrl, size: file.size });
+      const { data: signedData } = await supabase.storage.from("calculation-attachments").createSignedUrl(path, 3600);
+      newAttachments.push({ name: file.name, url: signedData?.signedUrl || "", path, size: file.size });
     }
     const all = [...uploadedAttachments, ...newAttachments];
     setUploadedAttachments(all);

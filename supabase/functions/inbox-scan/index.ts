@@ -75,12 +75,43 @@ Deno.serve(async (req) => {
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
+  // --- Auth check: require admin or service-role bearer ---
+  const authHeader = req.headers.get("Authorization");
+  if (!authHeader?.startsWith("Bearer ")) {
+    return respond({ error: "Unauthorized" }, 401);
+  }
+
+  const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
+  const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
+  const jwt = authHeader.replace("Bearer ", "");
+
+  const supabaseAdmin = createClient(supabaseUrl, serviceRoleKey, {
+    auth: { autoRefreshToken: false, persistSession: false },
+  });
+
+  // Allow service_role key (for pg_cron / system calls)
+  if (jwt !== serviceRoleKey) {
+    const anonKey = Deno.env.get("SUPABASE_ANON_KEY")!;
+    const supabaseAnon = createClient(supabaseUrl, anonKey, {
+      global: { headers: { Authorization: authHeader } },
+    });
+    const { data: claims, error: claimsErr } = await supabaseAnon.auth.getClaims(jwt);
+    if (claimsErr || !claims?.claims?.sub) {
+      return respond({ error: "Unauthorized" }, 401);
+    }
+    const userId = claims.claims.sub as string;
+    const { data: roleData } = await supabaseAdmin
+      .from("user_roles")
+      .select("role")
+      .eq("user_id", userId)
+      .in("role", ["admin", "super_admin"])
+      .limit(1);
+    if (!roleData || roleData.length === 0) {
+      return respond({ error: "Forbidden" }, 403);
+    }
+  }
+
   try {
-    const supabaseAdmin = createClient(
-      Deno.env.get("SUPABASE_URL")!,
-      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
-      { auth: { autoRefreshToken: false, persistSession: false } }
-    );
 
     console.log("[inbox-scan] Starting scan...");
 

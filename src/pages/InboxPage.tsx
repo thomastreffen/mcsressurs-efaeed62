@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from "react";
+import DOMPurify from "dompurify";
 import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { useAuth } from "@/hooks/useAuth";
@@ -782,7 +783,7 @@ function CaseDetail({
                         <p className="text-sm text-muted-foreground mt-1 line-clamp-3">{item.body_preview}</p>
                       )}
                       {item.body_html && !item.body_preview && (
-                        <div className="prose prose-sm max-w-none text-foreground mt-2" dangerouslySetInnerHTML={{ __html: item.body_html }} />
+                        <div className="prose prose-sm max-w-none text-foreground mt-2" dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(item.body_html, { ALLOWED_TAGS: ['p','br','b','i','u','strong','em','a','ul','ol','li','span','div','table','tr','td','th','thead','tbody','h1','h2','h3','h4','h5','h6','blockquote','pre','code','img','hr'], ALLOWED_ATTR: ['href','target','src','alt','class','style'] }) }} />
                       )}
                       <span className="text-xs text-muted-foreground mt-1 block">
                         {format(new Date(item.received_at || item.created_at), "d. MMM yyyy, HH:mm", { locale: nb })}
