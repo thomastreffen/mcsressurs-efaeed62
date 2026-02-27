@@ -360,11 +360,14 @@ export type Database = {
           archived_by: string | null
           assigned_at: string | null
           assigned_to_user_id: string | null
+          case_number: string
           company_id: string
           created_at: string
           customer_id: string | null
           due_at: string | null
           id: string
+          last_activity_at: string | null
+          last_activity_by_user_id: string | null
           lead_id: string | null
           mailbox_address: string | null
           next_action: Database["public"]["Enums"]["case_next_action"]
@@ -386,11 +389,14 @@ export type Database = {
           archived_by?: string | null
           assigned_at?: string | null
           assigned_to_user_id?: string | null
+          case_number?: string
           company_id: string
           created_at?: string
           customer_id?: string | null
           due_at?: string | null
           id?: string
+          last_activity_at?: string | null
+          last_activity_by_user_id?: string | null
           lead_id?: string | null
           mailbox_address?: string | null
           next_action?: Database["public"]["Enums"]["case_next_action"]
@@ -412,11 +418,14 @@ export type Database = {
           archived_by?: string | null
           assigned_at?: string | null
           assigned_to_user_id?: string | null
+          case_number?: string
           company_id?: string
           created_at?: string
           customer_id?: string | null
           due_at?: string | null
           id?: string
+          last_activity_at?: string | null
+          last_activity_by_user_id?: string | null
           lead_id?: string | null
           mailbox_address?: string | null
           next_action?: Database["public"]["Enums"]["case_next_action"]
