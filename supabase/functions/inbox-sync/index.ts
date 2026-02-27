@@ -202,17 +202,16 @@ Deno.serve(async (req) => {
       return respond({ error: "Unauthorized" }, 401);
     }
 
-    const jwt = authHeader.replace("Bearer ", "");
-    const supabaseAnon = createClient(
+    const supabaseAuthed = createClient(
       Deno.env.get("SUPABASE_URL")!,
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: claimsData, error: claimsErr } = await supabaseAnon.auth.getClaims(jwt);
-    if (claimsErr || !claimsData?.claims) {
+    const { data: { user: authedUser }, error: userErr } = await supabaseAuthed.auth.getUser();
+    if (userErr || !authedUser) {
       return respond({ error: "Invalid session" }, 401);
     }
-    const userId = claimsData.claims.sub as string;
+    const userId = authedUser.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
