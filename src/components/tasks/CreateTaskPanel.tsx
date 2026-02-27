@@ -18,6 +18,7 @@ import {
 import { toast } from "sonner";
 import { format } from "date-fns";
 import { useNavigate } from "react-router-dom";
+import type { SuggestedAction } from "@/components/tasks/AIActionChips";
 
 interface CreateTaskPanelProps {
   caseId: string;
@@ -28,6 +29,7 @@ interface CreateTaskPanelProps {
   linkedLeadId?: string | null;
   linkedOfferId?: string | null;
   documents?: { id: string; file_name: string }[];
+  prefillAction?: SuggestedAction | null;
   onClose: () => void;
   onCreated?: (taskId: string) => void;
 }
@@ -51,6 +53,7 @@ export function CreateTaskPanel({
   linkedLeadId,
   linkedOfferId,
   documents = [],
+  prefillAction,
   onClose,
   onCreated,
 }: CreateTaskPanelProps) {
@@ -70,9 +73,41 @@ export function CreateTaskPanel({
   const [aiSuggestion, setAiSuggestion] = useState<AISuggestion | null>(null);
   const [createdTaskId, setCreatedTaskId] = useState<string | null>(null);
 
-  // Auto-fetch AI suggestion on mount
+  // If prefillAction provided, use it immediately; otherwise fetch AI suggestion
   useEffect(() => {
-    fetchAISuggestion();
+    if (prefillAction) {
+      setTitle(prefillAction.title || "");
+      setPriority(prefillAction.priority || "normal");
+      setDueAt(prefillAction.due_at ? format(new Date(prefillAction.due_at), "yyyy-MM-dd") : "");
+      setEstimatedMinutes(prefillAction.estimated_minutes || 60);
+      setAiSuggestion({
+        title: prefillAction.title,
+        priority: prefillAction.priority,
+        due_at: prefillAction.due_at,
+        estimated_minutes: prefillAction.estimated_minutes,
+        rationale: prefillAction.rationale,
+        suggested_assignee_ids: prefillAction.suggested_assignee_ids || [],
+        ai_confidence: 0.7,
+      });
+      // Pre-select suggested attachments
+      if (prefillAction.suggested_attachment_document_ids?.length) {
+        setSelectedDocIds(prefillAction.suggested_attachment_document_ids.filter(
+          id => documents.some(d => d.id === id)
+        ));
+      }
+      // Resolve assignees
+      if (prefillAction.suggested_assignee_ids?.length) {
+        supabase
+          .from("technicians")
+          .select("id, user_id")
+          .in("user_id", prefillAction.suggested_assignee_ids)
+          .then(({ data: techs }) => {
+            if (techs) setAssigneeIds(techs.map((t: any) => t.id));
+          });
+      }
+    } else {
+      fetchAISuggestion();
+    }
   }, []);
 
   const fetchAISuggestion = async () => {

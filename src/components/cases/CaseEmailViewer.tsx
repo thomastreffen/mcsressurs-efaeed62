@@ -10,6 +10,7 @@ import {
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { CreateTaskPanel } from "@/components/tasks/CreateTaskPanel";
+import { AIActionChips, type SuggestedAction } from "@/components/tasks/AIActionChips";
 
 interface CaseItem {
   id: string;
@@ -54,6 +55,13 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
   const [showThread, setShowThread] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [taskCaseItemId, setTaskCaseItemId] = useState<string | undefined>(undefined);
+  const [prefillAction, setPrefillAction] = useState<SuggestedAction | null>(null);
+
+  const handleActionChipSelect = (action: SuggestedAction) => {
+    setPrefillAction(action);
+    setShowCreateTask(true);
+    setTaskCaseItemId(undefined);
+  };
 
   // Separate emails and system/note items
   const emailItems = items.filter((i) => i.type === "email");
@@ -223,6 +231,17 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
         )}
       </div>
 
+      {/* AI action chips */}
+      {caseId && companyId && !showCreateTask && (
+        <div className="mb-3">
+          <AIActionChips
+            caseId={caseId}
+            caseItemId={taskCaseItemId}
+            onSelectAction={handleActionChipSelect}
+          />
+        </div>
+      )}
+
       {/* Inline task creation panel */}
       {showCreateTask && caseId && companyId && (
         <div className="mb-4">
@@ -235,7 +254,8 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
             linkedLeadId={linkedLeadId}
             linkedOfferId={linkedOfferId}
             documents={documents}
-            onClose={() => setShowCreateTask(false)}
+            prefillAction={prefillAction}
+            onClose={() => { setShowCreateTask(false); setPrefillAction(null); }}
           />
         </div>
       )}

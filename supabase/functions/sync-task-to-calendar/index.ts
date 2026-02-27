@@ -13,7 +13,6 @@ Deno.serve(async (req) => {
     const serviceKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
     const sb = createClient(supabaseUrl, serviceKey);
 
-    // Auth check
     const authHeader = req.headers.get("Authorization");
     if (!authHeader) throw new Error("Missing auth");
     const userClient = createClient(supabaseUrl, Deno.env.get("SUPABASE_ANON_KEY")!, {
@@ -22,13 +21,53 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user) throw new Error("Unauthorized");
 
-    const { task_id } = await req.json();
+    const { task_id, remove_user_id } = await req.json();
     if (!task_id) throw new Error("task_id required");
 
-    // Fetch task + assignees
+    // Handle removal: delete calendar event for specific user
+    if (remove_user_id) {
+      const { data: assignee } = await sb.from("task_assignees")
+        .select("*")
+        .eq("task_id", task_id)
+        .eq("user_id", remove_user_id)
+        .not("calendar_event_id", "is", null)
+        .limit(1)
+        .single();
+
+      if (assignee?.calendar_event_id) {
+        const azureClientId = Deno.env.get("AZURE_CLIENT_ID");
+        if (azureClientId) {
+          const { data: userData } = await sb.auth.admin.getUserById(remove_user_id);
+          const msTokens = userData?.user?.user_metadata?.ms_tokens;
+          if (msTokens?.access_token) {
+            try {
+              await fetch(
+                `https://graph.microsoft.com/v1.0/me/events/${assignee.calendar_event_id}`,
+                {
+                  method: "DELETE",
+                  headers: { Authorization: `Bearer ${msTokens.access_token}` },
+                }
+              );
+            } catch (e) {
+              console.error("Failed to delete calendar event:", e);
+            }
+          }
+        }
+        // Clear the calendar_event_id
+        await sb.from("task_assignees")
+          .update({ calendar_event_id: null })
+          .eq("id", assignee.id);
+      }
+
+      return new Response(JSON.stringify({ status: "removed" }), {
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    }
+
+    // Standard sync: create/update events for all active assignees
     const [taskRes, assigneesRes] = await Promise.all([
       sb.from("tasks").select("*").eq("id", task_id).single(),
-      sb.from("task_assignees").select("*").eq("task_id", task_id),
+      sb.from("task_assignees").select("*").eq("task_id", task_id).is("removed_at", null),
     ]);
 
     const task = taskRes.data;
@@ -46,7 +85,6 @@ Deno.serve(async (req) => {
       });
     }
 
-    // Check if Microsoft integration is available
     const azureClientId = Deno.env.get("AZURE_CLIENT_ID");
     const azureTenantId = Deno.env.get("AZURE_TENANT_ID");
     const azureClientSecret = Deno.env.get("AZURE_CLIENT_SECRET");
@@ -56,7 +94,6 @@ Deno.serve(async (req) => {
 
     for (const assignee of assignees) {
       if (hasMsIntegration) {
-        // Get user's MS tokens
         const { data: userData } = await sb.auth.admin.getUserById(assignee.user_id);
         const msTokens = userData?.user?.user_metadata?.ms_tokens;
 
@@ -102,7 +139,6 @@ Deno.serve(async (req) => {
           results.push({ user_id: assignee.user_id, status: "no_ms_token" });
         }
       } else {
-        // Internal-only: just mark as notified
         results.push({ user_id: assignee.user_id, status: "internal_only" });
       }
     }
