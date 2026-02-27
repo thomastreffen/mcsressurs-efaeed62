@@ -8,55 +8,38 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-async function ensureValidMsToken(
-  supabaseAdmin: any,
-  userId: string,
-  meta: any
-): Promise<string | null> {
-  const accessToken = meta.ms_access_token;
-  const refreshToken = meta.ms_refresh_token;
-  const expiresAt = meta.ms_expires_at;
+async function getAppToken(): Promise<string | null> {
+  const tenantId = Deno.env.get("AZURE_TENANT_ID");
+  const clientId = Deno.env.get("AZURE_CLIENT_ID");
+  const clientSecret = Deno.env.get("AZURE_CLIENT_SECRET");
 
-  if (!accessToken) return null;
-
-  if (expiresAt && new Date(expiresAt).getTime() > Date.now() + 5 * 60 * 1000) {
-    return accessToken;
+  if (!tenantId || !clientId || !clientSecret) {
+    console.error("[inbox-sync] Missing Azure env vars for client_credentials flow");
+    return null;
   }
 
-  if (!refreshToken) return null;
-
   const tokenRes = await fetch(
-    `https://login.microsoftonline.com/${Deno.env.get("AZURE_TENANT_ID")}/oauth2/v2.0/token`,
+    `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`,
     {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: new URLSearchParams({
-        client_id: Deno.env.get("AZURE_CLIENT_ID")!,
-        client_secret: Deno.env.get("AZURE_CLIENT_SECRET")!,
-        grant_type: "refresh_token",
-        refresh_token: refreshToken,
-        scope: "https://graph.microsoft.com/.default offline_access",
+        client_id: clientId,
+        client_secret: clientSecret,
+        grant_type: "client_credentials",
+        scope: "https://graph.microsoft.com/.default",
       }),
     }
   );
 
   if (!tokenRes.ok) {
-    await tokenRes.text();
+    const errText = await tokenRes.text();
+    console.error(`[inbox-sync] client_credentials token error: ${tokenRes.status} ${errText.substring(0, 300)}`);
     return null;
   }
 
   const tokenData = await tokenRes.json();
-  const newExpiry = new Date(Date.now() + tokenData.expires_in * 1000).toISOString();
-
-  await supabaseAdmin.auth.admin.updateUserById(userId, {
-    user_metadata: {
-      ...meta,
-      ms_access_token: tokenData.access_token,
-      ms_refresh_token: tokenData.refresh_token || refreshToken,
-      ms_expires_at: newExpiry,
-    },
-  });
-
+  console.log("[inbox-sync] Acquired APPLICATION token via client_credentials flow");
   return tokenData.access_token;
 }
 
@@ -70,17 +53,18 @@ async function fetchMailboxMessages(
   let url: string;
 
   if (deltaLink) {
-    // Use delta link for incremental sync
     url = deltaLink;
+    console.log(`[inbox-sync][DEBUG] Using deltaLink for ${mailboxAddress}`);
   } else if (isShared) {
-    // Shared mailbox: explicitly target Inbox folder + delta for reliable results
     const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages/delta`;
     url = `${inboxPath}?$top=50&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
+    console.log(`[inbox-sync][DEBUG] Shared mailbox endpoint: /users/${mailboxAddress}/mailFolders/Inbox/messages/delta`);
   } else {
-    // Personal mailbox: target Inbox folder
-    const inboxPath = `${GRAPH_BASE}/me/mailFolders/Inbox/messages`;
+    // Personal mailbox — use /users/{address} with app token, NOT /me
+    const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages`;
     const filter = `receivedDateTime ge ${sinceDate}`;
     url = `${inboxPath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
+    console.log(`[inbox-sync][DEBUG] Personal mailbox endpoint: /users/${mailboxAddress}/mailFolders/Inbox/messages`);
   }
 
   const allMessages: any[] = [];
@@ -226,16 +210,12 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const { data: userData, error: adminUserErr } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (adminUserErr || !userData?.user) {
-      return respond({ error: "User not found" }, 404);
-    }
-
-    const meta = userData.user.user_metadata || {};
-    const msToken = await ensureValidMsToken(supabaseAdmin, userId, meta);
+    // Acquire APPLICATION token (client_credentials) — not the user's delegated token
+    const msToken = await getAppToken();
     if (!msToken) {
-      return respond({ error: "Microsoft-tilkobling mangler. Koble til via Integrasjoner.", ms_reauth: true }, 401);
+      return respond({ error: "Kunne ikke hente applikasjonstoken for Microsoft Graph. Sjekk Azure-konfigurasjon." }, 500);
     }
+    console.log("[inbox-sync] Auth mode: APPLICATION (client_credentials). User validated via Supabase JWT only.");
 
     // Fetch enabled mailboxes
     const { data: mailboxes } = await supabaseAdmin
@@ -445,87 +425,7 @@ Deno.serve(async (req) => {
         .eq("id", mb.id);
     }
     if (enabledMailboxes.length === 0) {
-      console.log(`[inbox-sync] No shared mailboxes. Fetching personal inbox.`);
-      const { messages } = await fetchMailboxMessages(msToken, "", sinceDate, false, null);
-      totalFetched = messages.length;
-
-      for (const msg of messages) {
-        const { data: existingItem } = await supabaseAdmin
-          .from("case_items")
-          .select("id")
-          .eq("external_id", msg.id)
-          .maybeSingle();
-
-        if (existingItem) { totalSkipped++; continue; }
-
-        const threadId = msg.conversationId || msg.id;
-        const subject = msg.subject || "(Ingen emne)";
-
-        let caseId: string | null = null;
-        const { data: existingCase } = await supabaseAdmin
-          .from("cases")
-          .select("id")
-          .eq("thread_id", threadId)
-          .eq("company_id", companyId)
-          .maybeSingle();
-
-        if (existingCase) {
-          caseId = existingCase.id;
-          await supabaseAdmin.from("cases").update({ updated_at: new Date().toISOString() }).eq("id", caseId);
-        } else {
-          const ai = classifyMessage(subject, msg.bodyPreview || "");
-          const { data: createdCase, error: caseErr } = await supabaseAdmin
-            .from("cases")
-            .insert({
-              company_id: companyId,
-              title: subject,
-              status: "new",
-              priority: ai.urgency === "critical" ? "critical" : "normal",
-              next_action: ai.recommended_next_action || "none",
-              scope: "company",
-              mailbox_address: "personal",
-              thread_id: threadId,
-            })
-            .select("id")
-            .single();
-          if (caseErr) { totalSkipped++; continue; }
-          caseId = createdCase.id;
-          totalNewCases++;
-        }
-
-        const { error: itemErr } = await supabaseAdmin
-          .from("case_items")
-          .insert({
-            company_id: companyId,
-            case_id: caseId,
-            type: "email",
-            external_id: msg.id,
-            subject: subject,
-            from_email: msg.from?.emailAddress?.address || null,
-            body_preview: (msg.bodyPreview || "").substring(0, 500),
-            body_html: msg.body?.content || null,
-            received_at: msg.receivedDateTime || new Date().toISOString(),
-            created_by: userId,
-          });
-        if (itemErr) totalSkipped++;
-        else totalNewItems++;
-
-        // Backwards compat
-        await supabaseAdmin.from("inbox_messages").upsert({
-          external_id: msg.id,
-          subject: subject,
-          from_name: msg.from?.emailAddress?.name || null,
-          from_email: msg.from?.emailAddress?.address || null,
-          received_at: msg.receivedDateTime || new Date().toISOString(),
-          body_preview: (msg.bodyPreview || "").substring(0, 500),
-          body_full: msg.body?.content || null,
-          has_attachments: msg.hasAttachments || false,
-          fetched_by: userId,
-          status: "new",
-          mailbox_address: "personal",
-          visibility: "team",
-        }, { onConflict: "external_id", ignoreDuplicates: true });
-      }
+      console.log(`[inbox-sync] No shared mailboxes configured. Nothing to sync with app token. Configure mailboxes in Postkontoret.`);
     }
 
     console.log(`[inbox-sync] Done. Fetched: ${totalFetched}, New cases: ${totalNewCases}, New items: ${totalNewItems}, Skipped: ${totalSkipped}`);
