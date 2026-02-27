@@ -46,7 +46,7 @@ const mainNavBase = [
   { title: "Integrasjoner", url: "/settings/integrations", icon: Plug },
 ];
 
-const postkontoretNav = { title: "Henvendelser", url: "/inbox", icon: Inbox };
+const postkontoretNav = { title: "Postkontoret", url: "/inbox", icon: Inbox };
 
 const customerNav = [
   { title: "Alle kunder", url: "/customers", icon: Users },
@@ -134,7 +134,7 @@ export function AppSidebar() {
   const hasPostkontor = isAdmin || hasPermission("postkontor.view");
   const hasPostkontorAdmin = isAdmin || hasPermission("postkontor.admin");
 
-  // Build main nav with conditional Henvendelser
+  // Build main nav with conditional Postkontoret
   const mainNav = hasPostkontor
     ? [mainNavBase[0], postkontoretNav, mainNavBase[1]]
     : [...mainNavBase];
