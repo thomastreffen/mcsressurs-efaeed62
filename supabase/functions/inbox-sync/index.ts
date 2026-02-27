@@ -101,6 +101,10 @@ async function fetchMailboxMessages(
 
     const graphData = await graphRes.json();
     const msgs = (graphData.value || []).filter((m: any) => !m.isDraft);
+    console.log(`[inbox-sync][DEBUG] Page returned ${msgs.length} messages (raw: ${(graphData.value || []).length}, after draft filter: ${msgs.length})`);
+    if (msgs.length > 0) {
+      console.log(`[inbox-sync][DEBUG] First subject: "${msgs[0].subject}"`);
+    }
     allMessages.push(...msgs);
 
     nextLink = graphData["@odata.nextLink"] || null;
