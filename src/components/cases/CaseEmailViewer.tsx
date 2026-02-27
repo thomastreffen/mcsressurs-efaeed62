@@ -5,10 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Mail, ArrowRightLeft, FileText, Clock, ChevronDown, ChevronUp,
-  Eye, MessageSquare, Paperclip,
+  Eye, MessageSquare, Paperclip, ListTodo,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
+import { CreateTaskPanel } from "@/components/tasks/CreateTaskPanel";
 
 interface CaseItem {
   id: string;
@@ -33,6 +34,13 @@ interface CaseItem {
 
 interface CaseEmailViewerProps {
   items: CaseItem[];
+  caseId?: string;
+  companyId?: string;
+  linkedWorkOrderId?: string | null;
+  linkedProjectId?: string | null;
+  linkedLeadId?: string | null;
+  linkedOfferId?: string | null;
+  documents?: { id: string; file_name: string }[];
 }
 
 const SANITIZE_CONFIG = {
@@ -41,9 +49,11 @@ const SANITIZE_CONFIG = {
   ALLOW_DATA_ATTR: false,
 };
 
-export function CaseEmailViewer({ items }: CaseEmailViewerProps) {
+export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, linkedProjectId, linkedLeadId, linkedOfferId, documents }: CaseEmailViewerProps) {
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [showThread, setShowThread] = useState(false);
+  const [showCreateTask, setShowCreateTask] = useState(false);
+  const [taskCaseItemId, setTaskCaseItemId] = useState<string | undefined>(undefined);
 
   // Separate emails and system/note items
   const emailItems = items.filter((i) => i.type === "email");
@@ -182,9 +192,9 @@ export function CaseEmailViewer({ items }: CaseEmailViewerProps) {
 
   return (
     <div>
-      {/* Thread toggle */}
-      {hasThreads && (
-        <div className="flex items-center gap-2 mb-3">
+      {/* Action bar */}
+      <div className="flex items-center gap-2 mb-3 flex-wrap">
+        {hasThreads && (
           <Button
             variant={showThread ? "default" : "outline"}
             size="sm"
@@ -194,16 +204,43 @@ export function CaseEmailViewer({ items }: CaseEmailViewerProps) {
             <MessageSquare className="h-3.5 w-3.5" />
             {showThread ? "Vis tidslinje" : "Vis tråder"}
           </Button>
-          {showThread && (
-            <span className="text-xs text-muted-foreground">
-              {conversations.size} samtale{conversations.size !== 1 ? "r" : ""}
-            </span>
-          )}
+        )}
+        {showThread && (
+          <span className="text-xs text-muted-foreground">
+            {conversations.size} samtale{conversations.size !== 1 ? "r" : ""}
+          </span>
+        )}
+        {caseId && companyId && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs ml-auto"
+            onClick={() => { setShowCreateTask(true); setTaskCaseItemId(undefined); }}
+          >
+            <ListTodo className="h-3.5 w-3.5" />
+            Opprett oppgave
+          </Button>
+        )}
+      </div>
+
+      {/* Inline task creation panel */}
+      {showCreateTask && caseId && companyId && (
+        <div className="mb-4">
+          <CreateTaskPanel
+            caseId={caseId}
+            caseItemId={taskCaseItemId}
+            companyId={companyId}
+            linkedWorkOrderId={linkedWorkOrderId}
+            linkedProjectId={linkedProjectId}
+            linkedLeadId={linkedLeadId}
+            linkedOfferId={linkedOfferId}
+            documents={documents}
+            onClose={() => setShowCreateTask(false)}
+          />
         </div>
       )}
 
       {showThread ? (
-        // Thread view: group by conversation
         <div className="space-y-4">
           {Array.from(conversations.entries()).map(([convId, msgs]) => (
             <div key={convId} className="space-y-2">
@@ -220,7 +257,6 @@ export function CaseEmailViewer({ items }: CaseEmailViewerProps) {
               </div>
             </div>
           ))}
-          {/* System/note items at the end */}
           {otherItems.length > 0 && (
             <div className="space-y-2 pt-2 border-t border-border">
               <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">Systemhendelser</span>
@@ -229,7 +265,6 @@ export function CaseEmailViewer({ items }: CaseEmailViewerProps) {
           )}
         </div>
       ) : (
-        // Timeline view: chronological
         <div className="space-y-2">
           {allSorted.map((item) =>
             item.type === "email"

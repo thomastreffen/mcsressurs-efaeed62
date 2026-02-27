@@ -2998,36 +2998,52 @@ export type Database = {
       }
       notifications: {
         Row: {
+          company_id: string | null
           created_at: string
           event_id: string | null
           id: string
+          link_url: string | null
           message: string | null
           read: boolean
+          read_at: string | null
           title: string
           type: string
           user_id: string
         }
         Insert: {
+          company_id?: string | null
           created_at?: string
           event_id?: string | null
           id?: string
+          link_url?: string | null
           message?: string | null
           read?: boolean
+          read_at?: string | null
           title: string
           type: string
           user_id: string
         }
         Update: {
+          company_id?: string | null
           created_at?: string
           event_id?: string | null
           id?: string
+          link_url?: string | null
           message?: string | null
           read?: boolean
+          read_at?: string | null
           title?: string
           type?: string
           user_id?: string
         }
         Relationships: [
+          {
+            foreignKeyName: "notifications_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
           {
             foreignKeyName: "notifications_event_id_fkey"
             columns: ["event_id"]

@@ -5,6 +5,7 @@ import { TechnicianList } from "@/components/TechnicianList";
 import { StatusLegend } from "@/components/StatusLegend";
 import { ResourceCalendar } from "@/components/ResourceCalendar";
 import { EventDrawer } from "@/components/EventDrawer";
+import { TaskResourceStrip } from "@/components/tasks/TaskResourceStrip";
 import { Button } from "@/components/ui/button";
 import { Switch } from "@/components/ui/switch";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -377,6 +378,12 @@ export default function ResourcePlan() {
             <ChevronRight className="h-4 w-4" />
           </Button>
         </div>
+
+        {/* Unscheduled tasks strip */}
+        <TaskResourceStrip
+          technicianUserId={null}
+          referenceDate={referenceDate}
+        />
 
         {/* Interactive FullCalendar */}
         <ResourceCalendar

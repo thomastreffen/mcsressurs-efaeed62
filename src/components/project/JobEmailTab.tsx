@@ -239,7 +239,12 @@ export function JobEmailTab({ jobId, linkField }: JobEmailTabProps) {
       )}
 
       {/* Email thread viewer */}
-      {items.length > 0 && <CaseEmailViewer items={items} />}
+      {items.length > 0 && (
+        <CaseEmailViewer
+          items={items}
+          documents={attachments.map(a => ({ id: a.id, file_name: a.file_name }))}
+        />
+      )}
     </div>
   );
 }

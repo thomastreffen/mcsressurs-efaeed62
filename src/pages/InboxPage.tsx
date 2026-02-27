@@ -1192,7 +1192,15 @@ function CaseDetail({
               <p className="text-sm">Ingen aktivitet ennå</p>
             </div>
           ) : (
-            <CaseEmailViewer items={items} />
+            <CaseEmailViewer
+              items={items}
+              caseId={caseData.id}
+              companyId={caseData.company_id}
+              linkedWorkOrderId={caseData.linked_work_order_id}
+              linkedProjectId={caseData.linked_project_id}
+              linkedLeadId={caseData.linked_lead_id}
+              linkedOfferId={caseData.linked_offer_id}
+            />
           )}
         </div>
       </div>
