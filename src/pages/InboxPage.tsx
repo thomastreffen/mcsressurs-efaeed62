@@ -130,7 +130,11 @@ type Mailbox = {
   is_enabled: boolean;
 };
 
-type FilterType = "mine" | "team" | "needs_action" | "waiting_customer" | "waiting_internal" | "converted" | "closed";
+type FilterType = "mine" | "team" | "needs_action" | "waiting_customer" | "waiting_internal" | "linked" | "converted" | "closed";
+
+/** A case is considered "linked" (forwarded) when it has been connected to a project, job, lead or offer */
+const isLinkedCase = (c: { linked_project_id?: string | null; linked_work_order_id?: string | null; linked_lead_id?: string | null; linked_offer_id?: string | null; status?: string }) =>
+  !!(c.linked_project_id || c.linked_work_order_id || c.linked_lead_id || c.linked_offer_id);
 
 const FILTER_OPTIONS: { key: FilterType; label: string; icon: React.ElementType }[] = [
   { key: "mine", label: "Mine saker", icon: UserCheck },
@@ -138,6 +142,7 @@ const FILTER_OPTIONS: { key: FilterType; label: string; icon: React.ElementType 
   { key: "needs_action", label: "Krever handling", icon: AlertCircle },
   { key: "waiting_customer", label: "Avventer kunde", icon: Clock },
   { key: "waiting_internal", label: "Avventer internt", icon: Timer },
+  { key: "linked", label: "Videresendt", icon: ArrowRightLeft },
   { key: "converted", label: "Opprettet jobb", icon: CheckCircle2 },
   { key: "closed", label: "Lukket", icon: Lock },
 ];
@@ -437,17 +442,20 @@ export default function InboxPage() {
   const filtered = cases
     .filter((c) => {
       if (selectedMailbox !== "all" && c.mailbox_address !== selectedMailbox) return false;
+      const linked = isLinkedCase(c);
       switch (filter) {
         case "mine":
-          return c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || "");
+          return !linked && (c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || ""));
         case "team":
-          return c.scope === "company";
+          return !linked && c.scope === "company";
         case "needs_action":
-          return ["new", "triage"].includes(c.status);
+          return !linked && ["new", "triage"].includes(c.status);
         case "waiting_customer":
-          return c.status === "waiting_customer";
+          return !linked && c.status === "waiting_customer";
         case "waiting_internal":
-          return c.status === "waiting_internal";
+          return !linked && c.status === "waiting_internal";
+        case "linked":
+          return linked;
         case "converted":
           return c.status === "converted";
         case "closed":
@@ -462,11 +470,12 @@ export default function InboxPage() {
     });
 
   const statusCounts: Record<FilterType, number> = {
-    mine: cases.filter((c) => c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || "")).length,
-    team: cases.filter((c) => c.scope === "company").length,
-    needs_action: cases.filter((c) => ["new", "triage"].includes(c.status)).length,
-    waiting_customer: cases.filter((c) => c.status === "waiting_customer").length,
-    waiting_internal: cases.filter((c) => c.status === "waiting_internal").length,
+    mine: cases.filter((c) => !isLinkedCase(c) && (c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || ""))).length,
+    team: cases.filter((c) => !isLinkedCase(c) && c.scope === "company").length,
+    needs_action: cases.filter((c) => !isLinkedCase(c) && ["new", "triage"].includes(c.status)).length,
+    waiting_customer: cases.filter((c) => !isLinkedCase(c) && c.status === "waiting_customer").length,
+    waiting_internal: cases.filter((c) => !isLinkedCase(c) && c.status === "waiting_internal").length,
+    linked: cases.filter((c) => isLinkedCase(c)).length,
     converted: cases.filter((c) => c.status === "converted").length,
     closed: cases.filter((c) => c.status === "closed").length,
   };
@@ -587,7 +596,9 @@ export default function InboxPage() {
                     >
                       <div className="flex items-start gap-2">
                         <div className="mt-0.5">
-                          {c.priority === "critical" ? (
+                          {isLinkedCase(c) ? (
+                            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                          ) : c.priority === "critical" ? (
                             <AlertTriangle className="h-4 w-4 text-destructive" />
                           ) : c.status === "new" ? (
                             <Mail className="h-4 w-4 text-primary" />
@@ -638,6 +649,12 @@ export default function InboxPage() {
                               <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
                                 {c.mailbox_address}
                               </span>
+                            )}
+                            {isLinkedCase(c) && (
+                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5">
+                                <ArrowRightLeft className="h-2.5 w-2.5" />
+                                {c.linked_project_id ? "Prosjekt" : c.linked_work_order_id ? "Jobb" : c.linked_lead_id ? "Lead" : "Tilbud"}
+                              </Badge>
                             )}
                           </div>
                         </div>
