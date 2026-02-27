@@ -28,11 +28,13 @@ import { ProjectPlanTab } from "@/components/ProjectPlanTab";
 import { SubProjectSection } from "@/components/SubProjectSection";
 import { ServiceJobsTab } from "@/components/project/ServiceJobsTab";
 import { EmailComposer } from "@/components/EmailComposer";
+import { JobEmailTab } from "@/components/project/JobEmailTab";
 import { ProjectFormsTab } from "@/components/forms/ProjectFormsTab";
 import {
   Loader2,
   FileText,
   FileSignature,
+  Mail,
 } from "lucide-react";
 import { toast } from "sonner";
 import type { OutlookSyncStatus } from "@/lib/mock-data";
@@ -556,7 +558,7 @@ export default function JobDetail() {
 
           {/* ── E-POST ── */}
           {activeTab === "epost" && (
-            <div ref={emailRef}>
+            <div ref={emailRef} className="space-y-6">
               <SectionCard accent="orange">
                 <EmailComposer
                   entityType="job"
@@ -565,6 +567,10 @@ export default function JobDetail() {
                   refCode={job.internalNumber || displayNumber}
                   onSent={() => fetchLogs()}
                 />
+              </SectionCard>
+              <SectionCard>
+                <SectionTitle icon={<Mail className="h-4 w-4 text-primary" />}>Koblede e-poster fra Postkontoret</SectionTitle>
+                <JobEmailTab jobId={job.id} linkField="linked_work_order_id" />
               </SectionCard>
             </div>
           )}
