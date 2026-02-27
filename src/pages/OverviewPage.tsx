@@ -155,6 +155,7 @@ export default function OverviewPage() {
   // Postkontoret state
   const [caseKpis, setCaseKpis] = useState({
     newCount: 0, triageCount: 0, inProgressCount: 0, waitingCustomer: 0,
+    waitingInternal: 0, convertedCount: 0,
     critical: 0, criticalUnowned: 0, unhandled24h: 0,
   });
   const [myCases, setMyCases] = useState<any[]>([]);
@@ -411,7 +412,7 @@ export default function OverviewPage() {
     const [casesAllRes, myCasesRes, convertedRes] = await Promise.all([
       supabase.from("cases").select("id, priority, status, assigned_to_user_id, created_at, title, case_number, last_activity_at").is("archived_at", null).in("status", activeStatArr),
       supabase.from("cases").select("id, case_number, title, status, priority, last_activity_at").is("archived_at", null).eq("assigned_to_user_id", user?.id ?? "").not("status", "in", '("closed","archived")'),
-      supabase.from("cases").select("id, resolution_type").is("archived_at", null).eq("status", "converted").gte("updated_at", caseNow7d.toISOString()),
+      supabase.from("cases").select("id, resolution_type, linked_offer_id, linked_project_id, linked_work_order_id, linked_lead_id, updated_at").is("archived_at", null).eq("status", "converted").gte("updated_at", caseNow7d.toISOString()),
     ]);
 
     const allCases = casesAllRes.data || [];
@@ -421,6 +422,8 @@ export default function OverviewPage() {
     const triageCount = allCases.filter(c => c.status === "triage").length;
     const inProgressCount = allCases.filter(c => c.status === "in_progress").length;
     const waitingCustomerCount = allCases.filter(c => c.status === "waiting_customer").length;
+    const waitingInternalCount = allCases.filter(c => c.status === "waiting_internal").length;
+    const convertedCount = convertedCases.length;
     const criticalCount = allCases.filter(c => c.priority === "critical").length;
     const critUnownedCount = allCases.filter(c => c.priority === "critical" && !c.assigned_to_user_id).length;
     const unhandled24h = allCases.filter(c => c.status === "new" && new Date(c.created_at) < caseNow24h).length;
@@ -438,15 +441,24 @@ export default function OverviewPage() {
       differenceInDays(now, new Date(c.last_activity_at)) > 7
     );
 
-    // Converted last 7 days by resolution_type
-    const conv = {
-      offer: convertedCases.filter((c: any) => c.resolution_type === "converted_to_offer").length,
-      project: convertedCases.filter((c: any) => c.resolution_type === "converted_to_project").length,
-      service: convertedCases.filter((c: any) => c.resolution_type === "converted_to_service").length,
-      lead: convertedCases.filter((c: any) => c.resolution_type === "converted_to_lead").length,
-    };
+    // Converted last 7 days: prefer resolution_type, fallback to linked_* fields
+    const conv = { offer: 0, project: 0, service: 0, lead: 0 };
+    for (const c of convertedCases) {
+      const rt = (c as any).resolution_type;
+      if (rt === "converted_to_offer") { conv.offer++; }
+      else if (rt === "converted_to_project") { conv.project++; }
+      else if (rt === "converted_to_service") { conv.service++; }
+      else if (rt === "converted_to_lead") { conv.lead++; }
+      else {
+        // Fallback: infer from linked_* fields
+        if ((c as any).linked_offer_id) conv.offer++;
+        else if ((c as any).linked_project_id) conv.project++;
+        else if ((c as any).linked_work_order_id) conv.service++;
+        else if ((c as any).linked_lead_id) conv.lead++;
+      }
+    }
 
-    setCaseKpis({ newCount, triageCount, inProgressCount, waitingCustomer: waitingCustomerCount, critical: criticalCount, criticalUnowned: critUnownedCount, unhandled24h });
+    setCaseKpis({ newCount, triageCount, inProgressCount, waitingCustomer: waitingCustomerCount, waitingInternal: waitingInternalCount, convertedCount, critical: criticalCount, criticalUnowned: critUnownedCount, unhandled24h });
     setMyCases(myCasesRes.data || []);
     setCriticalUnowned(critUnowned);
     setStuckCases({ stale24h, waitingCustomer7d });
@@ -479,15 +491,17 @@ export default function OverviewPage() {
           <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Postkontoret – Drift nå</h2>
         </div>
 
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
           {([
             { label: "Nye", value: caseKpis.newCount, href: "/inbox?filter=needs_action", iconColor: caseKpis.newCount > 0 ? "text-primary" : "text-muted-foreground", valueColor: "text-foreground", icon: <Mail className="h-4 w-4" /> },
             { label: "Sortering", value: caseKpis.triageCount, href: "/inbox?filter=needs_action", iconColor: "text-muted-foreground", valueColor: "text-foreground", icon: <Inbox className="h-4 w-4" /> },
-            { label: "Under behandling", value: caseKpis.inProgressCount, href: "/inbox?filter=mine", iconColor: "text-primary", valueColor: "text-foreground", icon: <Activity className="h-4 w-4" /> },
+            { label: "Under arbeid", value: caseKpis.inProgressCount, href: "/inbox?filter=mine", iconColor: "text-primary", valueColor: "text-foreground", icon: <Activity className="h-4 w-4" /> },
             { label: "Avventer kunde", value: caseKpis.waitingCustomer, href: "/inbox?filter=waiting_customer", iconColor: "text-muted-foreground", valueColor: "text-foreground", icon: <PauseCircle className="h-4 w-4" /> },
+            { label: "Avventer internt", value: caseKpis.waitingInternal, href: "/inbox?filter=waiting_internal", iconColor: "text-muted-foreground", valueColor: "text-foreground", icon: <BellRing className="h-4 w-4" /> },
+            { label: "Konvertert", value: caseKpis.convertedCount, href: "/inbox?filter=converted", iconColor: caseKpis.convertedCount > 0 ? "text-success" : "text-muted-foreground", valueColor: caseKpis.convertedCount > 0 ? "text-success" : "text-foreground", icon: <FolderKanban className="h-4 w-4" /> },
+            { label: "Ubehandlet >24t", value: caseKpis.unhandled24h, href: "/inbox?filter=needs_action", iconColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-muted-foreground", valueColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-foreground", icon: <Timer className="h-4 w-4" /> },
             { label: "Kritiske", value: caseKpis.critical, href: "/inbox?priority=critical", iconColor: caseKpis.critical > 0 ? "text-destructive" : "text-muted-foreground", valueColor: caseKpis.critical > 0 ? "text-destructive" : "text-foreground", icon: <Flame className="h-4 w-4" /> },
             { label: "Kritiske uten eier", value: caseKpis.criticalUnowned, href: "/inbox?priority=critical", iconColor: caseKpis.criticalUnowned > 0 ? "text-destructive" : "text-muted-foreground", valueColor: caseKpis.criticalUnowned > 0 ? "text-destructive" : "text-foreground", icon: <AlertTriangle className="h-4 w-4" /> },
-            { label: "Ubehandlet >24t", value: caseKpis.unhandled24h, href: "/inbox?filter=needs_action", iconColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-muted-foreground", valueColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-foreground", icon: <Timer className="h-4 w-4" /> },
           ] as const).map((kpi, i) => (
             <button
               key={i}
