@@ -395,7 +395,7 @@ export default function OverviewPage() {
 
     const [casesAllRes, myCasesRes] = await Promise.all([
       supabase.from("cases").select("id, priority, status, assigned_to_user_id, created_at, title, case_number, last_activity_at").is("archived_at", null).in("status", activeStatArr),
-      supabase.from("cases").select("id, case_number, title, status, last_activity_at").is("archived_at", null).eq("assigned_to_user_id", user?.id ?? ""),
+      supabase.from("cases").select("id, case_number, title, status, priority, last_activity_at").is("archived_at", null).eq("assigned_to_user_id", user?.id ?? "").not("status", "in", '("closed","archived")'),
     ]);
 
     const allCases = casesAllRes.data || [];
@@ -425,19 +425,15 @@ export default function OverviewPage() {
         {pulse && <PulseStripe pulse={pulse} />}
       </div>
 
-      {/* ── 0. POSTKONTORET STATUS ── */}
+      {/* ── 0. POSTKONTORET – DRIFT NÅ ── */}
       <div className={`rounded-2xl border p-5 sm:p-7 ${
-        caseKpis.critical > 0 ? "bg-destructive/[0.06] border-destructive/20" 
-        : caseKpis.needsAction > 0 ? "bg-accent/[0.06] border-accent/20"
-        : "bg-card border-border/40"
+        caseKpis.critical > 3 ? "bg-destructive/[0.04] border-destructive/15" : "bg-card border-border/40"
       }`}>
         <div className="flex items-center gap-3 mb-5">
-          <div className={`h-9 w-9 rounded-full flex items-center justify-center ${
-            caseKpis.critical > 0 ? "bg-destructive/15" : "bg-primary/10"
-          }`}>
-            <Inbox className={`h-[18px] w-[18px] ${caseKpis.critical > 0 ? "text-destructive" : "text-primary"}`} />
+          <div className="h-9 w-9 rounded-full bg-primary/10 flex items-center justify-center">
+            <Inbox className="h-[18px] w-[18px] text-primary" />
           </div>
-          <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Postkontoret – Status</h2>
+          <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Postkontoret – Drift nå</h2>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -447,7 +443,6 @@ export default function OverviewPage() {
               value: caseKpis.critical,
               icon: <Flame className="h-4 w-4" />,
               href: "/inbox?priority=critical",
-              bg: caseKpis.critical > 0 ? "bg-destructive/10" : "bg-muted/60",
               iconColor: caseKpis.critical > 0 ? "text-destructive" : "text-muted-foreground",
               valueColor: caseKpis.critical > 0 ? "text-destructive" : "text-foreground",
             },
@@ -456,7 +451,6 @@ export default function OverviewPage() {
               value: caseKpis.needsAction,
               icon: <BellRing className="h-4 w-4" />,
               href: "/inbox?status=new,triage",
-              bg: caseKpis.needsAction > 0 ? "bg-accent/10" : "bg-muted/60",
               iconColor: caseKpis.needsAction > 0 ? "text-accent" : "text-muted-foreground",
               valueColor: caseKpis.needsAction > 0 ? "text-accent" : "text-foreground",
             },
@@ -465,16 +459,14 @@ export default function OverviewPage() {
               value: caseKpis.unhandled24h,
               icon: <Timer className="h-4 w-4" />,
               href: "/inbox?status=new",
-              bg: caseKpis.unhandled24h > 0 ? "bg-destructive/10" : "bg-muted/60",
-              iconColor: caseKpis.unhandled24h > 0 ? "text-destructive" : "text-muted-foreground",
-              valueColor: caseKpis.unhandled24h > 0 ? "text-destructive" : "text-foreground",
+              iconColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-muted-foreground",
+              valueColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-foreground",
             },
             {
               label: "Nye siste 4 timer",
               value: caseKpis.newLast4h,
               icon: <Mail className="h-4 w-4" />,
               href: "/inbox",
-              bg: "bg-primary/8",
               iconColor: "text-primary",
               valueColor: "text-foreground",
             },
@@ -484,7 +476,7 @@ export default function OverviewPage() {
               onClick={() => navigate(kpi.href)}
               className="flex flex-col rounded-xl bg-card border border-border/30 px-4 py-4 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all text-left"
             >
-              <div className={`h-8 w-8 rounded-full ${kpi.bg} flex items-center justify-center mb-2`}>
+              <div className="h-8 w-8 rounded-full bg-muted/60 flex items-center justify-center mb-2">
                 <span className={kpi.iconColor}>{kpi.icon}</span>
               </div>
               <p className={`text-[28px] sm:text-[32px] font-bold font-mono leading-none tracking-tight ${kpi.valueColor}`}>{kpi.value}</p>
@@ -495,49 +487,65 @@ export default function OverviewPage() {
       </div>
 
       {/* ── 0b. DU JOBBER MED NÅ ── */}
-      {myCases.length > 0 && (
-        <div className="rounded-2xl bg-card border border-border/40 p-5 sm:p-6">
-          <SectionHeader
-            title="Du jobber med nå"
-            action={<span className="text-[11px] text-muted-foreground/50 uppercase tracking-wider">{myCases.length} saker</span>}
-          />
+      <div className="rounded-2xl bg-card border border-border/40 p-5 sm:p-6">
+        <SectionHeader
+          title="Du jobber med nå"
+          action={myCases.length > 0 ? <span className="text-[11px] text-muted-foreground/50 uppercase tracking-wider">{myCases.length} saker</span> : undefined}
+        />
+        {myCases.length > 0 ? (
           <div className="space-y-0.5">
-            {myCases.slice(0, 8).map(c => (
-              <button
-                key={c.id}
-                onClick={() => navigate(`/inbox`)}
-                className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-secondary/50 active:scale-[0.995] transition-all group"
-              >
-                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
-                  <User className="h-4 w-4 text-primary" />
-                </div>
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center gap-2">
-                    <span className="text-xs font-mono text-muted-foreground">{c.case_number}</span>
-                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-full">{c.status}</Badge>
+            {myCases.slice(0, 5).map(c => {
+              const isStale = c.last_activity_at && c.status !== "waiting_customer" && (Date.now() - new Date(c.last_activity_at).getTime()) > 24 * 60 * 60 * 1000;
+              const priorityMap: Record<string, { label: string; cls: string }> = {
+                critical: { label: "Kritisk", cls: "bg-destructive/10 text-destructive" },
+                high: { label: "Høy", cls: "bg-accent/10 text-accent" },
+                normal: { label: "Normal", cls: "bg-muted text-muted-foreground" },
+                low: { label: "Lav", cls: "bg-muted text-muted-foreground" },
+              };
+              const prio = priorityMap[c.priority] || priorityMap.normal;
+              return (
+                <button
+                  key={c.id}
+                  onClick={() => navigate(`/inbox`)}
+                  className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-secondary/50 active:scale-[0.995] transition-all group"
+                >
+                  <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                    <User className="h-4 w-4 text-primary" />
                   </div>
-                  <p className="text-[15px] text-foreground truncate group-hover:text-primary transition-colors leading-snug">{c.title}</p>
-                </div>
-                {c.last_activity_at && (
-                  <span className="text-[11px] text-muted-foreground/50 shrink-0">
-                    {formatDistanceToNow(new Date(c.last_activity_at), { addSuffix: true, locale: nb })}
-                  </span>
-                )}
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors shrink-0" />
-              </button>
-            ))}
+                  <div className="min-w-0 flex-1">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-xs font-mono text-muted-foreground">{c.case_number}</span>
+                      <span className={`text-[10px] font-medium rounded-full px-1.5 py-0 ${prio.cls}`}>{prio.label}</span>
+                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-full">{c.status}</Badge>
+                      {isStale && (
+                        <span className="text-[10px] font-medium rounded-full px-1.5 py-0 bg-accent/10 text-accent">Inaktiv &gt;24t</span>
+                      )}
+                    </div>
+                    <p className="text-[15px] text-foreground truncate group-hover:text-primary transition-colors leading-snug">{c.title}</p>
+                  </div>
+                  {c.last_activity_at && (
+                    <span className="text-[11px] text-muted-foreground/50 shrink-0">
+                      {formatDistanceToNow(new Date(c.last_activity_at), { addSuffix: true, locale: nb })}
+                    </span>
+                  )}
+                  <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors shrink-0" />
+                </button>
+              );
+            })}
           </div>
-        </div>
-      )}
+        ) : (
+          <p className="text-sm text-muted-foreground/60 py-6 text-center">Du har ingen aktive saker. Bra kontroll.</p>
+        )}
+      </div>
 
       {/* ── 0c. KRITISKE UTEN EIER ── */}
       {criticalUnowned.length > 0 && (
-        <div className="rounded-2xl bg-destructive/[0.06] border border-destructive/15 p-5 sm:p-6">
+        <div className="rounded-2xl bg-card border border-border/40 border-l-4 border-l-destructive p-5 sm:p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="h-8 w-8 rounded-full bg-destructive/15 flex items-center justify-center">
+            <div className="h-8 w-8 rounded-full bg-destructive/10 flex items-center justify-center">
               <AlertTriangle className="h-4 w-4 text-destructive" />
             </div>
-            <h2 className="text-[15px] font-semibold text-destructive tracking-tight">Kritiske uten eier</h2>
+            <h2 className="text-[15px] font-semibold text-foreground tracking-tight">Kritiske uten eier</h2>
             <Badge variant="destructive" className="text-xs font-mono rounded-full px-2.5 py-0.5 font-bold">{criticalUnowned.length}</Badge>
           </div>
           <div className="space-y-0.5">
@@ -545,27 +553,27 @@ export default function OverviewPage() {
               <button
                 key={c.id}
                 onClick={() => navigate(`/inbox`)}
-                className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-destructive/[0.04] active:scale-[0.995] transition-all group"
+                className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-secondary/50 active:scale-[0.995] transition-all group"
               >
                 <span className="text-xs font-mono text-destructive/70">{c.case_number}</span>
-                <p className="text-[15px] text-foreground truncate flex-1 group-hover:text-destructive transition-colors">{c.title}</p>
-                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-destructive/40 transition-colors shrink-0" />
+                <p className="text-[15px] text-foreground truncate flex-1 group-hover:text-primary transition-colors">{c.title}</p>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors shrink-0" />
               </button>
             ))}
           </div>
         </div>
       )}
 
-      {/* ── 1. KREVER HANDLING — Hero section ── */}
-      <div className="rounded-2xl bg-destructive/[0.04] border border-destructive/10 p-5 sm:p-7">
+      {/* ── 1. KREVER HANDLING ── */}
+      <div className="rounded-2xl bg-card border border-border/40 p-5 sm:p-7">
         <div className="flex items-center justify-between mb-5">
           <div className="flex items-center gap-3">
-            <div className="h-9 w-9 rounded-full bg-destructive/10 flex items-center justify-center">
-              <AlertTriangle className="h-[18px] w-[18px] text-destructive" />
+            <div className="h-9 w-9 rounded-full bg-muted/60 flex items-center justify-center">
+              <AlertTriangle className="h-[18px] w-[18px] text-accent" />
             </div>
             <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Krever handling</h2>
             {actions.length > 0 && (
-              <Badge variant="destructive" className="text-xs font-mono rounded-full px-2.5 py-0.5 ml-1 font-bold">
+              <Badge variant="secondary" className="text-xs font-mono rounded-full px-2.5 py-0.5 ml-1 font-bold">
                 {actions.reduce((s, a) => s + a.count, 0)}
               </Badge>
             )}
@@ -580,11 +588,9 @@ export default function OverviewPage() {
                 onClick={() => navigate(a.href)}
                 className="flex items-center gap-3 w-full rounded-xl px-4 py-3.5 text-left bg-card border border-border/30 hover:shadow-md hover:border-primary/20 active:scale-[0.99] transition-all duration-150 group"
               >
-                <div className={`flex items-center justify-center h-9 w-9 rounded-full shrink-0 ${
-                  a.severity === "critical" ? "bg-destructive/10" : a.severity === "warning" ? "bg-accent/10" : "bg-muted"
-                }`}>
+                <div className="flex items-center justify-center h-9 w-9 rounded-full shrink-0 bg-muted/60">
                   <span className={`h-2.5 w-2.5 rounded-full ${
-                    a.severity === "critical" ? "bg-destructive animate-pulse" : a.severity === "warning" ? "bg-accent" : "bg-muted-foreground"
+                    a.severity === "critical" ? "bg-destructive" : a.severity === "warning" ? "bg-accent" : "bg-muted-foreground"
                   }`} />
                 </div>
                 <div className="min-w-0 flex-1">
@@ -594,7 +600,9 @@ export default function OverviewPage() {
                     <UrgencyBadge urgency={a.urgency} />
                   </div>
                 </div>
-                <Badge variant="secondary" className="text-sm font-mono rounded-full px-3 py-0.5 font-bold">
+                <Badge variant="secondary" className={`text-sm font-mono rounded-full px-3 py-0.5 font-bold ${
+                  a.severity === "critical" ? "text-destructive" : a.severity === "warning" ? "text-accent" : ""
+                }`}>
                   {a.count}
                 </Badge>
                 <ChevronRight className="h-4 w-4 text-muted-foreground/30 group-hover:text-primary/60 transition-colors shrink-0" />
