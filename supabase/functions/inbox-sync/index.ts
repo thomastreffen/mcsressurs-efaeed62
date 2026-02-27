@@ -72,12 +72,15 @@ async function fetchMailboxMessages(
   if (deltaLink) {
     // Use delta link for incremental sync
     url = deltaLink;
+  } else if (isShared) {
+    // Shared mailbox: explicitly target Inbox folder + delta for reliable results
+    const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages/delta`;
+    url = `${inboxPath}?$top=50&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
   } else {
+    // Personal mailbox: target Inbox folder
+    const inboxPath = `${GRAPH_BASE}/me/mailFolders/Inbox/messages`;
     const filter = `receivedDateTime ge ${sinceDate}`;
-    const basePath = isShared
-      ? `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/messages`
-      : `${GRAPH_BASE}/me/messages`;
-    url = `${basePath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
+    url = `${inboxPath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,receivedDateTime,hasAttachments,isDraft,conversationId`;
   }
 
   const allMessages: any[] = [];
