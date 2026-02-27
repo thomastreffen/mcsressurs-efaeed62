@@ -3,12 +3,13 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchActiveLeads } from "@/lib/lead-queries";
 import { calculateCompanyPulse, calculateActionPriority, getProjectHealthMicro, type CompanyPulse, type ProjectHealthMicro } from "@/lib/company-pulse";
-import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays, formatDistanceToNow } from "date-fns";
+import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays, subHours, formatDistanceToNow } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
   Briefcase, CalendarDays, AlertTriangle, TrendingUp,
   ChevronRight, ArrowRight, Clock, ShieldAlert, Wallet,
   FileText, UserPlus, BarChart3, Zap, Mail, Activity,
+  Inbox, Flame, Timer, BellRing, User,
 } from "lucide-react";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { useAuth } from "@/hooks/useAuth";
@@ -130,7 +131,7 @@ function PulseStripe({ pulse }: { pulse: CompanyPulse }) {
 
 export default function OverviewPage() {
   const navigate = useNavigate();
-  const { isAdmin } = useAuth();
+  const { isAdmin, user } = useAuth();
   const isMobile = useIsMobile();
   const [loading, setLoading] = useState(true);
 
@@ -142,6 +143,11 @@ export default function OverviewPage() {
   const [actions, setActions] = useState<ActionItem[]>([]);
   const [activityFeed, setActivityFeed] = useState<ActivityFeedItem[]>([]);
   const [pulse, setPulse] = useState<CompanyPulse | null>(null);
+
+  // Postkontoret state
+  const [caseKpis, setCaseKpis] = useState({ critical: 0, needsAction: 0, unhandled24h: 0, newLast4h: 0 });
+  const [myCases, setMyCases] = useState<any[]>([]);
+  const [criticalUnowned, setCriticalUnowned] = useState<any[]>([]);
 
   useEffect(() => { fetchData(); }, []);
 
@@ -382,6 +388,27 @@ export default function OverviewPage() {
     feed.sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
     setActivityFeed(feed.slice(0, 10));
 
+    // ── POSTKONTORET KPI ──
+    const now4h = subHours(now, 4);
+    const now24h = subDays(now, 1);
+    const activeStatArr: ("new" | "triage" | "assigned" | "waiting_customer" | "waiting_internal")[] = ["new", "triage", "assigned", "waiting_customer", "waiting_internal"];
+
+    const [casesAllRes, myCasesRes] = await Promise.all([
+      supabase.from("cases").select("id, priority, status, assigned_to_user_id, created_at, title, case_number, last_activity_at").is("archived_at", null).in("status", activeStatArr),
+      supabase.from("cases").select("id, case_number, title, status, last_activity_at").is("archived_at", null).eq("assigned_to_user_id", user?.id ?? ""),
+    ]);
+
+    const allCases = casesAllRes.data || [];
+    const criticalCount = allCases.filter(c => c.priority === "critical").length;
+    const needsActionCount = allCases.filter(c => ["new", "triage"].includes(c.status) || (c.priority === "high" && !c.assigned_to_user_id)).length;
+    const unhandled24h = allCases.filter(c => c.status === "new" && new Date(c.created_at) < now24h).length;
+    const newLast4h = allCases.filter(c => new Date(c.created_at) >= now4h).length;
+    const critUnowned = allCases.filter(c => c.priority === "critical" && !c.assigned_to_user_id);
+
+    setCaseKpis({ critical: criticalCount, needsAction: needsActionCount, unhandled24h: unhandled24h, newLast4h: newLast4h });
+    setMyCases(myCasesRes.data || []);
+    setCriticalUnowned(critUnowned);
+
     setLoading(false);
   }
 
@@ -397,6 +424,137 @@ export default function OverviewPage() {
         </p>
         {pulse && <PulseStripe pulse={pulse} />}
       </div>
+
+      {/* ── 0. POSTKONTORET STATUS ── */}
+      <div className={`rounded-2xl border p-5 sm:p-7 ${
+        caseKpis.critical > 0 ? "bg-destructive/[0.06] border-destructive/20" 
+        : caseKpis.needsAction > 0 ? "bg-accent/[0.06] border-accent/20"
+        : "bg-card border-border/40"
+      }`}>
+        <div className="flex items-center gap-3 mb-5">
+          <div className={`h-9 w-9 rounded-full flex items-center justify-center ${
+            caseKpis.critical > 0 ? "bg-destructive/15" : "bg-primary/10"
+          }`}>
+            <Inbox className={`h-[18px] w-[18px] ${caseKpis.critical > 0 ? "text-destructive" : "text-primary"}`} />
+          </div>
+          <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Postkontoret – Status</h2>
+        </div>
+
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+          {([
+            {
+              label: "Kritiske henvendelser",
+              value: caseKpis.critical,
+              icon: <Flame className="h-4 w-4" />,
+              href: "/inbox?priority=critical",
+              bg: caseKpis.critical > 0 ? "bg-destructive/10" : "bg-muted/60",
+              iconColor: caseKpis.critical > 0 ? "text-destructive" : "text-muted-foreground",
+              valueColor: caseKpis.critical > 0 ? "text-destructive" : "text-foreground",
+            },
+            {
+              label: "Krever handling",
+              value: caseKpis.needsAction,
+              icon: <BellRing className="h-4 w-4" />,
+              href: "/inbox?status=new,triage",
+              bg: caseKpis.needsAction > 0 ? "bg-accent/10" : "bg-muted/60",
+              iconColor: caseKpis.needsAction > 0 ? "text-accent" : "text-muted-foreground",
+              valueColor: caseKpis.needsAction > 0 ? "text-accent" : "text-foreground",
+            },
+            {
+              label: "Ubehandlet >24t",
+              value: caseKpis.unhandled24h,
+              icon: <Timer className="h-4 w-4" />,
+              href: "/inbox?status=new",
+              bg: caseKpis.unhandled24h > 0 ? "bg-destructive/10" : "bg-muted/60",
+              iconColor: caseKpis.unhandled24h > 0 ? "text-destructive" : "text-muted-foreground",
+              valueColor: caseKpis.unhandled24h > 0 ? "text-destructive" : "text-foreground",
+            },
+            {
+              label: "Nye siste 4 timer",
+              value: caseKpis.newLast4h,
+              icon: <Mail className="h-4 w-4" />,
+              href: "/inbox",
+              bg: "bg-primary/8",
+              iconColor: "text-primary",
+              valueColor: "text-foreground",
+            },
+          ] as const).map((kpi, i) => (
+            <button
+              key={i}
+              onClick={() => navigate(kpi.href)}
+              className="flex flex-col rounded-xl bg-card border border-border/30 px-4 py-4 hover:shadow-md hover:scale-[1.01] active:scale-[0.99] transition-all text-left"
+            >
+              <div className={`h-8 w-8 rounded-full ${kpi.bg} flex items-center justify-center mb-2`}>
+                <span className={kpi.iconColor}>{kpi.icon}</span>
+              </div>
+              <p className={`text-[28px] sm:text-[32px] font-bold font-mono leading-none tracking-tight ${kpi.valueColor}`}>{kpi.value}</p>
+              <p className="text-[11px] text-muted-foreground/60 mt-1 uppercase tracking-wider font-medium">{kpi.label}</p>
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* ── 0b. DU JOBBER MED NÅ ── */}
+      {myCases.length > 0 && (
+        <div className="rounded-2xl bg-card border border-border/40 p-5 sm:p-6">
+          <SectionHeader
+            title="Du jobber med nå"
+            action={<span className="text-[11px] text-muted-foreground/50 uppercase tracking-wider">{myCases.length} saker</span>}
+          />
+          <div className="space-y-0.5">
+            {myCases.slice(0, 8).map(c => (
+              <button
+                key={c.id}
+                onClick={() => navigate(`/inbox`)}
+                className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-secondary/50 active:scale-[0.995] transition-all group"
+              >
+                <div className="h-8 w-8 rounded-full bg-primary/10 flex items-center justify-center shrink-0">
+                  <User className="h-4 w-4 text-primary" />
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-mono text-muted-foreground">{c.case_number}</span>
+                    <Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-full">{c.status}</Badge>
+                  </div>
+                  <p className="text-[15px] text-foreground truncate group-hover:text-primary transition-colors leading-snug">{c.title}</p>
+                </div>
+                {c.last_activity_at && (
+                  <span className="text-[11px] text-muted-foreground/50 shrink-0">
+                    {formatDistanceToNow(new Date(c.last_activity_at), { addSuffix: true, locale: nb })}
+                  </span>
+                )}
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 0c. KRITISKE UTEN EIER ── */}
+      {criticalUnowned.length > 0 && (
+        <div className="rounded-2xl bg-destructive/[0.06] border border-destructive/15 p-5 sm:p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-8 w-8 rounded-full bg-destructive/15 flex items-center justify-center">
+              <AlertTriangle className="h-4 w-4 text-destructive" />
+            </div>
+            <h2 className="text-[15px] font-semibold text-destructive tracking-tight">Kritiske uten eier</h2>
+            <Badge variant="destructive" className="text-xs font-mono rounded-full px-2.5 py-0.5 font-bold">{criticalUnowned.length}</Badge>
+          </div>
+          <div className="space-y-0.5">
+            {criticalUnowned.slice(0, 5).map(c => (
+              <button
+                key={c.id}
+                onClick={() => navigate(`/inbox`)}
+                className="flex items-center gap-3 w-full rounded-xl px-3 py-2.5 text-left hover:bg-destructive/[0.04] active:scale-[0.995] transition-all group"
+              >
+                <span className="text-xs font-mono text-destructive/70">{c.case_number}</span>
+                <p className="text-[15px] text-foreground truncate flex-1 group-hover:text-destructive transition-colors">{c.title}</p>
+                <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-destructive/40 transition-colors shrink-0" />
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
 
       {/* ── 1. KREVER HANDLING — Hero section ── */}
       <div className="rounded-2xl bg-destructive/[0.04] border border-destructive/10 p-5 sm:p-7">
