@@ -97,6 +97,10 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
   "contracts.edit": { label: "Opprette og redigere kontrakter", category: "Kontrakter" },
   "contracts.admin": { label: "Administrere kontrakter", description: "Full tilgang til sletting og arkivering av kontrakter.", category: "Kontrakter" },
 
+  // Postkontoret
+  "postkontor.view": { label: "Tilgang til Postkontoret", description: "Kan se henvendelser og bruke Postkontoret-modulen.", category: "Postkontoret" },
+  "postkontor.admin": { label: "Administrere Postkontoret", description: "Full tilgang til innstillinger, postkasser og rutingsregler i Postkontoret.", category: "Postkontoret" },
+
   // Data
   "data.delete": { label: "Slette data", description: "Kan flytte elementer til papirkurven.", category: "Data" },
 };
@@ -152,6 +156,11 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
     category: "Kontrakter",
     description: "Tilgang til kontraktsmodulen med risiko og fristanalyse.",
     keys: ["contracts.read", "contracts.edit", "contracts.admin"],
+  },
+  {
+    category: "Postkontoret",
+    description: "Tilgang til Postkontoret for henvendelser og e-postsynkronisering.",
+    keys: ["postkontor.view", "postkontor.admin"],
   },
   {
     category: "Data",

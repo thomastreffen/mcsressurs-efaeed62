@@ -27,6 +27,7 @@ import {
 } from "lucide-react";
 import { NavLink } from "@/components/NavLink";
 import { useAuth } from "@/hooks/useAuth";
+import { usePermissions } from "@/hooks/usePermissions";
 import {
   Sidebar,
   SidebarContent,
@@ -40,11 +41,12 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-const mainNav = [
+const mainNavBase = [
   { title: "Oversikt", url: "/overview", icon: LayoutDashboard },
-  { title: "Henvendelser", url: "/inbox", icon: Inbox },
   { title: "Integrasjoner", url: "/settings/integrations", icon: Plug },
 ];
+
+const postkontoretNav = { title: "Henvendelser", url: "/inbox", icon: Inbox };
 
 const customerNav = [
   { title: "Alle kunder", url: "/customers", icon: Users },
@@ -72,7 +74,7 @@ const fagNav = [
 const adminNav = [
   { title: "Firma", url: "/admin/company", icon: Building, requireSuperAdmin: true },
   { title: "Ansatte", url: "/admin/ansatte", icon: HardHat, requireAdmin: true },
-  { title: "Postkontoret", url: "/admin/superoffice", icon: Inbox, requireAdmin: true },
+  { title: "Postkontoret", url: "/admin/superoffice", icon: Inbox, requirePostkontorAdmin: true },
   { title: "Skjemamaler", url: "/admin/forms", icon: BookOpen, requireAdmin: true },
   { title: "Brukere", url: "/admin/users", icon: Users, requireSuperAdmin: true },
   { title: "Tilgangsstyring", url: "/admin/access", icon: ShieldCheck, requireSuperAdmin: true },
@@ -123,13 +125,24 @@ export function AppSidebar() {
   const { state } = useSidebar();
   const collapsed = state === "collapsed";
   const { isAdmin, isSuperAdmin } = useAuth();
+  const { hasPermission } = usePermissions();
   const location = useLocation();
 
   const isActive = (url: string) =>
     url === "/overview" ? location.pathname === "/overview" : location.pathname.startsWith(url);
 
+  const hasPostkontor = isAdmin || hasPermission("postkontor.view");
+  const hasPostkontorAdmin = isAdmin || hasPermission("postkontor.admin");
+
+  // Build main nav with conditional Henvendelser
+  const mainNav = hasPostkontor
+    ? [mainNavBase[0], postkontoretNav, mainNavBase[1]]
+    : [...mainNavBase];
+
   const filteredAdmin = adminNav.filter((item) => {
     if ('requireSuperAdmin' in item && item.requireSuperAdmin) return isSuperAdmin;
+    // Postkontoret settings: require postkontor.admin
+    if ('requirePostkontorAdmin' in item && (item as any).requirePostkontorAdmin) return hasPostkontorAdmin;
     if ('requireAdmin' in item && item.requireAdmin) return isAdmin;
     return true;
   });

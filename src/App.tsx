@@ -91,7 +91,11 @@ const App = () => (
             >
               <Route path="/" element={<Navigate to="/overview" replace />} />
               <Route path="/overview" element={<OverviewPage />} />
-              <Route path="/inbox" element={<InboxPage />} />
+              <Route path="/inbox" element={
+                <ProtectedRoute requiredPermission="postkontor.view">
+                  <InboxPage />
+                </ProtectedRoute>
+              } />
               <Route path="/dashboard" element={<Navigate to="/overview" replace />} />
               <Route path="/projects" element={<JobsPage />} />
               <Route path="/projects/new" element={<ProjectNewPage />} />
@@ -267,7 +271,7 @@ const App = () => (
               <Route
                 path="/admin/superoffice"
                 element={
-                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                  <ProtectedRoute requiredPermission="postkontor.admin">
                     <SuperofficeSettingsPage />
                   </ProtectedRoute>
                 }
