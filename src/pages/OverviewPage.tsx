@@ -3,19 +3,27 @@ import { useNavigate } from "react-router-dom";
 import { supabase } from "@/integrations/supabase/client";
 import { fetchActiveLeads } from "@/lib/lead-queries";
 import { calculateCompanyPulse, calculateActionPriority, getProjectHealthMicro, type CompanyPulse, type ProjectHealthMicro } from "@/lib/company-pulse";
-import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays, subHours, formatDistanceToNow } from "date-fns";
+import { format, startOfDay, startOfWeek, endOfWeek, differenceInDays, subDays, subHours, formatDistanceToNow, differenceInHours } from "date-fns";
 import { nb } from "date-fns/locale";
 import {
   Briefcase, CalendarDays, AlertTriangle, TrendingUp,
   ChevronRight, ArrowRight, Clock, ShieldAlert, Wallet,
   FileText, UserPlus, BarChart3, Zap, Mail, Activity,
-  Inbox, Flame, Timer, BellRing, User,
+  Inbox, Flame, Timer, BellRing, User, FolderKanban,
+  Wrench, ReceiptText, Users, PauseCircle, AlertCircle,
 } from "lucide-react";
 import { DashboardSkeleton } from "@/components/DashboardSkeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsMobile } from "@/hooks/use-mobile";
 import type { JobStatus } from "@/lib/job-status";
 import { Badge } from "@/components/ui/badge";
+import {
+  CASE_STATUS_LABELS,
+  CASE_STATUS_COLOR,
+  CASE_PRIORITY_COLOR,
+  CASE_PRIORITY_LABELS,
+  type CaseStatus as CaseStatusType,
+} from "@/lib/case-labels";
 
 // ── Types ──
 
@@ -145,9 +153,14 @@ export default function OverviewPage() {
   const [pulse, setPulse] = useState<CompanyPulse | null>(null);
 
   // Postkontoret state
-  const [caseKpis, setCaseKpis] = useState({ critical: 0, needsAction: 0, unhandled24h: 0, newLast4h: 0 });
+  const [caseKpis, setCaseKpis] = useState({
+    newCount: 0, triageCount: 0, inProgressCount: 0, waitingCustomer: 0,
+    critical: 0, criticalUnowned: 0, unhandled24h: 0,
+  });
   const [myCases, setMyCases] = useState<any[]>([]);
   const [criticalUnowned, setCriticalUnowned] = useState<any[]>([]);
+  const [stuckCases, setStuckCases] = useState<{ stale24h: any[]; waitingCustomer7d: any[] }>({ stale24h: [], waitingCustomer7d: [] });
+  const [convertedLast7d, setConvertedLast7d] = useState({ offer: 0, project: 0, service: 0, lead: 0 });
 
   useEffect(() => { fetchData(); }, []);
 
@@ -392,22 +405,52 @@ export default function OverviewPage() {
     const now4h = subHours(now, 4);
     const now24h = subDays(now, 1);
     const activeStatArr = ["new", "triage", "in_progress", "waiting_customer", "waiting_internal"] as const;
+    const caseNow24h = subDays(now, 1);
+    const caseNow7d = subDays(now, 7);
 
-    const [casesAllRes, myCasesRes] = await Promise.all([
+    const [casesAllRes, myCasesRes, convertedRes] = await Promise.all([
       supabase.from("cases").select("id, priority, status, assigned_to_user_id, created_at, title, case_number, last_activity_at").is("archived_at", null).in("status", activeStatArr),
       supabase.from("cases").select("id, case_number, title, status, priority, last_activity_at").is("archived_at", null).eq("assigned_to_user_id", user?.id ?? "").not("status", "in", '("closed","archived")'),
+      supabase.from("cases").select("id, resolution_type").is("archived_at", null).eq("status", "converted").gte("updated_at", caseNow7d.toISOString()),
     ]);
 
     const allCases = casesAllRes.data || [];
+    const convertedCases = convertedRes.data || [];
+
+    const newCount = allCases.filter(c => c.status === "new").length;
+    const triageCount = allCases.filter(c => c.status === "triage").length;
+    const inProgressCount = allCases.filter(c => c.status === "in_progress").length;
+    const waitingCustomerCount = allCases.filter(c => c.status === "waiting_customer").length;
     const criticalCount = allCases.filter(c => c.priority === "critical").length;
-    const needsActionCount = allCases.filter(c => ["new", "triage"].includes(c.status) || (c.priority === "high" && !c.assigned_to_user_id)).length;
-    const unhandled24h = allCases.filter(c => c.status === "new" && new Date(c.created_at) < now24h).length;
-    const newLast4h = allCases.filter(c => new Date(c.created_at) >= now4h).length;
+    const critUnownedCount = allCases.filter(c => c.priority === "critical" && !c.assigned_to_user_id).length;
+    const unhandled24h = allCases.filter(c => c.status === "new" && new Date(c.created_at) < caseNow24h).length;
     const critUnowned = allCases.filter(c => c.priority === "critical" && !c.assigned_to_user_id);
 
-    setCaseKpis({ critical: criticalCount, needsAction: needsActionCount, unhandled24h: unhandled24h, newLast4h: newLast4h });
+    // Stuck cases
+    const stale24h = allCases.filter(c =>
+      ["triage", "in_progress"].includes(c.status) &&
+      c.last_activity_at &&
+      differenceInHours(now, new Date(c.last_activity_at)) > 24
+    );
+    const waitingCustomer7d = allCases.filter(c =>
+      c.status === "waiting_customer" &&
+      c.last_activity_at &&
+      differenceInDays(now, new Date(c.last_activity_at)) > 7
+    );
+
+    // Converted last 7 days by resolution_type
+    const conv = {
+      offer: convertedCases.filter((c: any) => c.resolution_type === "converted_to_offer").length,
+      project: convertedCases.filter((c: any) => c.resolution_type === "converted_to_project").length,
+      service: convertedCases.filter((c: any) => c.resolution_type === "converted_to_service").length,
+      lead: convertedCases.filter((c: any) => c.resolution_type === "converted_to_lead").length,
+    };
+
+    setCaseKpis({ newCount, triageCount, inProgressCount, waitingCustomer: waitingCustomerCount, critical: criticalCount, criticalUnowned: critUnownedCount, unhandled24h });
     setMyCases(myCasesRes.data || []);
     setCriticalUnowned(critUnowned);
+    setStuckCases({ stale24h, waitingCustomer7d });
+    setConvertedLast7d(conv);
 
     setLoading(false);
   }
@@ -436,40 +479,15 @@ export default function OverviewPage() {
           <h2 className="text-[22px] sm:text-[24px] font-semibold text-foreground tracking-tight leading-none">Postkontoret – Drift nå</h2>
         </div>
 
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
           {([
-            {
-              label: "Kritiske henvendelser",
-              value: caseKpis.critical,
-              icon: <Flame className="h-4 w-4" />,
-              href: "/inbox?priority=critical",
-              iconColor: caseKpis.critical > 0 ? "text-destructive" : "text-muted-foreground",
-              valueColor: caseKpis.critical > 0 ? "text-destructive" : "text-foreground",
-            },
-            {
-              label: "Krever handling",
-              value: caseKpis.needsAction,
-              icon: <BellRing className="h-4 w-4" />,
-              href: "/inbox?status=new,triage",
-              iconColor: caseKpis.needsAction > 0 ? "text-accent" : "text-muted-foreground",
-              valueColor: caseKpis.needsAction > 0 ? "text-accent" : "text-foreground",
-            },
-            {
-              label: "Ubehandlet >24t",
-              value: caseKpis.unhandled24h,
-              icon: <Timer className="h-4 w-4" />,
-              href: "/inbox?status=new",
-              iconColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-muted-foreground",
-              valueColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-foreground",
-            },
-            {
-              label: "Nye siste 4 timer",
-              value: caseKpis.newLast4h,
-              icon: <Mail className="h-4 w-4" />,
-              href: "/inbox",
-              iconColor: "text-primary",
-              valueColor: "text-foreground",
-            },
+            { label: "Nye", value: caseKpis.newCount, href: "/inbox?filter=needs_action", iconColor: caseKpis.newCount > 0 ? "text-primary" : "text-muted-foreground", valueColor: "text-foreground", icon: <Mail className="h-4 w-4" /> },
+            { label: "Sortering", value: caseKpis.triageCount, href: "/inbox?filter=needs_action", iconColor: "text-muted-foreground", valueColor: "text-foreground", icon: <Inbox className="h-4 w-4" /> },
+            { label: "Under behandling", value: caseKpis.inProgressCount, href: "/inbox?filter=mine", iconColor: "text-primary", valueColor: "text-foreground", icon: <Activity className="h-4 w-4" /> },
+            { label: "Avventer kunde", value: caseKpis.waitingCustomer, href: "/inbox?filter=waiting_customer", iconColor: "text-muted-foreground", valueColor: "text-foreground", icon: <PauseCircle className="h-4 w-4" /> },
+            { label: "Kritiske", value: caseKpis.critical, href: "/inbox?priority=critical", iconColor: caseKpis.critical > 0 ? "text-destructive" : "text-muted-foreground", valueColor: caseKpis.critical > 0 ? "text-destructive" : "text-foreground", icon: <Flame className="h-4 w-4" /> },
+            { label: "Kritiske uten eier", value: caseKpis.criticalUnowned, href: "/inbox?priority=critical", iconColor: caseKpis.criticalUnowned > 0 ? "text-destructive" : "text-muted-foreground", valueColor: caseKpis.criticalUnowned > 0 ? "text-destructive" : "text-foreground", icon: <AlertTriangle className="h-4 w-4" /> },
+            { label: "Ubehandlet >24t", value: caseKpis.unhandled24h, href: "/inbox?filter=needs_action", iconColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-muted-foreground", valueColor: caseKpis.unhandled24h > 0 ? "text-accent" : "text-foreground", icon: <Timer className="h-4 w-4" /> },
           ] as const).map((kpi, i) => (
             <button
               key={i}
@@ -495,14 +513,11 @@ export default function OverviewPage() {
         {myCases.length > 0 ? (
           <div className="space-y-0.5">
             {myCases.slice(0, 5).map(c => {
-              const isStale = c.last_activity_at && c.status !== "waiting_customer" && (Date.now() - new Date(c.last_activity_at).getTime()) > 24 * 60 * 60 * 1000;
-              const priorityMap: Record<string, { label: string; cls: string }> = {
-                critical: { label: "Kritisk", cls: "bg-destructive/10 text-destructive" },
-                high: { label: "Høy", cls: "bg-accent/10 text-accent" },
-                normal: { label: "Normal", cls: "bg-muted text-muted-foreground" },
-                low: { label: "Lav", cls: "bg-muted text-muted-foreground" },
-              };
-              const prio = priorityMap[c.priority] || priorityMap.normal;
+              const isStale = c.last_activity_at && ["triage", "in_progress"].includes(c.status) && differenceInHours(new Date(), new Date(c.last_activity_at)) > 24;
+              const statusLabel = CASE_STATUS_LABELS[c.status as CaseStatusType] || c.status;
+              const statusColor = CASE_STATUS_COLOR[c.status as CaseStatusType] || "";
+              const prioLabel = CASE_PRIORITY_LABELS[c.priority as keyof typeof CASE_PRIORITY_LABELS] || c.priority;
+              const prioColor = CASE_PRIORITY_COLOR[c.priority as keyof typeof CASE_PRIORITY_COLOR] || "";
               return (
                 <button
                   key={c.id}
@@ -515,8 +530,8 @@ export default function OverviewPage() {
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-xs font-mono text-muted-foreground">{c.case_number}</span>
-                      <span className={`text-[10px] font-medium rounded-full px-1.5 py-0 ${prio.cls}`}>{prio.label}</span>
-                      <Badge variant="secondary" className="text-[10px] px-1.5 py-0 rounded-full">{c.status}</Badge>
+                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 rounded-full ${prioColor}`}>{prioLabel}</Badge>
+                      <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 rounded-full ${statusColor}`}>{statusLabel}</Badge>
                       {isStale && (
                         <span className="text-[10px] font-medium rounded-full px-1.5 py-0 bg-accent/10 text-accent">Inaktiv &gt;24t</span>
                       )}
@@ -538,7 +553,35 @@ export default function OverviewPage() {
         )}
       </div>
 
-      {/* ── 0c. KRITISKE UTEN EIER ── */}
+      {/* ── 0c. STÅR FAST ── */}
+      {(stuckCases.stale24h.length > 0 || stuckCases.waitingCustomer7d.length > 0) && (
+        <div className="rounded-2xl bg-card border border-border/40 border-l-4 border-l-accent p-5 sm:p-6">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="h-8 w-8 rounded-full bg-accent/10 flex items-center justify-center">
+              <AlertCircle className="h-4 w-4 text-accent" />
+            </div>
+            <h2 className="text-[15px] font-semibold text-foreground tracking-tight">Står fast</h2>
+          </div>
+          <div className="space-y-2">
+            {stuckCases.stale24h.length > 0 && (
+              <button onClick={() => navigate("/inbox?filter=mine")} className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-secondary/50 transition-all">
+                <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
+                <span className="text-sm text-foreground">Inaktiv &gt;24t (sortering/under arbeid)</span>
+                <Badge variant="secondary" className="text-xs font-mono ml-auto text-accent">{stuckCases.stale24h.length}</Badge>
+              </button>
+            )}
+            {stuckCases.waitingCustomer7d.length > 0 && (
+              <button onClick={() => navigate("/inbox?filter=waiting_customer")} className="flex items-center gap-3 w-full rounded-lg px-3 py-2 text-left hover:bg-secondary/50 transition-all">
+                <span className="h-2 w-2 rounded-full bg-accent shrink-0" />
+                <span className="text-sm text-foreground">Avventer kunde &gt;7 dager</span>
+                <Badge variant="secondary" className="text-xs font-mono ml-auto text-accent">{stuckCases.waitingCustomer7d.length}</Badge>
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ── 0d. KRITISKE UTEN EIER ── */}
       {criticalUnowned.length > 0 && (
         <div className="rounded-2xl bg-card border border-border/40 border-l-4 border-l-destructive p-5 sm:p-6">
           <div className="flex items-center gap-3 mb-4">
@@ -559,6 +602,29 @@ export default function OverviewPage() {
                 <p className="text-[15px] text-foreground truncate flex-1 group-hover:text-primary transition-colors">{c.title}</p>
                 <ChevronRight className="h-3.5 w-3.5 text-muted-foreground/20 group-hover:text-primary/40 transition-colors shrink-0" />
               </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* ── 0e. KONVERTERT SISTE 7 DAGER ── */}
+      {(convertedLast7d.offer + convertedLast7d.project + convertedLast7d.service + convertedLast7d.lead) > 0 && (
+        <div className="rounded-2xl bg-card border border-border/40 p-5 sm:p-6">
+          <SectionHeader title="Konvertert siste 7 dager" />
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            {([
+              { label: "Tilbud", value: convertedLast7d.offer, icon: <ReceiptText className="h-4 w-4 text-primary" /> },
+              { label: "Prosjekter", value: convertedLast7d.project, icon: <FolderKanban className="h-4 w-4 text-primary" /> },
+              { label: "Servicejobb", value: convertedLast7d.service, icon: <Wrench className="h-4 w-4 text-primary" /> },
+              { label: "Leads", value: convertedLast7d.lead, icon: <Users className="h-4 w-4 text-primary" /> },
+            ] as const).map((item, i) => (
+              <div key={i} className="flex items-center gap-3 rounded-xl border border-border/30 px-4 py-3">
+                <div className="h-8 w-8 rounded-full bg-primary/8 flex items-center justify-center shrink-0">{item.icon}</div>
+                <div>
+                  <p className="text-xl font-bold font-mono text-foreground leading-none">{item.value}</p>
+                  <p className="text-[11px] text-muted-foreground/60 mt-0.5">{item.label}</p>
+                </div>
+              </div>
             ))}
           </div>
         </div>
