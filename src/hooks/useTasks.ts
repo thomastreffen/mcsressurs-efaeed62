@@ -88,7 +88,7 @@ export function useTasks(filters?: { status?: string; assigneeUserId?: string })
 
     if (assigneeIds.length > 0) {
       await (supabase as any).from("task_assignees").insert(
-        assigneeIds.map(uid => ({ task_id: taskId, user_id: uid, role: "executor" }))
+        assigneeIds.map((uid, i) => ({ task_id: taskId, user_id: uid, role: i === 0 ? "owner" : "executor" }))
       );
 
       const { data: taskData } = await (supabase as any).from("tasks").select("company_id, title").eq("id", taskId).single();

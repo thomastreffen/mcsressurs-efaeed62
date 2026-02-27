@@ -3510,6 +3510,180 @@ export type Database = {
           },
         ]
       }
+      task_assignees: {
+        Row: {
+          calendar_event_id: string | null
+          created_at: string
+          id: string
+          notified_at: string | null
+          removed_at: string | null
+          role: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          calendar_event_id?: string | null
+          created_at?: string
+          id?: string
+          notified_at?: string | null
+          removed_at?: string | null
+          role?: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          calendar_event_id?: string | null
+          created_at?: string
+          id?: string
+          notified_at?: string | null
+          removed_at?: string | null
+          role?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_assignees_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      task_attachments: {
+        Row: {
+          created_at: string
+          document_id: string
+          id: string
+          task_id: string
+        }
+        Insert: {
+          created_at?: string
+          document_id: string
+          id?: string
+          task_id: string
+        }
+        Update: {
+          created_at?: string
+          document_id?: string
+          id?: string
+          task_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_attachments_document_id_fkey"
+            columns: ["document_id"]
+            isOneToOne: false
+            referencedRelation: "documents"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_attachments_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      tasks: {
+        Row: {
+          ai_confidence: number | null
+          ai_rationale: string | null
+          ai_suggested: boolean
+          company_id: string
+          created_at: string
+          created_by: string
+          description: string | null
+          due_at: string | null
+          estimated_minutes: number | null
+          id: string
+          linked_lead_id: string | null
+          linked_offer_id: string | null
+          linked_project_id: string | null
+          linked_work_order_id: string | null
+          planned_end_at: string | null
+          planned_start_at: string | null
+          priority: string
+          source_case_id: string | null
+          source_case_item_id: string | null
+          status: string
+          title: string
+          updated_at: string
+        }
+        Insert: {
+          ai_confidence?: number | null
+          ai_rationale?: string | null
+          ai_suggested?: boolean
+          company_id: string
+          created_at?: string
+          created_by: string
+          description?: string | null
+          due_at?: string | null
+          estimated_minutes?: number | null
+          id?: string
+          linked_lead_id?: string | null
+          linked_offer_id?: string | null
+          linked_project_id?: string | null
+          linked_work_order_id?: string | null
+          planned_end_at?: string | null
+          planned_start_at?: string | null
+          priority?: string
+          source_case_id?: string | null
+          source_case_item_id?: string | null
+          status?: string
+          title: string
+          updated_at?: string
+        }
+        Update: {
+          ai_confidence?: number | null
+          ai_rationale?: string | null
+          ai_suggested?: boolean
+          company_id?: string
+          created_at?: string
+          created_by?: string
+          description?: string | null
+          due_at?: string | null
+          estimated_minutes?: number | null
+          id?: string
+          linked_lead_id?: string | null
+          linked_offer_id?: string | null
+          linked_project_id?: string | null
+          linked_work_order_id?: string | null
+          planned_end_at?: string | null
+          planned_start_at?: string | null
+          priority?: string
+          source_case_id?: string | null
+          source_case_item_id?: string | null
+          status?: string
+          title?: string
+          updated_at?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "tasks_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_source_case_id_fkey"
+            columns: ["source_case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "tasks_source_case_item_id_fkey"
+            columns: ["source_case_item_id"]
+            isOneToOne: false
+            referencedRelation: "case_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       technicians: {
         Row: {
           archived_at: string | null
