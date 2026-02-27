@@ -219,8 +219,8 @@ Deno.serve(async (req) => {
       { auth: { autoRefreshToken: false, persistSession: false } }
     );
 
-    const { data: userData, error: userErr } = await supabaseAdmin.auth.admin.getUserById(userId);
-    if (userErr || !userData?.user) {
+    const { data: userData, error: adminUserErr } = await supabaseAdmin.auth.admin.getUserById(userId);
+    if (adminUserErr || !userData?.user) {
       return respond({ error: "User not found" }, 404);
     }
 
