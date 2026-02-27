@@ -129,6 +129,8 @@ export type Database = {
           id: string
           lead_id: string | null
           project_title: string
+          source_case_id: string | null
+          source_case_item_id: string | null
           status: Database["public"]["Enums"]["calculation_status"]
           total_labor: number | null
           total_material: number | null
@@ -151,6 +153,8 @@ export type Database = {
           id?: string
           lead_id?: string | null
           project_title: string
+          source_case_id?: string | null
+          source_case_item_id?: string | null
           status?: Database["public"]["Enums"]["calculation_status"]
           total_labor?: number | null
           total_material?: number | null
@@ -173,6 +177,8 @@ export type Database = {
           id?: string
           lead_id?: string | null
           project_title?: string
+          source_case_id?: string | null
+          source_case_item_id?: string | null
           status?: Database["public"]["Enums"]["calculation_status"]
           total_labor?: number | null
           total_material?: number | null
@@ -199,6 +205,20 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calculations_source_case_id_fkey"
+            columns: ["source_case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "calculations_source_case_item_id_fkey"
+            columns: ["source_case_item_id"]
+            isOneToOne: false
+            referencedRelation: "case_items"
             referencedColumns: ["id"]
           },
         ]
@@ -336,6 +356,10 @@ export type Database = {
       }
       cases: {
         Row: {
+          archived_at: string | null
+          archived_by: string | null
+          assigned_at: string | null
+          assigned_to_user_id: string | null
           company_id: string
           created_at: string
           customer_id: string | null
@@ -358,6 +382,10 @@ export type Database = {
           work_order_id: string | null
         }
         Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          assigned_at?: string | null
+          assigned_to_user_id?: string | null
           company_id: string
           created_at?: string
           customer_id?: string | null
@@ -380,6 +408,10 @@ export type Database = {
           work_order_id?: string | null
         }
         Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          assigned_at?: string | null
+          assigned_to_user_id?: string | null
           company_id?: string
           created_at?: string
           customer_id?: string | null
@@ -2824,6 +2856,8 @@ export type Database = {
           public_token: string | null
           sent_at: string | null
           sent_to_email: string | null
+          source_case_id: string | null
+          source_case_item_id: string | null
           status: Database["public"]["Enums"]["offer_status"]
           total_ex_vat: number
           total_inc_vat: number
@@ -2852,6 +2886,8 @@ export type Database = {
           public_token?: string | null
           sent_at?: string | null
           sent_to_email?: string | null
+          source_case_id?: string | null
+          source_case_item_id?: string | null
           status?: Database["public"]["Enums"]["offer_status"]
           total_ex_vat?: number
           total_inc_vat?: number
@@ -2880,6 +2916,8 @@ export type Database = {
           public_token?: string | null
           sent_at?: string | null
           sent_to_email?: string | null
+          source_case_id?: string | null
+          source_case_item_id?: string | null
           status?: Database["public"]["Enums"]["offer_status"]
           total_ex_vat?: number
           total_inc_vat?: number
@@ -2913,6 +2951,20 @@ export type Database = {
             columns: ["lead_id"]
             isOneToOne: false
             referencedRelation: "leads"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_source_case_id_fkey"
+            columns: ["source_case_id"]
+            isOneToOne: false
+            referencedRelation: "cases"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "offers_source_case_item_id_fkey"
+            columns: ["source_case_item_id"]
+            isOneToOne: false
+            referencedRelation: "case_items"
             referencedColumns: ["id"]
           },
         ]
