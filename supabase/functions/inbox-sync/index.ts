@@ -307,22 +307,50 @@ Deno.serve(async (req) => {
         const bodyPreview = (msg.bodyPreview || "").substring(0, 500);
         const bodyHtml = msg.body?.content || null;
 
-        // Find existing case by thread_id OR by [CASE-xxxxxx] in subject
+        // Find existing case by subject pattern, then thread_id
         let caseId: string | null = null;
+        let subjectMatchPattern: string | null = null;
 
-        // 1) Try matching by case_number in subject (most reliable for email threading)
-        const caseNumberMatch = subject.match(/\[CASE-(\d{6})\]/);
-        if (caseNumberMatch) {
-          const caseNumber = `CASE-${caseNumberMatch[1]}`;
+        // --- Priority 1: Full case number (case-insensitive, flexible brackets) ---
+        const fullMatch = subject.match(/[\[\(]?(CASE-(\d{6}))[\]\)]?/i);
+        if (fullMatch) {
+          const caseNumber = `CASE-${fullMatch[2]}`;
           const { data: matchedCase } = await supabaseAdmin
-            .from("cases")
-            .select("id")
-            .eq("case_number", caseNumber)
-            .eq("company_id", companyId)
-            .maybeSingle();
+            .from("cases").select("id").eq("case_number", caseNumber).eq("company_id", companyId).maybeSingle();
           if (matchedCase) {
             caseId = matchedCase.id;
-            console.log(`[inbox-sync] Matched to ${caseNumber} via subject tag`);
+            subjectMatchPattern = `full: ${fullMatch[0]}`;
+            console.log(`[inbox-sync] Matched to ${caseNumber} via full pattern`);
+          }
+        }
+
+        // --- Priority 2: Standalone 6-digit number ---
+        if (!caseId) {
+          const sixDigitMatch = subject.match(/\b(\d{6})\b/);
+          if (sixDigitMatch) {
+            const caseNumber = `CASE-${sixDigitMatch[1]}`;
+            const { data: matchedCase } = await supabaseAdmin
+              .from("cases").select("id").eq("case_number", caseNumber).eq("company_id", companyId).maybeSingle();
+            if (matchedCase) {
+              caseId = matchedCase.id;
+              subjectMatchPattern = `6-digit: ${sixDigitMatch[0]}`;
+              console.log(`[inbox-sync] Matched to ${caseNumber} via 6-digit number`);
+            }
+          }
+        }
+
+        // --- Priority 3: Short numeric with prefix token (#1, case 1, sak 1) ---
+        if (!caseId) {
+          const shortMatch = subject.match(/(?:#|(?:case|sak)\s+)(\d{1,5})\b/i);
+          if (shortMatch) {
+            const caseNumber = `CASE-${shortMatch[1].padStart(6, "0")}`;
+            const { data: matchedCase } = await supabaseAdmin
+              .from("cases").select("id").eq("case_number", caseNumber).eq("company_id", companyId).maybeSingle();
+            if (matchedCase) {
+              caseId = matchedCase.id;
+              subjectMatchPattern = `short: ${shortMatch[0]}`;
+              console.log(`[inbox-sync] Matched to ${caseNumber} via short prefix`);
+            }
           }
         }
 
@@ -348,6 +376,17 @@ Deno.serve(async (req) => {
               last_activity_at: new Date().toISOString(),
             })
             .eq("id", caseId);
+
+          // Log system timeline item if matched via subject pattern
+          if (subjectMatchPattern) {
+            await supabaseAdmin.from("case_items").insert({
+              case_id: caseId,
+              company_id: companyId,
+              type: "system",
+              subject: "E-post knyttet til sak via emne",
+              body_preview: `Match: ${subjectMatchPattern} — "${subject}"`,
+            });
+          }
         } else {
           // Create new case
           const ai = autoTriageEnabled ? classifyMessage(subject, bodyPreview) : { category: "general", urgency: "normal", recommended_next_action: "none" };
