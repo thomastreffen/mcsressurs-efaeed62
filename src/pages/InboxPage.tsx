@@ -340,11 +340,20 @@ export default function InboxPage() {
   };
 
   const doUpdateCaseField = async (c: Case, updates: Partial<Case>) => {
+    // Detect reopen: moving from closed/converted to an active status
+    const terminalStatuses = ["closed", "converted"];
+    const activeStatuses: CaseStatus[] = ["new", "triage", "in_progress", "waiting_customer", "waiting_internal"];
+    const isReopen = terminalStatuses.includes(c.status) && updates.status && activeStatuses.includes(updates.status as CaseStatus);
+
+    // On reopen, clear resolution_type
+    const finalUpdates = isReopen ? { ...updates, resolution_type: null } : updates;
+
     await supabase.from("cases").update({
-      ...updates,
+      ...finalUpdates,
       last_activity_at: new Date().toISOString(),
       last_activity_by_user_id: user?.id,
     } as any).eq("id", c.id);
+
     // Audit trail: log each changed field
     if (user) {
       const fieldLabels: Record<string, string> = {
@@ -366,8 +375,13 @@ export default function InboxPage() {
           await logSystemItem(c, `${fieldLabels[key]} endret`, `${fieldLabels[key]}: ${oldLabel || "(tom)"} → ${newLabel || "(tom)"}`);
         }
       }
+
+      // Log reopen as separate system event
+      if (isReopen) {
+        await logSystemItem(c, "Gjenåpnet sak", `Sak gjenåpnet: ${CASE_STATUS_LABELS[c.status] || c.status} → ${CASE_STATUS_LABELS[updates.status as CaseStatus] || updates.status}, resolution_type nullstilt`);
+      }
     }
-    setCases((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...updates } : x)));
+    setCases((prev) => prev.map((x) => (x.id === c.id ? { ...x, ...finalUpdates } : x)));
   };
 
   const convertToProject = (c: Case) => {
@@ -820,11 +834,13 @@ function CaseDetail({
           <div>
             <label className="text-xs font-medium text-muted-foreground">Status</label>
             <Select value={caseData.status} onValueChange={(v) => {
-              if (v === "closed" && !caseData.resolution_type) {
+              const newStatus = v as CaseStatus;
+              if (newStatus === "closed" && !caseData.resolution_type) {
                 setCloseDrawerOpen(true);
                 return;
               }
-              onUpdateField({ status: v as CaseStatus });
+              // doUpdateCaseField handles reopen logic (clearing resolution_type + logging)
+              onUpdateField({ status: newStatus });
             }}>
               <SelectTrigger className="h-9 mt-1"><SelectValue /></SelectTrigger>
               <SelectContent>
