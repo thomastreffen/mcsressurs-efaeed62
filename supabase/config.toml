@@ -83,3 +83,6 @@ verify_jwt = false
 
 [functions.inbox-sync]
 verify_jwt = false
+
+[functions.fag-image-analyze]
+verify_jwt = false
