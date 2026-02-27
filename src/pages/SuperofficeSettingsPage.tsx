@@ -70,7 +70,7 @@ export default function SuperofficeSettingsPage() {
           <Settings2 className="h-5 w-5 text-primary" />
         </div>
         <div>
-          <h1 className="text-xl font-semibold text-foreground">Superoffice – Innstillinger</h1>
+          <h1 className="text-xl font-semibold text-foreground">Postkontoret – Innstillinger</h1>
           <p className="text-sm text-muted-foreground">Konfigurasjon for henvendelser, postbokser, routing og AI</p>
         </div>
       </div>
