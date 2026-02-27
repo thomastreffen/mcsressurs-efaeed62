@@ -525,7 +525,7 @@ export type Database = {
             foreignKeyName: "cases_linked_work_order_id_fkey"
             columns: ["linked_work_order_id"]
             isOneToOne: false
-            referencedRelation: "work_orders"
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
           {
