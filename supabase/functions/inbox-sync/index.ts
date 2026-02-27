@@ -307,21 +307,46 @@ Deno.serve(async (req) => {
         const bodyPreview = (msg.bodyPreview || "").substring(0, 500);
         const bodyHtml = msg.body?.content || null;
 
-        // Find existing case by thread_id
+        // Find existing case by thread_id OR by [CASE-xxxxxx] in subject
         let caseId: string | null = null;
-        const { data: existingCase } = await supabaseAdmin
-          .from("cases")
-          .select("id")
-          .eq("thread_id", threadId)
-          .eq("company_id", companyId)
-          .maybeSingle();
 
-        if (existingCase) {
-          caseId = existingCase.id;
-          // Update case updated_at
+        // 1) Try matching by case_number in subject (most reliable for email threading)
+        const caseNumberMatch = subject.match(/\[CASE-(\d{6})\]/);
+        if (caseNumberMatch) {
+          const caseNumber = `CASE-${caseNumberMatch[1]}`;
+          const { data: matchedCase } = await supabaseAdmin
+            .from("cases")
+            .select("id")
+            .eq("case_number", caseNumber)
+            .eq("company_id", companyId)
+            .maybeSingle();
+          if (matchedCase) {
+            caseId = matchedCase.id;
+            console.log(`[inbox-sync] Matched to ${caseNumber} via subject tag`);
+          }
+        }
+
+        // 2) Fallback: match by conversationId/thread_id
+        if (!caseId) {
+          const { data: existingCase } = await supabaseAdmin
+            .from("cases")
+            .select("id")
+            .eq("thread_id", threadId)
+            .eq("company_id", companyId)
+            .maybeSingle();
+          if (existingCase) {
+            caseId = existingCase.id;
+          }
+        }
+
+        if (caseId) {
+          // Update case updated_at and last_activity_at
           await supabaseAdmin
             .from("cases")
-            .update({ updated_at: new Date().toISOString() })
+            .update({
+              updated_at: new Date().toISOString(),
+              last_activity_at: new Date().toISOString(),
+            })
             .eq("id", caseId);
         } else {
           // Create new case

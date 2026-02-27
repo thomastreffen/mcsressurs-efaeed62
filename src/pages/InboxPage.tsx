@@ -64,6 +64,7 @@ import {
 type Case = {
   id: string;
   company_id: string;
+  case_number: string;
   title: string;
   status: CaseStatus;
   priority: CasePriority;
@@ -84,6 +85,8 @@ type Case = {
   service_job_id: string | null;
   archived_at: string | null;
   archived_by: string | null;
+  last_activity_at: string | null;
+  last_activity_by_user_id: string | null;
   created_at: string;
   updated_at: string;
 };
@@ -225,6 +228,23 @@ export default function InboxPage() {
     }
   };
 
+  const touchActivity = (caseId: string) => {
+    if (!user) return;
+    supabase.from("cases").update({
+      last_activity_at: new Date().toISOString(),
+      last_activity_by_user_id: user.id,
+    } as any).eq("id", caseId);
+  };
+
+  const logSystemItem = async (c: Case, subject: string, body: string) => {
+    if (!user) return;
+    await supabase.from("case_items").insert({
+      case_id: c.id, company_id: c.company_id, type: "system",
+      subject, body_preview: body, created_by: user.id,
+    } as any);
+    touchActivity(c.id);
+  };
+
   const assignToMe = async (c: Case) => {
     if (!user) return;
     const participants = [...(c.participant_user_ids || [])];
@@ -235,15 +255,11 @@ export default function InboxPage() {
       assigned_at: new Date().toISOString(),
       participant_user_ids: participants,
       status: "assigned",
+      last_activity_at: new Date().toISOString(),
+      last_activity_by_user_id: user.id,
     } as any).eq("id", c.id);
-    // Audit log
     const myName = companyUsers.find(u => u.id === user.id)?.name || "Ukjent";
-    await supabase.from("case_items").insert({
-      case_id: c.id, company_id: c.company_id, type: "system",
-      subject: "Tildelt",
-      body_preview: `${myName} tildelte seg denne henvendelsen`,
-      created_by: user.id,
-    } as any);
+    await logSystemItem(c, "Tildelt", `${myName} tildelte seg denne henvendelsen`);
     setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: user.id, assigned_to_user_id: user.id, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
     toast.success("Tildelt deg");
   };
@@ -257,15 +273,11 @@ export default function InboxPage() {
       assigned_at: new Date().toISOString(),
       participant_user_ids: participants,
       status: "assigned",
+      last_activity_at: new Date().toISOString(),
+      last_activity_by_user_id: user?.id,
     } as any).eq("id", c.id);
     const name = companyUsers.find((u) => u.id === targetUserId)?.name || "bruker";
-    // Audit log
-    await supabase.from("case_items").insert({
-      case_id: c.id, company_id: c.company_id, type: "system",
-      subject: "Tildelt",
-      body_preview: `Henvendelsen ble tildelt ${name}`,
-      created_by: user?.id,
-    } as any);
+    await logSystemItem(c, "Tildelt", `Henvendelsen ble tildelt ${name}`);
     setCases((prev) => prev.map((x) => x.id === c.id ? { ...x, owner_user_id: targetUserId, assigned_to_user_id: targetUserId, assigned_at: new Date().toISOString(), participant_user_ids: participants, status: "assigned" as CaseStatus } : x));
     toast.success(`Tildelt ${name}`);
     setAssigningTo(null);
@@ -277,13 +289,10 @@ export default function InboxPage() {
     await supabase.from("cases").update({
       assigned_to_user_id: null,
       assigned_at: null,
+      last_activity_at: new Date().toISOString(),
+      last_activity_by_user_id: user.id,
     } as any).eq("id", c.id);
-    await supabase.from("case_items").insert({
-      case_id: c.id, company_id: c.company_id, type: "system",
-      subject: "Frigjort",
-      body_preview: `${prevName} ble fjernet som tildelt`,
-      created_by: user.id,
-    } as any);
+    await logSystemItem(c, "Frigjort", `${prevName} ble fjernet som tildelt`);
     setCases((prev) => prev.map(x => x.id === c.id ? { ...x, assigned_to_user_id: null, assigned_at: null } : x));
     toast.success("Henvendelse frigjort");
   };
@@ -294,20 +303,37 @@ export default function InboxPage() {
       status: "archived",
       archived_at: new Date().toISOString(),
       archived_by: user.id,
+      last_activity_at: new Date().toISOString(),
+      last_activity_by_user_id: user.id,
     } as any).eq("id", c.id);
-    await supabase.from("case_items").insert({
-      case_id: c.id, company_id: c.company_id, type: "system",
-      subject: "Arkivert",
-      body_preview: "Henvendelsen ble arkivert",
-      created_by: user.id,
-    } as any);
+    await logSystemItem(c, "Arkivert", "Henvendelsen ble arkivert");
     setCases(prev => prev.filter(x => x.id !== c.id));
     setSelectedId(null);
     toast.success("Henvendelse arkivert");
   };
 
-  const updateCaseField = async (c: Case, updates: Partial<Case>) => {
-    await supabase.from("cases").update(updates as any).eq("id", c.id);
+  /** Check if another user owns this case and prompt for override */
+  const checkConflictAndUpdate = async (c: Case, updates: Partial<Case>) => {
+    if (
+      c.assigned_to_user_id &&
+      c.assigned_to_user_id !== user?.id &&
+      (updates.status || updates.priority || updates.next_action)
+    ) {
+      const assignedName = ownerName(c.assigned_to_user_id) || "en annen bruker";
+      const confirmed = window.confirm(
+        `${assignedName} jobber med denne saken. Vil du overskrive endringene?`
+      );
+      if (!confirmed) return;
+    }
+    await doUpdateCaseField(c, updates);
+  };
+
+  const doUpdateCaseField = async (c: Case, updates: Partial<Case>) => {
+    await supabase.from("cases").update({
+      ...updates,
+      last_activity_at: new Date().toISOString(),
+      last_activity_by_user_id: user?.id,
+    } as any).eq("id", c.id);
     // Audit trail: log each changed field
     if (user) {
       const fieldLabels: Record<string, string> = {
@@ -326,12 +352,7 @@ export default function InboxPage() {
           const labelMap = allLabels[key];
           const oldLabel = labelMap ? (labelMap[oldVal] || oldVal) : oldVal;
           const newLabel = labelMap ? (labelMap[val as string] || val) : val;
-          await supabase.from("case_items").insert({
-            case_id: c.id, company_id: c.company_id, type: "system",
-            subject: `${fieldLabels[key]} endret`,
-            body_preview: `${fieldLabels[key]}: ${oldLabel || "(tom)"} → ${newLabel || "(tom)"}`,
-            created_by: user.id,
-          } as any);
+          await logSystemItem(c, `${fieldLabels[key]} endret`, `${fieldLabels[key]}: ${oldLabel || "(tom)"} → ${newLabel || "(tom)"}`);
         }
       }
     }
@@ -363,7 +384,7 @@ export default function InboxPage() {
         .select("id")
         .single();
       if (error) throw error;
-      await updateCaseField(c, { status: "converted" as CaseStatus, lead_id: data.id });
+      await doUpdateCaseField(c, { status: "converted" as CaseStatus, lead_id: data.id });
       toast.success("Lead opprettet!");
       navigate(`/sales/leads/${data.id}`);
     } catch (err: any) {
@@ -536,9 +557,14 @@ export default function InboxPage() {
                           )}
                         </div>
                         <div className="flex-1 min-w-0">
-                          <p className={`text-sm truncate ${c.status === "new" ? "font-semibold text-foreground" : "text-foreground"}`}>
-                            {c.title || "(Uten tittel)"}
-                          </p>
+                          <div className="flex items-center gap-1.5">
+                            <p className={`text-sm truncate ${c.status === "new" ? "font-semibold text-foreground" : "text-foreground"}`}>
+                              {c.title || "(Uten tittel)"}
+                            </p>
+                            {c.case_number && (
+                              <span className="text-[10px] font-mono text-muted-foreground shrink-0">{c.case_number}</span>
+                            )}
+                          </div>
                           <div className="flex items-center gap-1.5 mt-1 flex-wrap">
                             <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${CASE_STATUS_COLOR[c.status]}`}>
                               {CASE_STATUS_LABELS[c.status]}
@@ -592,7 +618,7 @@ export default function InboxPage() {
               onAssignToMe={() => assignToMe(selectedCase)}
               onAssignToUser={(uid) => assignToUser(selectedCase, uid)}
               onUnassign={() => unassignCase(selectedCase)}
-              onUpdateField={(updates) => updateCaseField(selectedCase, updates)}
+              onUpdateField={(updates) => checkConflictAndUpdate(selectedCase, updates)}
               onConvertProject={() => convertToProject(selectedCase)}
               onConvertLead={() => convertToLead(selectedCase)}
               onArchive={() => archiveCase(selectedCase)}
@@ -725,7 +751,18 @@ function CaseDetail({
 
         {/* Title & meta */}
         <div>
-          <h2 className="text-lg font-semibold text-foreground">{caseData.title || "(Uten tittel)"}</h2>
+          <div className="flex items-center gap-2">
+            <h2 className="text-lg font-semibold text-foreground">{caseData.title || "(Uten tittel)"}</h2>
+            {caseData.case_number && (
+              <button
+                onClick={() => { navigator.clipboard.writeText(caseData.case_number); toast.success("Saksnummer kopiert"); }}
+                className="inline-flex items-center gap-1 text-xs font-mono bg-card border border-border/60 px-2 py-0.5 rounded-lg hover:bg-accent/50 transition-colors shadow-sm text-muted-foreground"
+                title="Klikk for å kopiere"
+              >
+                {caseData.case_number}
+              </button>
+            )}
+          </div>
           <div className="flex items-center gap-3 mt-2 text-sm text-muted-foreground flex-wrap">
             <Badge className={CASE_STATUS_COLOR[caseData.status]}>{CASE_STATUS_LABELS[caseData.status]}</Badge>
             <Badge className={CASE_PRIORITY_COLOR[caseData.priority]}>{CASE_PRIORITY_LABELS[caseData.priority]}</Badge>
