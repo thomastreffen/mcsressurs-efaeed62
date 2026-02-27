@@ -705,6 +705,28 @@ function KpiCard({ label, value, icon: Icon, variant = "default" }: {
   );
 }
 
+// ─── Auto-Link Banner ────────────────────────
+function AutoLinkBanner({ items }: { items: CaseItem[] }) {
+  const autoLinks = items.filter(
+    (i) => i.type === "system" && i.subject === "auto_link_success"
+  );
+  if (autoLinks.length === 0) return null;
+
+  return (
+    <div className="mt-2 space-y-1">
+      {autoLinks.map((item) => (
+        <div
+          key={item.id}
+          className="flex items-center gap-2 rounded-md border border-blue-200 bg-blue-50 dark:border-blue-800 dark:bg-blue-950/30 px-3 py-1.5 text-xs text-blue-800 dark:text-blue-300"
+        >
+          <ArrowRightLeft className="h-3.5 w-3.5 shrink-0" />
+          <span>{item.body_preview}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 // ─── Case Detail ─────────────────────────────
 function CaseDetail({
   caseData,
@@ -836,6 +858,7 @@ function CaseDetail({
             serviceJobId={caseData.service_job_id}
             leadId={caseData.lead_id}
           />
+          <AutoLinkBanner items={items} />
         </div>
 
         <Separator />
