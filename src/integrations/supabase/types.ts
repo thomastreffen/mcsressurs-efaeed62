@@ -1254,6 +1254,9 @@ export type Database = {
       }
       documents: {
         Row: {
+          ai_category: string | null
+          ai_classified_at: string | null
+          ai_confidence: number | null
           category: string
           company_id: string | null
           created_at: string
@@ -1268,11 +1271,15 @@ export type Database = {
           id: string
           mime_type: string
           public_url: string | null
+          source_type: string
           storage_bucket: string
           updated_at: string
           uploaded_by: string | null
         }
         Insert: {
+          ai_category?: string | null
+          ai_classified_at?: string | null
+          ai_confidence?: number | null
           category?: string
           company_id?: string | null
           created_at?: string
@@ -1287,11 +1294,15 @@ export type Database = {
           id?: string
           mime_type?: string
           public_url?: string | null
+          source_type?: string
           storage_bucket?: string
           updated_at?: string
           uploaded_by?: string | null
         }
         Update: {
+          ai_category?: string | null
+          ai_classified_at?: string | null
+          ai_confidence?: number | null
           category?: string
           company_id?: string | null
           created_at?: string
@@ -1306,6 +1317,7 @@ export type Database = {
           id?: string
           mime_type?: string
           public_url?: string | null
+          source_type?: string
           storage_bucket?: string
           updated_at?: string
           uploaded_by?: string | null

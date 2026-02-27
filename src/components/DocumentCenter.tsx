@@ -24,6 +24,7 @@ import {
   X,
   Send,
   StickyNote,
+  Mail,
 } from "lucide-react";
 import { Textarea } from "@/components/ui/textarea";
 import { format } from "date-fns";
@@ -36,6 +37,10 @@ interface DocumentRow {
   mime_type: string;
   file_size: number | null;
   category: string;
+  ai_category: string | null;
+  ai_classified_at: string | null;
+  ai_confidence: number | null;
+  source_type: string;
   public_url: string | null;
   storage_bucket: string;
   uploaded_by: string | null;
@@ -557,6 +562,18 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
                     {hasAnalysis && (
                       <CheckCircle2 className="h-3.5 w-3.5 text-green-600 shrink-0" />
                     )}
+                    {doc.source_type === "email" && (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 border-blue-200 text-blue-600 dark:border-blue-800 dark:text-blue-400">
+                        <Mail className="h-2.5 w-2.5 mr-0.5" />
+                        E-post
+                      </Badge>
+                    )}
+                    {doc.ai_category && doc.ai_classified_at && (
+                      <Badge variant="outline" className="text-[9px] h-4 px-1 shrink-0 border-violet-200 text-violet-600 dark:border-violet-800 dark:text-violet-400">
+                        <Sparkles className="h-2.5 w-2.5 mr-0.5" />
+                        AI {doc.ai_confidence ? `${Math.round(doc.ai_confidence * 100)}%` : ""}
+                      </Badge>
+                    )}
                   </div>
                   <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
                     {doc.file_size && <span>{formatSize(doc.file_size)}</span>}
@@ -615,7 +632,20 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
                 )}
 
                 {/* Preview/open */}
-                {doc.public_url && (
+                {doc.storage_bucket === "email-attachments" ? (
+                  <button
+                    onClick={async () => {
+                      const { data } = await supabase.storage
+                        .from("email-attachments")
+                        .createSignedUrl(doc.file_path, 3600);
+                      if (data?.signedUrl) window.open(data.signedUrl, "_blank");
+                    }}
+                    className="text-primary hover:text-primary/80 shrink-0"
+                    title="Åpne"
+                  >
+                    <ExternalLink className="h-3.5 w-3.5" />
+                  </button>
+                ) : doc.public_url ? (
                   <a
                     href={doc.public_url}
                     target="_blank"
@@ -624,10 +654,10 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
                   >
                     <ExternalLink className="h-3.5 w-3.5" />
                   </a>
-                )}
+                ) : null}
 
                 {/* Download */}
-                {doc.public_url && (
+                {doc.public_url && doc.storage_bucket !== "email-attachments" && (
                   <a
                     href={doc.public_url}
                     download={doc.file_name}

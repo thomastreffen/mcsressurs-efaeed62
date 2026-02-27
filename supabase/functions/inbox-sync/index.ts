@@ -365,6 +365,116 @@ async function logSuggestedLink(admin: any, caseId: string, companyId: string, m
   });
 }
 
+// ── Download & store email attachments ──
+async function downloadAndStoreAttachments(
+  msToken: string,
+  mailboxAddress: string,
+  messageId: string,
+  caseId: string,
+  companyId: string,
+  admin: any,
+  jobId: string | null, // linked job/project UUID if any
+): Promise<{ meta: any[]; documentIds: string[] }> {
+  const attachmentsMeta: any[] = [];
+  const documentIds: string[] = [];
+
+  try {
+    const url = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/messages/${messageId}/attachments?$select=id,name,contentType,size,isInline`;
+    const res = await fetch(url, { headers: { Authorization: `Bearer ${msToken}` } });
+    if (!res.ok) {
+      console.error(`[inbox-sync] Attachments list error: ${res.status}`);
+      return { meta: [], documentIds: [] };
+    }
+    const data = await res.json();
+    const attachments = (data.value || []).filter((a: any) => !a.isInline && a["@odata.type"] === "#microsoft.graph.fileAttachment");
+
+    for (const att of attachments.slice(0, 10)) { // Max 10 per email
+      try {
+        // Download attachment content
+        const contentUrl = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/messages/${messageId}/attachments/${att.id}`;
+        const contentRes = await fetch(contentUrl, { headers: { Authorization: `Bearer ${msToken}` } });
+        if (!contentRes.ok) continue;
+        const contentData = await contentRes.json();
+        const base64Content = contentData.contentBytes;
+        if (!base64Content) continue;
+
+        // Decode base64 to Uint8Array
+        const binaryStr = atob(base64Content);
+        const bytes = new Uint8Array(binaryStr.length);
+        for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
+        // Upload to storage
+        const safeName = (att.name || "attachment").replace(/[^\w.\-()]/g, "_");
+        const storagePath = `${companyId}/email/${caseId}/${crypto.randomUUID()}-${safeName}`;
+
+        const { error: uploadErr } = await admin.storage
+          .from("email-attachments")
+          .upload(storagePath, bytes, { contentType: att.contentType || "application/octet-stream" });
+
+        if (uploadErr) {
+          console.error(`[inbox-sync] Upload error: ${uploadErr.message}`);
+          continue;
+        }
+
+        // Create document record
+        const entityId = jobId || caseId;
+        const entityType = jobId ? "job" : "case";
+
+        const { data: docRow, error: docErr } = await admin.from("documents").insert({
+          entity_type: entityType,
+          entity_id: entityId,
+          file_name: att.name || "attachment",
+          file_path: storagePath,
+          mime_type: att.contentType || "application/octet-stream",
+          file_size: att.size || bytes.length,
+          storage_bucket: "email-attachments",
+          company_id: companyId,
+          source_type: "email",
+          category: "other", // Will be classified by AI
+        }).select("id").single();
+
+        if (docErr) {
+          console.error(`[inbox-sync] Document insert error: ${docErr.message}`);
+        } else {
+          documentIds.push(docRow.id);
+        }
+
+        attachmentsMeta.push({
+          filename: att.name,
+          size: att.size,
+          contentType: att.contentType,
+          storagePath,
+          documentId: docRow?.id || null,
+        });
+      } catch (attErr) {
+        console.error(`[inbox-sync] Attachment processing error:`, attErr);
+      }
+    }
+  } catch (err) {
+    console.error(`[inbox-sync] Attachments download error:`, err);
+  }
+
+  return { meta: attachmentsMeta, documentIds };
+}
+
+// ── Trigger AI classification for document IDs ──
+async function triggerClassification(documentIds: string[], supabaseUrl: string, serviceRoleKey: string) {
+  if (documentIds.length === 0) return;
+  try {
+    await fetch(`${supabaseUrl}/functions/v1/classify-attachment`, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${serviceRoleKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ document_ids: documentIds }),
+    });
+    console.log(`[inbox-sync] Triggered classification for ${documentIds.length} attachments`);
+  } catch (err) {
+    console.error("[inbox-sync] Classification trigger error:", err);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════
@@ -428,6 +538,7 @@ Deno.serve(async (req) => {
 
     const sinceDate = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString();
     let totalFetched = 0, totalNewCases = 0, totalNewItems = 0, totalSkipped = 0, totalLinked = 0;
+    const allDocumentIds: string[] = [];
 
     for (const mb of enabledMailboxes) {
       console.log(`[inbox-sync] Fetching from: ${mb.address}`);
@@ -625,6 +736,33 @@ Deno.serve(async (req) => {
             totalSkipped++;
           } else {
             totalNewItems++;
+
+            // Download and store email attachments if present
+            if (msg.hasAttachments && caseId) {
+              const linkedJobId = linkedUpdates["linked_work_order_id"] || linkedUpdates["linked_project_id"] || null;
+              const { meta: attMeta, documentIds: attDocIds } = await downloadAndStoreAttachments(
+                msToken, mb.address, msg.id, caseId, companyId, supabaseAdmin, linkedJobId
+              );
+
+              // Update case_item with attachment metadata
+              if (attMeta.length > 0) {
+                const { data: insertedItem } = await supabaseAdmin
+                  .from("case_items")
+                  .select("id")
+                  .eq("external_id", msg.id)
+                  .maybeSingle();
+                if (insertedItem) {
+                  await supabaseAdmin.from("case_items")
+                    .update({ attachments_meta: attMeta })
+                    .eq("id", insertedItem.id);
+                }
+              }
+
+              // Trigger AI classification
+              if (attDocIds.length > 0) {
+                allDocumentIds.push(...attDocIds);
+              }
+            }
           }
 
           // Backwards compat: upsert inbox_messages
@@ -660,7 +798,16 @@ Deno.serve(async (req) => {
 
     if (enabledMailboxes.length === 0) console.log("[inbox-sync] No shared mailboxes configured.");
 
-    console.log(`[inbox-sync] Done. Fetched: ${totalFetched}, New cases: ${totalNewCases}, New items: ${totalNewItems}, Linked: ${totalLinked}, Skipped: ${totalSkipped}`);
+    // Trigger AI classification for all new email attachments
+    if (allDocumentIds.length > 0) {
+      await triggerClassification(
+        allDocumentIds,
+        Deno.env.get("SUPABASE_URL")!,
+        Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!
+      );
+    }
+
+    console.log(`[inbox-sync] Done. Fetched: ${totalFetched}, New cases: ${totalNewCases}, New items: ${totalNewItems}, Linked: ${totalLinked}, Skipped: ${totalSkipped}, Attachments classified: ${allDocumentIds.length}`);
 
     return respond({
       success: true,
