@@ -3,12 +3,10 @@ import { supabase } from "@/integrations/supabase/client";
 import {
   Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
 } from "@/components/ui/dialog";
-import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { Input } from "@/components/ui/input";
-import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Search, Wrench, FolderKanban, Users, FileText, Loader2, Link2 } from "lucide-react";
+import { Search, Loader2, Link2, Wrench, FolderKanban, Users, FileText } from "lucide-react";
 import { toast } from "sonner";
 
 interface LinkToExistingDialogProps {
@@ -19,83 +17,115 @@ interface LinkToExistingDialogProps {
   onLinked: (field: string, id: string) => void;
 }
 
-type TabKey = "job" | "project" | "lead" | "offer";
+type LinkedType = "work_order" | "project" | "lead" | "offer";
 
 interface SearchResult {
-  id: string;
-  label: string;
-  sub: string;
+  id: string; // always UUID
+  type: LinkedType;
+  typeLabel: string;
+  displayNumber: string;
+  title: string;
+  customer: string;
+}
+
+const TYPE_CONFIG: Record<LinkedType, { label: string; icon: React.ElementType; field: string; badgeClass: string }> = {
+  work_order: { label: "Jobb", icon: Wrench, field: "linked_work_order_id", badgeClass: "bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200" },
+  project: { label: "Prosjekt", icon: FolderKanban, field: "linked_project_id", badgeClass: "bg-emerald-100 text-emerald-800 dark:bg-emerald-900 dark:text-emerald-200" },
+  lead: { label: "Lead", icon: Users, field: "linked_lead_id", badgeClass: "bg-amber-100 text-amber-800 dark:bg-amber-900 dark:text-amber-200" },
+  offer: { label: "Tilbud", icon: FileText, field: "linked_offer_id", badgeClass: "bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200" },
+};
+
+function normalizeQuery(raw: string): string {
+  return raw
+    .trim()
+    .replace(/^(job|jobb|pro|project|prosjekt|lead|offer|tilbud|mcs)[- ]*/i, "")
+    .trim();
 }
 
 export function LinkToExistingDialog({ open, onOpenChange, caseId, companyId, onLinked }: LinkToExistingDialogProps) {
-  const [tab, setTab] = useState<TabKey>("job");
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [searching, setSearching] = useState(false);
   const [linking, setLinking] = useState(false);
 
-  const doSearch = useCallback(async (q: string, t: TabKey) => {
+  const doSearch = useCallback(async (q: string) => {
     if (q.length < 2) { setResults([]); return; }
     setSearching(true);
+
+    const norm = normalizeQuery(q);
+    const like = `%${norm}%`;
+    const origLike = `%${q.trim()}%`;
+
     try {
-      let items: SearchResult[] = [];
-      switch (t) {
-        case "job": {
-          const { data } = await supabase
-            .from("events")
-            .select("id, title, internal_number, job_number, customer")
-            .or(`title.ilike.%${q}%,internal_number.ilike.%${q}%,job_number.ilike.%${q}%,customer.ilike.%${q}%`)
-            .is("deleted_at", null)
-            .limit(20);
-          items = (data || []).map((e: any) => ({
-            id: e.id,
-            label: e.title,
-            sub: [e.internal_number || e.job_number, e.customer].filter(Boolean).join(" · "),
-          }));
-          break;
-        }
-        case "project": {
-          const { data } = await supabase
-            .from("events")
-            .select("id, title, project_number, customer")
-            .eq("project_type", "project")
-            .or(`title.ilike.%${q}%,project_number.ilike.%${q}%,customer.ilike.%${q}%`)
-            .is("deleted_at", null)
-            .limit(20);
-          items = (data || []).map((e: any) => ({
-            id: e.id,
-            label: e.title,
-            sub: [e.project_number, e.customer].filter(Boolean).join(" · "),
-          }));
-          break;
-        }
-        case "lead": {
-          const { data } = await supabase
-            .from("leads")
-            .select("id, company_name, contact_name, lead_ref_code")
-            .or(`company_name.ilike.%${q}%,contact_name.ilike.%${q}%,lead_ref_code.ilike.%${q}%`)
-            .limit(20);
-          items = (data || []).map((l: any) => ({
-            id: l.id,
-            label: l.company_name || l.contact_name || "Ukjent",
-            sub: l.lead_ref_code || "",
-          }));
-          break;
-        }
-        case "offer": {
-          const { data } = await supabase
-            .from("offers")
-            .select("id, title, offer_number, customer_name")
-            .or(`title.ilike.%${q}%,offer_number.ilike.%${q}%,customer_name.ilike.%${q}%`)
-            .limit(20);
-          items = (data || []).map((o: any) => ({
-            id: o.id,
-            label: o.title || o.customer_name || "Ukjent",
-            sub: o.offer_number || "",
-          }));
-          break;
-        }
-      }
+      const [jobsRes, projectsRes, leadsRes, offersRes] = await Promise.all([
+        // Jobs (work_orders = events with project_type != 'project')
+        supabase
+          .from("events")
+          .select("id, title, internal_number, job_number, customer")
+          .or(`title.ilike.${like},internal_number.ilike.${like},job_number.ilike.${like},customer.ilike.${like},title.ilike.${origLike},internal_number.ilike.${origLike},job_number.ilike.${origLike},customer.ilike.${origLike}`)
+          .neq("project_type", "project")
+          .is("deleted_at", null)
+          .limit(8),
+        // Projects
+        supabase
+          .from("events")
+          .select("id, title, project_number, customer")
+          .eq("project_type", "project")
+          .or(`title.ilike.${like},project_number.ilike.${like},customer.ilike.${like},title.ilike.${origLike},project_number.ilike.${origLike},customer.ilike.${origLike}`)
+          .is("deleted_at", null)
+          .limit(8),
+        // Leads
+        supabase
+          .from("leads")
+          .select("id, company_name, contact_name, lead_ref_code")
+          .or(`company_name.ilike.${like},contact_name.ilike.${like},lead_ref_code.ilike.${like},company_name.ilike.${origLike},contact_name.ilike.${origLike},lead_ref_code.ilike.${origLike}`)
+          .limit(8),
+        // Offers
+        supabase
+          .from("offers")
+          .select("id, title, offer_number, customer_name")
+          .or(`title.ilike.${like},offer_number.ilike.${like},customer_name.ilike.${like},title.ilike.${origLike},offer_number.ilike.${origLike},customer_name.ilike.${origLike}`)
+          .limit(8),
+      ]);
+
+      const items: SearchResult[] = [];
+
+      (jobsRes.data || []).forEach((e: any) => items.push({
+        id: e.id,
+        type: "work_order",
+        typeLabel: "Jobb",
+        displayNumber: e.internal_number || e.job_number || "",
+        title: e.title || "",
+        customer: e.customer || "",
+      }));
+
+      (projectsRes.data || []).forEach((e: any) => items.push({
+        id: e.id,
+        type: "project",
+        typeLabel: "Prosjekt",
+        displayNumber: e.project_number || "",
+        title: e.title || "",
+        customer: e.customer || "",
+      }));
+
+      (leadsRes.data || []).forEach((l: any) => items.push({
+        id: l.id,
+        type: "lead",
+        typeLabel: "Lead",
+        displayNumber: l.lead_ref_code || "",
+        title: l.company_name || l.contact_name || "Ukjent",
+        customer: l.contact_name || "",
+      }));
+
+      (offersRes.data || []).forEach((o: any) => items.push({
+        id: o.id,
+        type: "offer",
+        typeLabel: "Tilbud",
+        displayNumber: o.offer_number || "",
+        title: o.title || o.customer_name || "Ukjent",
+        customer: o.customer_name || "",
+      }));
+
       setResults(items);
     } catch {
       setResults([]);
@@ -105,52 +135,52 @@ export function LinkToExistingDialog({ open, onOpenChange, caseId, companyId, on
   }, []);
 
   useEffect(() => {
-    const timer = setTimeout(() => doSearch(query, tab), 300);
+    const timer = setTimeout(() => doSearch(query), 300);
     return () => clearTimeout(timer);
-  }, [query, tab, doSearch]);
+  }, [query, doSearch]);
 
   useEffect(() => {
     if (open) { setQuery(""); setResults([]); }
-  }, [open, tab]);
+  }, [open]);
 
   const handleLink = async (result: SearchResult) => {
     setLinking(true);
-    const fieldMap: Record<TabKey, string> = {
-      job: "linked_work_order_id",
-      project: "linked_project_id",
-      lead: "linked_lead_id",
-      offer: "linked_offer_id",
-    };
-    const field = fieldMap[tab];
+    const config = TYPE_CONFIG[result.type];
+
     const { error } = await supabase
       .from("cases")
-      .update({ [field]: result.id } as any)
+      .update({ [config.field]: result.id } as any)
       .eq("id", caseId);
 
     if (error) {
-      toast.error("Kunne ikke koble: " + error.message);
+      console.error("Link error:", { field: config.field, id: result.id, error });
+      toast.error("Kunne ikke koble saken. Prøv igjen eller kontakt administrator.");
     } else {
-      // Log system item
-      await supabase.from("case_items").insert({
-        case_id: caseId,
-        company_id: companyId,
-        type: "system",
-        subject: "Koblet til eksisterende",
-        body_preview: `Koblet til ${tab}: ${result.label} (${result.sub})`,
-      } as any);
-      toast.success(`Koblet til ${result.label}`);
-      onLinked(field, result.id);
+      try {
+        await supabase.from("case_items").insert({
+          case_id: caseId,
+          company_id: companyId,
+          type: "system",
+          subject: "Koblet til eksisterende",
+          body_preview: `Manuelt koblet til ${config.label}: ${result.title} (${result.displayNumber})`,
+        } as any);
+      } catch { /* ignore logging errors */ }
+
+      const display = [result.displayNumber, result.title].filter(Boolean).join(" – ");
+      toast.success(`Saken er koblet til ${display}`);
+      onLinked(config.field, result.id);
       onOpenChange(false);
     }
     setLinking(false);
   };
 
-  const tabConfig: { key: TabKey; label: string; icon: React.ElementType }[] = [
-    { key: "job", label: "Jobb", icon: Wrench },
-    { key: "project", label: "Prosjekt", icon: FolderKanban },
-    { key: "lead", label: "Lead", icon: Users },
-    { key: "offer", label: "Tilbud", icon: FileText },
-  ];
+  // Group results by type
+  const grouped = results.reduce<Record<LinkedType, SearchResult[]>>((acc, r) => {
+    (acc[r.type] = acc[r.type] || []).push(r);
+    return acc;
+  }, {} as any);
+
+  const typeOrder: LinkedType[] = ["work_order", "project", "lead", "offer"];
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -160,59 +190,69 @@ export function LinkToExistingDialog({ open, onOpenChange, caseId, companyId, on
             <Link2 className="h-5 w-5 text-primary" />
             Koble til eksisterende
           </DialogTitle>
-          <DialogDescription>Søk og velg et eksisterende objekt å koble denne saken til.</DialogDescription>
+          <DialogDescription>Søk på nummer, tittel eller kundenavn.</DialogDescription>
         </DialogHeader>
 
-        <Tabs value={tab} onValueChange={(v) => { setTab(v as TabKey); setQuery(""); setResults([]); }}>
-          <TabsList className="w-full">
-            {tabConfig.map((t) => (
-              <TabsTrigger key={t.key} value={t.key} className="flex-1 gap-1.5 text-xs">
-                <t.icon className="h-3.5 w-3.5" />
-                {t.label}
-              </TabsTrigger>
-            ))}
-          </TabsList>
+        <div className="relative">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <Input
+            placeholder="Søk jobb, prosjekt, lead, tilbud..."
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            className="pl-9"
+            autoFocus
+          />
+        </div>
 
-          {tabConfig.map((t) => (
-            <TabsContent key={t.key} value={t.key} className="mt-3">
-              <div className="relative mb-3">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  placeholder={`Søk ${t.label.toLowerCase()}...`}
-                  value={query}
-                  onChange={(e) => setQuery(e.target.value)}
-                  className="pl-9"
-                  autoFocus
-                />
-              </div>
-              <ScrollArea className="h-64">
-                {searching ? (
-                  <div className="flex items-center justify-center py-8">
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+        <ScrollArea className="h-72">
+          {searching ? (
+            <div className="flex items-center justify-center py-8">
+              <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
+            </div>
+          ) : results.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-8">
+              {query.length < 2 ? "Skriv minst 2 tegn for å søke" : "Ingen resultater"}
+            </p>
+          ) : (
+            <div className="space-y-4">
+              {typeOrder.map((type) => {
+                const items = grouped[type];
+                if (!items?.length) return null;
+                const cfg = TYPE_CONFIG[type];
+                const Icon = cfg.icon;
+                return (
+                  <div key={type}>
+                    <div className="flex items-center gap-1.5 px-1 mb-1.5">
+                      <Icon className="h-3.5 w-3.5 text-muted-foreground" />
+                      <span className="text-xs font-medium text-muted-foreground uppercase tracking-wide">{cfg.label}</span>
+                    </div>
+                    <div className="space-y-1">
+                      {items.map((r) => (
+                        <button
+                          key={r.id}
+                          onClick={() => handleLink(r)}
+                          disabled={linking}
+                          className="w-full text-left p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors disabled:opacity-50"
+                        >
+                          <div className="flex items-center gap-2">
+                            <Badge variant="outline" className={`text-[10px] shrink-0 ${cfg.badgeClass}`}>
+                              {r.typeLabel}
+                            </Badge>
+                            {r.displayNumber && (
+                              <span className="text-xs font-mono text-muted-foreground">{r.displayNumber}</span>
+                            )}
+                          </div>
+                          <p className="text-sm font-medium text-foreground truncate mt-1">{r.title}</p>
+                          {r.customer && <p className="text-xs text-muted-foreground mt-0.5">{r.customer}</p>}
+                        </button>
+                      ))}
+                    </div>
                   </div>
-                ) : results.length === 0 ? (
-                  <p className="text-sm text-muted-foreground text-center py-8">
-                    {query.length < 2 ? "Skriv minst 2 tegn for å søke" : "Ingen resultater"}
-                  </p>
-                ) : (
-                  <div className="space-y-1">
-                    {results.map((r) => (
-                      <button
-                        key={r.id}
-                        onClick={() => handleLink(r)}
-                        disabled={linking}
-                        className="w-full text-left p-3 rounded-lg border border-border hover:bg-muted/50 transition-colors"
-                      >
-                        <p className="text-sm font-medium text-foreground truncate">{r.label}</p>
-                        {r.sub && <p className="text-xs text-muted-foreground mt-0.5">{r.sub}</p>}
-                      </button>
-                    ))}
-                  </div>
-                )}
-              </ScrollArea>
-            </TabsContent>
-          ))}
-        </Tabs>
+                );
+              })}
+            </div>
+          )}
+        </ScrollArea>
       </DialogContent>
     </Dialog>
   );
