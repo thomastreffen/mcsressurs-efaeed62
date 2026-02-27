@@ -133,8 +133,36 @@ type Mailbox = {
 type FilterType = "mine" | "team" | "needs_action" | "waiting_customer" | "waiting_internal" | "linked" | "converted" | "closed";
 
 /** A case is considered "linked" (forwarded) when it has been connected to a project, job, lead or offer */
-const isLinkedCase = (c: { linked_project_id?: string | null; linked_work_order_id?: string | null; linked_lead_id?: string | null; linked_offer_id?: string | null; status?: string }) =>
+const isLinkedCase = (c: { linked_project_id?: string | null; linked_work_order_id?: string | null; linked_lead_id?: string | null; linked_offer_id?: string | null }) =>
   !!(c.linked_project_id || c.linked_work_order_id || c.linked_lead_id || c.linked_offer_id);
+
+/** A linked case still needs attention if it has an actionable status or critical priority */
+const needsAttention = (c: Case, userId?: string) => {
+  if (["new", "triage"].includes(c.status)) return true;
+  if (c.priority === "critical" && !["closed", "archived", "converted"].includes(c.status)) return true;
+  if (c.due_at && isPast(new Date(c.due_at)) && !["closed", "archived", "converted"].includes(c.status)) return true;
+  if (c.status === "waiting_customer" || c.status === "waiting_internal") return true;
+  return false;
+};
+
+/** Determine the forwarded reason label */
+const forwardedReason = (c: Case): string => {
+  if (["closed", "converted"].includes(c.status)) return "Koblet og ferdig";
+  if (c.status === "in_progress") return "Under arbeid";
+  return "Videresendt";
+};
+
+/** Route for a linked entity */
+const linkedEntityRoute = (c: Case): string | null => {
+  if (c.linked_project_id) return `/projects/${c.linked_project_id}`;
+  if (c.linked_work_order_id) return `/projects/${c.linked_work_order_id}`;
+  if (c.linked_lead_id) return `/sales/leads/${c.linked_lead_id}`;
+  if (c.linked_offer_id) return `/sales/offers/${c.linked_offer_id}`;
+  return null;
+};
+
+const linkedEntityLabel = (c: Case): string =>
+  c.linked_project_id ? "Prosjekt" : c.linked_work_order_id ? "Jobb" : c.linked_lead_id ? "Lead" : "Tilbud";
 
 const FILTER_OPTIONS: { key: FilterType; label: string; icon: React.ElementType }[] = [
   { key: "mine", label: "Mine saker", icon: UserCheck },
@@ -439,43 +467,75 @@ export default function InboxPage() {
   };
 
   // ─── Filter Logic ────────────────────────
+  // When searching, bypass filter to find across all buckets
+  const isSearching = search.length > 0;
+  const searchMatch = (c: Case, q: string) =>
+    c.title.toLowerCase().includes(q) ||
+    (c.mailbox_address || "").toLowerCase().includes(q) ||
+    (c.case_number || "").toLowerCase().includes(q);
+
   const filtered = cases
     .filter((c) => {
       if (selectedMailbox !== "all" && c.mailbox_address !== selectedMailbox) return false;
+
+      // Global search bypasses filter selection
+      if (isSearching) {
+        const q = search.toLowerCase();
+        return searchMatch(c, q);
+      }
+
       const linked = isLinkedCase(c);
+      const attention = needsAttention(c, user?.id);
+      const isMine = c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || "");
+
+      if (import.meta.env.DEV) {
+        if (linked && attention) {
+          console.debug(`[filter] Case ${c.case_number} is linked but needs_attention → visible in action filters`);
+        }
+      }
+
       switch (filter) {
         case "mine":
-          return !linked && (c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || ""));
+          // Hide forwarded only if settled
+          return isMine && (!linked || attention);
         case "team":
-          return !linked && c.scope === "company";
+          return c.scope === "company" && (!linked || attention);
         case "needs_action":
-          return !linked && ["new", "triage"].includes(c.status);
+          // Always include cases that need attention, even if forwarded
+          return ["new", "triage"].includes(c.status) || (linked && attention && c.priority === "critical");
         case "waiting_customer":
-          return !linked && c.status === "waiting_customer";
+          return c.status === "waiting_customer";
         case "waiting_internal":
-          return !linked && c.status === "waiting_internal";
+          return c.status === "waiting_internal";
         case "linked":
-          return linked;
+          // Show forwarded cases that are settled (no attention needed)
+          return linked && !attention;
         case "converted":
           return c.status === "converted";
         case "closed":
           return c.status === "closed";
       }
       return true;
-    })
-    .filter((c) => {
-      if (!search) return true;
-      const q = search.toLowerCase();
-      return c.title.toLowerCase().includes(q) || (c.mailbox_address || "").toLowerCase().includes(q);
     });
 
+  // Group search results by bucket
+  type SearchBucket = "active" | "forwarded" | "archived";
+  const getSearchBucket = (c: Case): SearchBucket => {
+    if (c.archived_at) return "archived";
+    if (isLinkedCase(c) && !needsAttention(c, user?.id)) return "forwarded";
+    return "active";
+  };
+
   const statusCounts: Record<FilterType, number> = {
-    mine: cases.filter((c) => !isLinkedCase(c) && (c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || ""))).length,
-    team: cases.filter((c) => !isLinkedCase(c) && c.scope === "company").length,
-    needs_action: cases.filter((c) => !isLinkedCase(c) && ["new", "triage"].includes(c.status)).length,
-    waiting_customer: cases.filter((c) => !isLinkedCase(c) && c.status === "waiting_customer").length,
-    waiting_internal: cases.filter((c) => !isLinkedCase(c) && c.status === "waiting_internal").length,
-    linked: cases.filter((c) => isLinkedCase(c)).length,
+    mine: cases.filter((c) => {
+      const isMine = c.owner_user_id === user?.id || (c.participant_user_ids || []).includes(user?.id || "");
+      return isMine && (!isLinkedCase(c) || needsAttention(c, user?.id));
+    }).length,
+    team: cases.filter((c) => c.scope === "company" && (!isLinkedCase(c) || needsAttention(c, user?.id))).length,
+    needs_action: cases.filter((c) => ["new", "triage"].includes(c.status) || (isLinkedCase(c) && needsAttention(c, user?.id) && c.priority === "critical")).length,
+    waiting_customer: cases.filter((c) => c.status === "waiting_customer").length,
+    waiting_internal: cases.filter((c) => c.status === "waiting_internal").length,
+    linked: cases.filter((c) => isLinkedCase(c) && !needsAttention(c, user?.id)).length,
     converted: cases.filter((c) => c.status === "converted").length,
     closed: cases.filter((c) => c.status === "closed").length,
   };
@@ -560,8 +620,18 @@ export default function InboxPage() {
           <div className="p-3 border-b border-border">
             <div className="relative">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-              <Input placeholder="Søk saker..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 h-9" />
+              <Input
+                placeholder="Søk alle saker (tittel, saksnr, postboks)..."
+                value={search}
+                onChange={(e) => setSearch(e.target.value)}
+                className="pl-9 h-9"
+              />
             </div>
+            {isSearching && (
+              <p className="text-[10px] text-muted-foreground mt-1.5">
+                Søker på tvers av alle saker · {filtered.length} treff
+              </p>
+            )}
           </div>
 
           <ScrollArea className="flex-1">
@@ -581,89 +651,142 @@ export default function InboxPage() {
                 <p className="text-sm font-medium">Ingen saker</p>
                 <p className="text-xs mt-1">Klikk «Synk e-post» for å hente fra postboksen</p>
               </div>
-            ) : (
-              <div className="divide-y divide-border">
-                {filtered.map((c) => {
-                  const isOverdue = c.due_at && isPast(new Date(c.due_at)) && !["closed", "archived", "converted"].includes(c.status);
-                  const ActionIcon = NEXT_ACTION_ICONS[c.next_action] || Clock;
-                  return (
-                    <button
-                      key={c.id}
-                      onClick={() => openCase(c)}
-                      className={`w-full text-left p-3 hover:bg-muted/50 transition-colors ${
-                        selectedId === c.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
-                      } ${c.status === "new" ? "bg-primary/[0.02]" : ""}`}
-                    >
-                      <div className="flex items-start gap-2">
-                        <div className="mt-0.5">
-                          {isLinkedCase(c) ? (
-                            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-                          ) : c.priority === "critical" ? (
-                            <AlertTriangle className="h-4 w-4 text-destructive" />
-                          ) : c.status === "new" ? (
-                            <Mail className="h-4 w-4 text-primary" />
-                          ) : c.status === "converted" ? (
-                            <CheckCircle2 className="h-4 w-4 text-emerald-500" />
-                          ) : (
-                            <MailOpen className="h-4 w-4 text-muted-foreground" />
+            ) : (() => {
+              // When searching, group results by bucket
+              const renderCaseRow = (c: Case) => {
+                const isOverdue = c.due_at && isPast(new Date(c.due_at)) && !["closed", "archived", "converted"].includes(c.status);
+                const ActionIcon = NEXT_ACTION_ICONS[c.next_action] || Clock;
+                const linked = isLinkedCase(c);
+                const route = linked ? linkedEntityRoute(c) : null;
+
+                return (
+                  <button
+                    key={c.id}
+                    onClick={() => openCase(c)}
+                    className={`w-full text-left p-3 hover:bg-muted/50 transition-colors ${
+                      selectedId === c.id ? "bg-primary/5 border-l-2 border-l-primary" : ""
+                    } ${c.status === "new" ? "bg-primary/[0.02]" : ""}`}
+                  >
+                    <div className="flex items-start gap-2">
+                      <div className="mt-0.5">
+                        {linked ? (
+                          <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+                        ) : c.priority === "critical" ? (
+                          <AlertTriangle className="h-4 w-4 text-destructive" />
+                        ) : c.status === "new" ? (
+                          <Mail className="h-4 w-4 text-primary" />
+                        ) : c.status === "converted" ? (
+                          <CheckCircle2 className="h-4 w-4 text-emerald-500" />
+                        ) : (
+                          <MailOpen className="h-4 w-4 text-muted-foreground" />
+                        )}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <p className={`text-sm truncate ${c.status === "new" ? "font-semibold text-foreground" : "text-foreground"}`}>
+                            {c.title || "(Uten tittel)"}
+                          </p>
+                          {c.case_number && (
+                            <span className="text-[10px] font-mono text-muted-foreground shrink-0">{c.case_number}</span>
                           )}
                         </div>
-                        <div className="flex-1 min-w-0">
-                          <div className="flex items-center gap-1.5">
-                            <p className={`text-sm truncate ${c.status === "new" ? "font-semibold text-foreground" : "text-foreground"}`}>
-                              {c.title || "(Uten tittel)"}
-                            </p>
-                            {c.case_number && (
-                              <span className="text-[10px] font-mono text-muted-foreground shrink-0">{c.case_number}</span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-1.5 mt-1 flex-wrap">
-                            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${CASE_STATUS_COLOR[c.status]}`}>
-                              {CASE_STATUS_LABELS[c.status]}
-                            </Badge>
-                            <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${CASE_PRIORITY_COLOR[c.priority]}`}>
-                              {CASE_PRIORITY_LABELS[c.priority]}
-                            </Badge>
-                            {c.next_action !== "none" && (
-                              <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
-                                <ActionIcon className="h-3 w-3" />
-                                {CASE_NEXT_ACTION_LABELS[c.next_action]}
-                              </span>
-                            )}
-                          </div>
-                          <div className="flex items-center gap-2 mt-1">
-                            <span className="text-xs text-muted-foreground">
-                              {formatDistanceToNow(new Date(c.updated_at), { locale: nb, addSuffix: true })}
+                        <div className="flex items-center gap-1.5 mt-1 flex-wrap">
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${CASE_STATUS_COLOR[c.status]}`}>
+                            {CASE_STATUS_LABELS[c.status]}
+                          </Badge>
+                          <Badge variant="secondary" className={`text-[10px] px-1.5 py-0 ${CASE_PRIORITY_COLOR[c.priority]}`}>
+                            {CASE_PRIORITY_LABELS[c.priority]}
+                          </Badge>
+                          {c.next_action !== "none" && (
+                            <span className="flex items-center gap-0.5 text-[10px] text-muted-foreground">
+                              <ActionIcon className="h-3 w-3" />
+                              {CASE_NEXT_ACTION_LABELS[c.next_action]}
                             </span>
-                            {c.owner_user_id && (
-                              <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
-                                {ownerName(c.owner_user_id)}
-                              </Badge>
-                            )}
-                            {isOverdue && (
-                              <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
-                                Over frist
-                              </Badge>
-                            )}
-                            {c.mailbox_address && (
-                              <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
-                                {c.mailbox_address}
-                              </span>
-                            )}
-                            {isLinkedCase(c) && (
-                              <Badge variant="outline" className="text-[10px] px-1.5 py-0 gap-0.5">
-                                <ArrowRightLeft className="h-2.5 w-2.5" />
-                                {c.linked_project_id ? "Prosjekt" : c.linked_work_order_id ? "Jobb" : c.linked_lead_id ? "Lead" : "Tilbud"}
-                              </Badge>
-                            )}
-                          </div>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-2 mt-1 flex-wrap">
+                          <span className="text-xs text-muted-foreground">
+                            {formatDistanceToNow(new Date(c.updated_at), { locale: nb, addSuffix: true })}
+                          </span>
+                          {c.owner_user_id && (
+                            <Badge variant="secondary" className="text-[10px] px-1.5 py-0">
+                              {ownerName(c.owner_user_id)}
+                            </Badge>
+                          )}
+                          {isOverdue && (
+                            <Badge variant="destructive" className="text-[10px] px-1.5 py-0">
+                              Over frist
+                            </Badge>
+                          )}
+                          {c.mailbox_address && (
+                            <span className="text-[10px] text-muted-foreground truncate max-w-[100px]">
+                              {c.mailbox_address}
+                            </span>
+                          )}
+                          {linked && route && (
+                            <Badge
+                              variant="outline"
+                              className="text-[10px] px-1.5 py-0 gap-0.5 cursor-pointer hover:bg-primary/10 transition-colors"
+                              title={`Åpne ${linkedEntityLabel(c)}`}
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigate(route);
+                              }}
+                            >
+                              <ArrowRightLeft className="h-2.5 w-2.5" />
+                              {linkedEntityLabel(c)}
+                            </Badge>
+                          )}
+                          {/* Diagnostics pill: show reason on Videresendt filter */}
+                          {filter === "linked" && linked && (
+                            <span className="text-[10px] text-muted-foreground italic">
+                              {forwardedReason(c)}
+                            </span>
+                          )}
                         </div>
                       </div>
-                    </button>
-                  );
-                })}
-              </div>
-            )}
+                    </div>
+                  </button>
+                );
+              };
+
+              if (isSearching) {
+                // Group by bucket
+                const buckets: Record<SearchBucket, Case[]> = { active: [], forwarded: [], archived: [] };
+                for (const c of filtered) {
+                  buckets[getSearchBucket(c)].push(c);
+                }
+                const bucketLabels: Record<SearchBucket, string> = { active: "Aktive", forwarded: "Videresendt", archived: "Arkiv" };
+                const bucketOrder: SearchBucket[] = ["active", "forwarded", "archived"];
+
+                return (
+                  <div>
+                    {bucketOrder.map((bucket) => {
+                      const items = buckets[bucket];
+                      if (items.length === 0) return null;
+                      return (
+                        <div key={bucket}>
+                          <div className="px-3 py-1.5 bg-muted/50 border-b border-border sticky top-0 z-10">
+                            <span className="text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
+                              {bucketLabels[bucket]} ({items.length})
+                            </span>
+                          </div>
+                          <div className="divide-y divide-border">
+                            {items.map(renderCaseRow)}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
+              return (
+                <div className="divide-y divide-border">
+                  {filtered.map(renderCaseRow)}
+                </div>
+              );
+            })()}
           </ScrollArea>
         </div>
 
