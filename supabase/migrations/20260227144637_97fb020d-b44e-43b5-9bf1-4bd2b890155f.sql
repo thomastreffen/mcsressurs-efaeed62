@@ -1,0 +1,2 @@
+ALTER TABLE public.cases DROP CONSTRAINT cases_linked_work_order_id_fkey;
+ALTER TABLE public.cases ADD CONSTRAINT cases_linked_work_order_id_fkey FOREIGN KEY (linked_work_order_id) REFERENCES public.events(id);

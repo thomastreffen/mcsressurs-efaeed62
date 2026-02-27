@@ -83,8 +83,9 @@ export function LinkToExistingDialog({ open, onOpenChange, caseId, companyId, on
         // Offers
         supabase
           .from("offers")
-          .select("id, title, offer_number, customer_name")
-          .or(`title.ilike.${like},offer_number.ilike.${like},customer_name.ilike.${like},title.ilike.${origLike},offer_number.ilike.${origLike},customer_name.ilike.${origLike}`)
+          .select("id, offer_number, calculation:calculations(project_title, customer_name)")
+          .or(`offer_number.ilike.${like},offer_number.ilike.${origLike}`)
+          .is("deleted_at", null)
           .limit(8),
       ]);
 
@@ -117,14 +118,17 @@ export function LinkToExistingDialog({ open, onOpenChange, caseId, companyId, on
         customer: l.contact_name || "",
       }));
 
-      (offersRes.data || []).forEach((o: any) => items.push({
-        id: o.id,
-        type: "offer",
-        typeLabel: "Tilbud",
-        displayNumber: o.offer_number || "",
-        title: o.title || o.customer_name || "Ukjent",
-        customer: o.customer_name || "",
-      }));
+      (offersRes.data || []).forEach((o: any) => {
+        const calc = o.calculation;
+        items.push({
+          id: o.id,
+          type: "offer",
+          typeLabel: "Tilbud",
+          displayNumber: o.offer_number || "",
+          title: calc?.project_title || o.offer_number || "Ukjent",
+          customer: calc?.customer_name || "",
+        });
+      });
 
       setResults(items);
     } catch {
