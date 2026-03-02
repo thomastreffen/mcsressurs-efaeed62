@@ -276,6 +276,14 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         return;
       }
 
+      // Show toast if config was auto-healed
+      if (result.config_healed && result.heal_summary) {
+        toast.success("SharePoint-konfig oppdatert", {
+          description: result.heal_summary,
+          duration: 5000,
+        });
+      }
+
       if (result.error && (!result.folders || result.folders.length === 0)) {
         const parsed = parseError(result);
         if (parsed.step === "config") {
