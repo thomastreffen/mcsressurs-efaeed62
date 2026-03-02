@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user) throw new Error("Unauthorized");
 
-    const { case_id, case_item_id } = await req.json();
+    const { case_id, case_item_id, triage_mode } = await req.json();
     if (!case_id) throw new Error("case_id required");
 
     // Fetch case + items + documents in parallel
@@ -229,6 +229,46 @@ Return ONLY valid JSON, no markdown.`,
       suggested_attachment_document_ids: docIds.slice(0, 5),
     }));
 
+    // Build triage suggestion for case-level AI triage
+    const triageSuggestion = (() => {
+      const subject = (targetItem?.subject || caseData.title || "").toLowerCase();
+      const bodyLower = (targetItem?.body_text || targetItem?.body_preview || "").toLowerCase();
+      const combined = subject + " " + bodyLower;
+      
+      let priority = "normal";
+      let nextAction = "none";
+      let ownerRole = "";
+      let dueDays = 7;
+      let convertTo: string | null = null;
+      let rationale = "Standard prioritering basert på innhold";
+
+      if (combined.match(/feil|stans|kritisk|akutt|haste/)) {
+        priority = "critical"; nextAction = "call"; dueDays = 1;
+        ownerRole = "Serviceleder"; rationale = "Kritisk: inneholder hasteord";
+      } else if (combined.match(/tilbud|pris|kostnadsestimat|forespørsel/)) {
+        priority = "high"; nextAction = "quote"; dueDays = 3;
+        ownerRole = "Tilbudsansvarlig"; convertTo = "tilbud";
+        rationale = "Tilbudsforespørsel identifisert";
+      } else if (combined.match(/bestilling|ordre|vi aksepterer|bekreft/)) {
+        priority = "high"; nextAction = "schedule"; dueDays = 2;
+        ownerRole = "Prosjektleder"; convertTo = "jobb";
+        rationale = "Bestilling/ordrebekreftelse identifisert";
+      } else if (combined.match(/befaring|installasjon|prosjekt/)) {
+        priority = "normal"; nextAction = "schedule"; dueDays = 5;
+        ownerRole = "Prosjektleder";
+        rationale = "Prosjekt/befaring identifisert";
+      } else if (combined.match(/faktura|betaling|kreditnota/)) {
+        priority = "normal"; nextAction = "document"; dueDays = 7;
+        ownerRole = "Økonomi"; rationale = "Fakturahenvendelse";
+      }
+
+      return {
+        priority, status: priority === "critical" ? "triage" : "in_progress",
+        next_action: nextAction, suggested_owner_role: ownerRole,
+        due_days: dueDays, convert_to: convertTo, rationale,
+      };
+    })();
+
     return new Response(
       JSON.stringify({
         title: (aiSuggestion.title || "").slice(0, 80),
@@ -239,6 +279,7 @@ Return ONLY valid JSON, no markdown.`,
         suggested_assignee_ids: potentialAssignees.slice(0, 3),
         ai_confidence: lovableKey ? 0.75 : 0.3,
         suggested_actions: suggestedActions,
+        triage: triage_mode ? triageSuggestion : undefined,
       }),
       { headers: { ...corsHeaders, "Content-Type": "application/json" } }
     );

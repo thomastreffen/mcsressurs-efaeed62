@@ -1,11 +1,11 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import DOMPurify from "dompurify";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Mail, ArrowRightLeft, FileText, Clock, ChevronDown, ChevronUp,
-  Eye, MessageSquare, Paperclip, ListTodo,
+  MessageSquare, Paperclip, ListTodo, Reply,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -17,6 +17,7 @@ interface CaseItem {
   case_id: string;
   type: string;
   subject: string | null;
+  subject_normalized?: string | null;
   from_email: string | null;
   from_name?: string | null;
   body_preview: string | null;
@@ -30,6 +31,8 @@ interface CaseItem {
   to_emails?: string[] | null;
   cc_emails?: string[] | null;
   internet_message_id?: string | null;
+  in_reply_to?: string | null;
+  references_header?: string | null;
   attachments_meta?: any[] | null;
 }
 
@@ -51,7 +54,7 @@ const SANITIZE_CONFIG = {
 };
 
 export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, linkedProjectId, linkedLeadId, linkedOfferId, documents }: CaseEmailViewerProps) {
-  const [expandedId, setExpandedId] = useState<string | null>(null);
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [showThread, setShowThread] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
   const [taskCaseItemId, setTaskCaseItemId] = useState<string | undefined>(undefined);
@@ -63,46 +66,95 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
     setTaskCaseItemId(undefined);
   };
 
+  const toggleExpanded = (id: string) => {
+    setExpandedIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
   // Separate emails and system/note items
   const emailItems = items.filter((i) => i.type === "email");
   const otherItems = items.filter((i) => i.type !== "email");
 
-  // Group emails by conversation_id
+  // Group emails by conversation_id, fallback to in_reply_to/references threading
   const conversations = new Map<string, CaseItem[]>();
+  const messageIdToConv = new Map<string, string>();
+
   for (const item of emailItems) {
-    const key = item.conversation_id || item.id;
+    let key = item.conversation_id || null;
+    
+    // Fallback: try to match via in_reply_to
+    if (!key && item.in_reply_to) {
+      key = messageIdToConv.get(item.in_reply_to) || null;
+    }
+    // Fallback: try references header
+    if (!key && item.references_header) {
+      const refs = item.references_header.split(/\s+/).filter(Boolean);
+      for (const ref of refs) {
+        const found = messageIdToConv.get(ref);
+        if (found) { key = found; break; }
+      }
+    }
+    
+    if (!key) key = item.id;
+    
     if (!conversations.has(key)) conversations.set(key, []);
     conversations.get(key)!.push(item);
+    
+    // Register this item's message ID for future lookups
+    if (item.internet_message_id) {
+      messageIdToConv.set(item.internet_message_id, key);
+    }
   }
-  // Sort each conversation by sent_at/received_at
+
+  // Sort each conversation by sent_at
   for (const [, msgs] of conversations) {
     msgs.sort((a, b) => new Date(a.sent_at || a.received_at || a.created_at).getTime() - new Date(b.sent_at || b.received_at || b.created_at).getTime());
   }
 
-  const hasMultipleConversations = conversations.size > 1;
+  // Auto-expand the latest email in each conversation on first render
+  useEffect(() => {
+    const latestIds = new Set<string>();
+    for (const [, msgs] of conversations) {
+      if (msgs.length > 0) {
+        latestIds.add(msgs[msgs.length - 1].id);
+      }
+    }
+    // Only if nothing is expanded yet
+    setExpandedIds(prev => prev.size === 0 ? latestIds : prev);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items.length]);
+
   const hasThreads = Array.from(conversations.values()).some((msgs) => msgs.length > 1);
 
-  const renderEmailCard = (item: CaseItem, isExpanded: boolean) => {
+  const renderEmailCard = (item: CaseItem, isExpanded: boolean, isLatest: boolean, threadSize: number) => {
     const dateStr = item.sent_at || item.received_at || item.created_at;
     const hasBody = item.body_html || item.body_text;
     const hasAttachments = item.attachments_meta && (item.attachments_meta as any[]).length > 0;
+    const isOlderInThread = threadSize > 1 && !isLatest;
 
     return (
-      <Card key={item.id} className={`overflow-hidden ${isExpanded ? "ring-1 ring-primary/20" : ""}`}>
+      <Card key={item.id} className={`overflow-hidden transition-all ${isExpanded ? "ring-1 ring-primary/20" : ""} ${isOlderInThread && !isExpanded ? "opacity-70" : ""}`}>
         <button
           type="button"
-          onClick={() => setExpandedId(isExpanded ? null : item.id)}
+          onClick={() => toggleExpanded(item.id)}
           className="w-full text-left p-4 hover:bg-muted/30 transition-colors"
         >
           <div className="flex items-start gap-3">
-            <Mail className="h-4 w-4 text-primary mt-0.5 shrink-0" />
+            <Mail className={`h-4 w-4 mt-0.5 shrink-0 ${isOlderInThread ? "text-muted-foreground" : "text-primary"}`} />
             <div className="flex-1 min-w-0">
               <div className="flex items-center gap-2">
-                <p className="text-sm font-medium text-foreground truncate">{item.subject || "(Uten emne)"}</p>
+                <p className={`text-sm font-medium truncate ${isOlderInThread && !isExpanded ? "text-muted-foreground" : "text-foreground"}`}>
+                  {item.subject || "(Uten emne)"}
+                </p>
                 {hasAttachments && <Paperclip className="h-3 w-3 text-muted-foreground shrink-0" />}
+                {item.in_reply_to && <Reply className="h-3 w-3 text-muted-foreground shrink-0" />}
               </div>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
-                <span className="text-xs text-muted-foreground">
+                <span className="text-xs text-muted-foreground font-medium">
                   {item.from_name || item.from_email || "Ukjent avsender"}
                 </span>
                 {item.to_emails && item.to_emails.length > 0 && (
@@ -113,7 +165,7 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
                 )}
               </div>
               {!isExpanded && item.body_preview && (
-                <p className="text-xs text-muted-foreground mt-1 line-clamp-2">{item.body_preview}</p>
+                <p className="text-xs text-muted-foreground mt-1 line-clamp-1">{item.body_preview}</p>
               )}
               <span className="text-xs text-muted-foreground mt-1 block">
                 {format(new Date(dateStr), "d. MMM yyyy, HH:mm", { locale: nb })}
@@ -128,17 +180,18 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
         {isExpanded && hasBody && (
           <div className="border-t border-border">
             {/* Meta bar */}
-            <div className="px-4 py-2 bg-muted/30 text-xs text-muted-foreground space-y-0.5">
-              <p><span className="font-medium">Fra:</span> {item.from_name ? `${item.from_name} <${item.from_email}>` : item.from_email}</p>
-              {item.to_emails && <p><span className="font-medium">Til:</span> {item.to_emails.join(", ")}</p>}
-              {item.cc_emails && item.cc_emails.length > 0 && <p><span className="font-medium">Kopi:</span> {item.cc_emails.join(", ")}</p>}
-              <p><span className="font-medium">Dato:</span> {format(new Date(dateStr), "EEEE d. MMMM yyyy, HH:mm", { locale: nb })}</p>
+            <div className="px-4 py-2.5 bg-muted/30 text-xs text-muted-foreground space-y-0.5 border-b border-border/50">
+              <p><span className="font-medium text-foreground/80">Fra:</span> {item.from_name ? `${item.from_name} <${item.from_email}>` : item.from_email}</p>
+              {item.to_emails && <p><span className="font-medium text-foreground/80">Til:</span> {item.to_emails.join(", ")}</p>}
+              {item.cc_emails && item.cc_emails.length > 0 && <p><span className="font-medium text-foreground/80">Kopi:</span> {item.cc_emails.join(", ")}</p>}
+              <p><span className="font-medium text-foreground/80">Dato:</span> {format(new Date(dateStr), "EEEE d. MMMM yyyy, HH:mm", { locale: nb })}</p>
+              <p><span className="font-medium text-foreground/80">Emne:</span> {item.subject}</p>
             </div>
             {/* Email body */}
             <div className="p-4">
               {item.body_html ? (
                 <div
-                  className="prose prose-sm max-w-none text-foreground [&_img]:max-w-full [&_table]:text-xs"
+                  className="prose prose-sm max-w-none text-foreground [&_img]:max-w-full [&_table]:text-xs [&_blockquote]:border-l-2 [&_blockquote]:border-muted-foreground/30 [&_blockquote]:pl-3 [&_blockquote]:text-muted-foreground"
                   dangerouslySetInnerHTML={{
                     __html: DOMPurify.sanitize(item.body_html, SANITIZE_CONFIG),
                   }}
@@ -150,7 +203,10 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
             {/* Attachments */}
             {hasAttachments && (
               <div className="px-4 pb-3 border-t border-border pt-2">
-                <p className="text-xs font-medium text-muted-foreground mb-1.5">Vedlegg</p>
+                <p className="text-xs font-medium text-muted-foreground mb-1.5 flex items-center gap-1">
+                  <Paperclip className="h-3 w-3" />
+                  Vedlegg ({(item.attachments_meta as any[]).length})
+                </p>
                 <div className="flex flex-wrap gap-1.5">
                   {(item.attachments_meta as any[]).map((att: any, idx: number) => (
                     <Badge key={idx} variant="outline" className="text-[10px] gap-1">
@@ -160,6 +216,24 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
                     </Badge>
                   ))}
                 </div>
+              </div>
+            )}
+            {/* Quick action: create task from this email */}
+            {caseId && companyId && (
+              <div className="px-4 pb-3 border-t border-border/50 pt-2">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="gap-1.5 text-xs text-muted-foreground hover:text-foreground"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setTaskCaseItemId(item.id);
+                    setShowCreateTask(true);
+                  }}
+                >
+                  <ListTodo className="h-3.5 w-3.5" />
+                  Opprett oppgave fra denne e-posten
+                </Button>
               </div>
             )}
           </div>
@@ -270,10 +344,37 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
                   <span className="text-xs font-medium text-muted-foreground">
                     Tråd · {msgs.length} meldinger
                   </span>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-xs h-6 px-2"
+                    onClick={() => {
+                      const allIds = msgs.map(m => m.id);
+                      setExpandedIds(prev => {
+                        const allExpanded = allIds.every(id => prev.has(id));
+                        const next = new Set(prev);
+                        if (allExpanded) {
+                          // Collapse all except latest
+                          allIds.forEach(id => next.delete(id));
+                          next.add(msgs[msgs.length - 1].id);
+                        } else {
+                          allIds.forEach(id => next.add(id));
+                        }
+                        return next;
+                      });
+                    }}
+                  >
+                    {msgs.every(m => expandedIds.has(m.id)) ? "Skjul eldre" : "Utvid alle"}
+                  </Button>
                 </div>
               )}
               <div className={`space-y-2 ${msgs.length > 1 ? "ml-2 pl-3 border-l-2 border-primary/20" : ""}`}>
-                {msgs.map((item) => renderEmailCard(item, expandedId === item.id))}
+                {msgs.map((item, idx) => renderEmailCard(
+                  item,
+                  expandedIds.has(item.id),
+                  idx === msgs.length - 1,
+                  msgs.length
+                ))}
               </div>
             </div>
           ))}
@@ -288,7 +389,7 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
         <div className="space-y-2">
           {allSorted.map((item) =>
             item.type === "email"
-              ? renderEmailCard(item, expandedId === item.id)
+              ? renderEmailCard(item, expandedIds.has(item.id), true, 1)
               : renderSystemItem(item)
           )}
         </div>

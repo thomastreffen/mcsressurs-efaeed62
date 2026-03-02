@@ -48,16 +48,18 @@ async function fetchMailboxMessages(
   isShared: boolean,
   deltaLink: string | null
 ): Promise<{ messages: any[]; newDeltaLink: string | null }> {
+  // Include internetMessageHeaders to get In-Reply-To and References
+  const selectFields = "id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,hasAttachments,isDraft,conversationId,internetMessageId,internetMessageHeaders";
   let url: string;
   if (deltaLink) {
     url = deltaLink;
   } else if (isShared) {
     const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages/delta`;
-    url = `${inboxPath}?$top=50&$select=id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,hasAttachments,isDraft,conversationId,internetMessageId`;
+    url = `${inboxPath}?$top=50&$select=${selectFields}`;
   } else {
     const inboxPath = `${GRAPH_BASE}/users/${encodeURIComponent(mailboxAddress)}/mailFolders/Inbox/messages`;
     const filter = `receivedDateTime ge ${sinceDate}`;
-    url = `${inboxPath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=id,subject,bodyPreview,body,from,toRecipients,ccRecipients,receivedDateTime,sentDateTime,hasAttachments,isDraft,conversationId,internetMessageId`;
+    url = `${inboxPath}?$filter=${encodeURIComponent(filter)}&$top=50&$orderby=receivedDateTime desc&$select=${selectFields}`;
   }
 
   const allMessages: any[] = [];
@@ -154,13 +156,13 @@ function stripHtml(html: string): string {
 // ID EXTRACTION ENGINE (v2)
 // ═══════════════════════════════════════════════════════════════
 
-type IdType = "case" | "job" | "offer" | "lead";
+type IdType = "case" | "job" | "offer" | "lead" | "project";
 
 interface IdMatch {
   type: IdType;
   pattern: string;
   rawMatch: string;
-  lookupValue: string; // Normalized value to search in DB
+  lookupValue: string;
   source: "subject" | "body";
 }
 
@@ -169,6 +171,7 @@ interface ExtractedIds {
   jobIds: IdMatch[];
   offerIds: IdMatch[];
   leadIds: IdMatch[];
+  projectIds: IdMatch[];
   standaloneNumbers: IdMatch[];
 }
 
@@ -176,21 +179,42 @@ function extractIdsFromText(text: string, source: "subject" | "body"): IdMatch[]
   const matches: IdMatch[] = [];
   const seen = new Set<string>();
 
-  // CASE-XXXXXX (with optional brackets)
-  for (const m of text.matchAll(/[\[\(]?(CASE-(\d{6}))[\]\)]?/gi)) {
-    const key = `case:${m[2]}`;
+  // CASE-XXXXXX (with optional brackets, case-insensitive)
+  for (const m of text.matchAll(/[\[\(]?(CASE-(\d{4,6}))[\]\)]?/gi)) {
+    const padded = m[2].padStart(6, "0");
+    const key = `case:${padded}`;
     if (!seen.has(key)) {
       seen.add(key);
-      matches.push({ type: "case", pattern: "full_case", rawMatch: m[0], lookupValue: `CASE-${m[2]}`, source });
+      matches.push({ type: "case", pattern: "full_case", rawMatch: m[0], lookupValue: `CASE-${padded}`, source });
     }
   }
 
-  // JOB-XXXXXX
-  for (const m of text.matchAll(/\bJOB-(\d{6})\b/gi)) {
-    const key = `job:${m[1]}`;
+  // JOB-XXXXXX (flexible digits, case-insensitive)
+  for (const m of text.matchAll(/[\[\(]?JOB-(\d{4,6})[\]\)]?/gi)) {
+    const padded = m[1].padStart(6, "0");
+    const key = `job:${padded}`;
     if (!seen.has(key)) {
       seen.add(key);
-      matches.push({ type: "job", pattern: "full_job", rawMatch: m[0], lookupValue: `JOB-${m[1]}`, source });
+      matches.push({ type: "job", pattern: "full_job", rawMatch: m[0], lookupValue: `JOB-${padded}`, source });
+    }
+  }
+
+  // PROJ-XXXXXX (project number)
+  for (const m of text.matchAll(/[\[\(]?PROJ-(\d{4,6})[\]\)]?/gi)) {
+    const padded = m[1].padStart(6, "0");
+    const key = `project:${padded}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      matches.push({ type: "project", pattern: "full_project", rawMatch: m[0], lookupValue: `PROJ-${padded}`, source });
+    }
+  }
+
+  // OFFER-XXXX (generic offer number)
+  for (const m of text.matchAll(/[\[\(]?OFFER-(\d{3,6})[\]\)]?/gi)) {
+    const key = `offer:OFFER-${m[1]}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      matches.push({ type: "offer", pattern: "offer_prefix", rawMatch: m[0], lookupValue: `OFFER-${m[1]}`, source });
     }
   }
 
@@ -204,13 +228,22 @@ function extractIdsFromText(text: string, source: "subject" | "body"): IdMatch[]
     }
   }
 
-  // LEAD-YYYY-NNNNNN
-  for (const m of text.matchAll(/\bLEAD-(\d{4})-(\d{6})\b/gi)) {
+  // LEAD-YYYY-NNNNNN or LEAD-NNNN
+  for (const m of text.matchAll(/[\[\(]?LEAD-(\d{4})-(\d{4,6})[\]\)]?/gi)) {
     const val = `LEAD-${m[1]}-${m[2]}`;
     const key = `lead:${val}`;
     if (!seen.has(key)) {
       seen.add(key);
       matches.push({ type: "lead", pattern: "full_lead", rawMatch: m[0], lookupValue: val, source });
+    }
+  }
+  for (const m of text.matchAll(/[\[\(]?LEAD-(\d{4,6})[\]\)]?/gi)) {
+    // Skip if already matched as LEAD-YYYY-NNNNNN
+    if (text.match(new RegExp(`LEAD-\\d{4}-${m[1]}`, "i"))) continue;
+    const key = `lead:LEAD-${m[1]}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      matches.push({ type: "lead", pattern: "short_lead", rawMatch: m[0], lookupValue: `LEAD-${m[1]}`, source });
     }
   }
 
@@ -221,7 +254,6 @@ function extractAllIds(normalizedSubject: string, bodyText: string): ExtractedId
   const subjectMatches = extractIdsFromText(normalizedSubject, "subject");
   const bodyMatches = extractIdsFromText(bodyText, "body");
 
-  // Dedup across subject + body, preferring subject source
   const all: IdMatch[] = [...subjectMatches];
   const seenKeys = new Set(subjectMatches.map(m => `${m.type}:${m.lookupValue}`));
   for (const m of bodyMatches) {
@@ -232,13 +264,14 @@ function extractAllIds(normalizedSubject: string, bodyText: string): ExtractedId
     }
   }
 
-  const result: ExtractedIds = { caseIds: [], jobIds: [], offerIds: [], leadIds: [], standaloneNumbers: [] };
+  const result: ExtractedIds = { caseIds: [], jobIds: [], offerIds: [], leadIds: [], projectIds: [], standaloneNumbers: [] };
   for (const m of all) {
     switch (m.type) {
       case "case": result.caseIds.push(m); break;
       case "job": result.jobIds.push(m); break;
       case "offer": result.offerIds.push(m); break;
       case "lead": result.leadIds.push(m); break;
+      case "project": result.projectIds.push(m); break;
     }
   }
 
@@ -307,11 +340,13 @@ async function resolveCaseId(match: IdMatch, companyId: string, admin: any): Pro
 }
 
 async function resolveOfferId(match: IdMatch, companyId: string, admin: any): Promise<ResolvedLink | null> {
+  // Try offer_number exact match, then partial
   const { data } = await admin
     .from("offers")
-    .select("id")
-    .eq("offer_number", match.lookupValue)
+    .select("id, offer_number")
     .eq("company_id", companyId)
+    .or(`offer_number.eq.${match.lookupValue}`)
+    .is("deleted_at", null)
     .maybeSingle();
   if (!data) return null;
   return {
@@ -324,13 +359,28 @@ async function resolveLeadId(match: IdMatch, companyId: string, admin: any): Pro
   const { data } = await admin
     .from("leads")
     .select("id")
-    .eq("lead_ref_code", match.lookupValue)
     .eq("company_id", companyId)
+    .or(`lead_ref_code.eq.${match.lookupValue}`)
     .maybeSingle();
   if (!data) return null;
   return {
     field: "linked_lead_id", id: data.id, displayRef: match.lookupValue,
     type: "lead", matchSource: match.source, matchedText: match.rawMatch.substring(0, 80),
+  };
+}
+
+async function resolveProjectId(match: IdMatch, companyId: string, admin: any): Promise<ResolvedLink | null> {
+  const { data } = await admin
+    .from("events")
+    .select("id, project_number")
+    .eq("company_id", companyId)
+    .eq("project_number", match.lookupValue)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (!data) return null;
+  return {
+    field: "linked_project_id", id: data.id, displayRef: match.lookupValue,
+    type: "project", matchSource: match.source, matchedText: match.rawMatch.substring(0, 80),
   };
 }
 
@@ -600,6 +650,11 @@ Deno.serve(async (req) => {
           const toRecipients = (msg.toRecipients || []).map((r: any) => r.emailAddress?.address).filter(Boolean);
           const ccRecipients = (msg.ccRecipients || []).map((r: any) => r.emailAddress?.address).filter(Boolean);
 
+          // Extract In-Reply-To and References from internetMessageHeaders
+          const headers = msg.internetMessageHeaders || [];
+          const inReplyTo = headers.find((h: any) => h.name?.toLowerCase() === "in-reply-to")?.value || null;
+          const referencesHeader = headers.find((h: any) => h.name?.toLowerCase() === "references")?.value || null;
+
           // ── EXTRACT IDs ──
           const extracted = extractAllIds(normalizedSubject, bodyText);
           let caseId: string | null = null;
@@ -619,26 +674,27 @@ Deno.serve(async (req) => {
             }
           }
 
-          // 2. Priority order: JOB > OFFER > LEAD — resolve and link
+          // 2. Priority order: JOB > PROJECT > OFFER > LEAD — resolve and link
           const orderedMatches: IdMatch[] = [
             ...extracted.jobIds,
+            ...extracted.projectIds,
             ...extracted.offerIds,
             ...extracted.leadIds,
           ];
 
           if (orderedMatches.length > 1) {
-            console.log(`[inbox-sync] Multiple IDs found: ${orderedMatches.map(m => m.lookupValue).join(", ")}. Using priority: JOB > OFFER > LEAD.`);
+            console.log(`[inbox-sync] Multiple IDs found: ${orderedMatches.map(m => m.lookupValue).join(", ")}. Using priority: JOB > PROJECT > OFFER > LEAD.`);
           }
 
           for (const idMatch of orderedMatches) {
             let resolved: ResolvedLink | null = null;
             switch (idMatch.type) {
               case "job": resolved = await resolveJobId(idMatch, companyId, supabaseAdmin); break;
+              case "project": resolved = await resolveProjectId(idMatch, companyId, supabaseAdmin); break;
               case "offer": resolved = await resolveOfferId(idMatch, companyId, supabaseAdmin); break;
               case "lead": resolved = await resolveLeadId(idMatch, companyId, supabaseAdmin); break;
             }
             if (resolved) {
-              // Only set if not already linked to this type
               if (!linkedUpdates[resolved.field]) {
                 linkedUpdates[resolved.field] = resolved.id;
                 resolvedLinks.push(resolved);
@@ -649,10 +705,42 @@ Deno.serve(async (req) => {
           }
 
           // 3. Find or create case
+          // 3a. Try to find case by thread_id
           if (!caseId) {
             const { data: existingCase } = await supabaseAdmin
               .from("cases").select("id").eq("thread_id", threadId).eq("company_id", companyId).maybeSingle();
             if (existingCase) caseId = existingCase.id;
+          }
+
+          // 3b. Fallback: use In-Reply-To / References for threading
+          if (!caseId && inReplyTo) {
+            const { data: replyItem } = await supabaseAdmin
+              .from("case_items")
+              .select("case_id")
+              .eq("internet_message_id", inReplyTo)
+              .eq("company_id", companyId)
+              .maybeSingle();
+            if (replyItem) {
+              caseId = replyItem.case_id;
+              console.log(`[inbox-sync] Matched case via In-Reply-To header -> ${caseId}`);
+            }
+          }
+          if (!caseId && referencesHeader) {
+            // References header contains space-separated message IDs; try matching any
+            const refIds = referencesHeader.split(/\s+/).filter(Boolean).slice(0, 5);
+            for (const refId of refIds) {
+              const { data: refItem } = await supabaseAdmin
+                .from("case_items")
+                .select("case_id")
+                .eq("internet_message_id", refId)
+                .eq("company_id", companyId)
+                .maybeSingle();
+              if (refItem) {
+                caseId = refItem.case_id;
+                console.log(`[inbox-sync] Matched case via References header -> ${caseId}`);
+                break;
+              }
+            }
           }
 
           if (caseId) {
@@ -767,13 +855,14 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Insert case_item with full email data
+          // Insert case_item with full email data including threading headers
           const { error: itemErr } = await supabaseAdmin.from("case_items").insert({
             company_id: companyId,
             case_id: caseId,
             type: "email",
             external_id: msg.id,
             subject: originalSubject,
+            subject_normalized: normalizedSubject,
             from_email: fromEmail || fromName || null,
             from_name: fromName || null,
             body_preview: bodyPreview,
@@ -782,6 +871,8 @@ Deno.serve(async (req) => {
             sent_at: sentAt,
             internet_message_id: internetMessageId,
             conversation_id: conversationId,
+            in_reply_to: inReplyTo,
+            references_header: referencesHeader,
             to_emails: toRecipients.length > 0 ? toRecipients : null,
             cc_emails: ccRecipients.length > 0 ? ccRecipients : null,
             received_at: msg.receivedDateTime || new Date().toISOString(),
