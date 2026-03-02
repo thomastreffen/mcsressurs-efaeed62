@@ -1320,6 +1320,50 @@ export type Database = {
           },
         ]
       }
+      document_category_mappings: {
+        Row: {
+          category_key: string
+          company_id: string
+          created_at: string
+          display_name: string
+          icon: string | null
+          id: string
+          read_only: boolean
+          sharepoint_relative_path: string
+          sort_order: number
+        }
+        Insert: {
+          category_key: string
+          company_id: string
+          created_at?: string
+          display_name?: string
+          icon?: string | null
+          id?: string
+          read_only?: boolean
+          sharepoint_relative_path: string
+          sort_order?: number
+        }
+        Update: {
+          category_key?: string
+          company_id?: string
+          created_at?: string
+          display_name?: string
+          icon?: string | null
+          id?: string
+          read_only?: boolean
+          sharepoint_relative_path?: string
+          sort_order?: number
+        }
+        Relationships: [
+          {
+            foreignKeyName: "document_category_mappings_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       documents: {
         Row: {
           ai_category: string | null

@@ -36,6 +36,70 @@ async function getAppToken(): Promise<string> {
   return data.access_token;
 }
 
+/** Ensure a folder path exists under a parent item, creating segments as needed */
+async function ensureFolderPath(msToken: string, driveId: string, parentItemId: string, relativePath: string): Promise<{ id: string; webUrl: string }> {
+  const segments = relativePath.split("/").filter(Boolean);
+  let currentParentId = parentItemId;
+  let currentWebUrl = "";
+
+  for (const segment of segments) {
+    // Check if child folder exists
+    const checkUrl = `${GRAPH_BASE}/drives/${driveId}/items/${currentParentId}:/${encodeURIComponent(segment)}`;
+    const checkRes = await fetch(checkUrl, {
+      headers: { Authorization: `Bearer ${msToken}` },
+    });
+
+    if (checkRes.ok) {
+      const existing = await checkRes.json();
+      currentParentId = existing.id;
+      currentWebUrl = existing.webUrl || "";
+    } else {
+      await checkRes.text();
+      // Create the folder
+      const createRes = await fetch(
+        `${GRAPH_BASE}/drives/${driveId}/items/${currentParentId}/children`,
+        {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${msToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            name: segment,
+            folder: {},
+            "@microsoft.graph.conflictBehavior": "fail",
+          }),
+        }
+      );
+
+      if (createRes.ok) {
+        const created = await createRes.json();
+        currentParentId = created.id;
+        currentWebUrl = created.webUrl || "";
+      } else if (createRes.status === 409) {
+        // Conflict = already exists (race condition), re-fetch
+        await createRes.text();
+        const reFetch = await fetch(checkUrl, {
+          headers: { Authorization: `Bearer ${msToken}` },
+        });
+        if (reFetch.ok) {
+          const existing = await reFetch.json();
+          currentParentId = existing.id;
+          currentWebUrl = existing.webUrl || "";
+        } else {
+          await reFetch.text();
+          throw new Error(`Kunne ikke opprette mappe "${segment}"`);
+        }
+      } else {
+        const errBody = await createRes.text();
+        throw new Error(`Kunne ikke opprette mappe "${segment}": ${createRes.status} ${errBody.substring(0, 200)}`);
+      }
+    }
+  }
+
+  return { id: currentParentId, webUrl: currentWebUrl };
+}
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
@@ -71,7 +135,7 @@ Deno.serve(async (req) => {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const jobId = formData.get("job_id") as string | null;
-    const subFolderId = formData.get("folder_id") as string | null;
+    const categoryKey = (formData.get("category_key") as string | null) || "other";
 
     if (!file || !jobId) return respond({ error: "file and job_id required" }, 400);
 
@@ -113,7 +177,36 @@ Deno.serve(async (req) => {
     }
 
     const driveId = job.sharepoint_drive_id;
-    const folderId = subFolderId || job.sharepoint_folder_id;
+    const rootFolderId = job.sharepoint_folder_id;
+
+    // Resolve category mapping
+    const { data: mapping } = await supabaseAdmin
+      .from("document_category_mappings")
+      .select("sharepoint_relative_path, read_only")
+      .eq("company_id", job.company_id)
+      .eq("category_key", categoryKey)
+      .maybeSingle();
+
+    let targetRelativePath = mapping?.sharepoint_relative_path || "90 Service/Annet";
+
+    // SCOPE GUARD: Only allow writes under "90 Service/"
+    if (!targetRelativePath.startsWith("90 Service")) {
+      return respond({
+        error: "Opplasting er kun tillatt under Service-sonen (90 Service).",
+        step: "scope_guard",
+        category_key: categoryKey,
+        mapping_path: targetRelativePath,
+      }, 403);
+    }
+
+    // Block uploads to read-only categories
+    if (mapping?.read_only) {
+      return respond({
+        error: "Denne kategorien er skrivebeskyttet. Du kan ikke laste opp hit.",
+        step: "scope_guard",
+        category_key: categoryKey,
+      }, 403);
+    }
 
     let msToken: string;
     try {
@@ -122,15 +215,23 @@ Deno.serve(async (req) => {
       return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
     }
 
+    // Ensure the target folder path exists
+    let targetFolder: { id: string; webUrl: string };
+    try {
+      targetFolder = await ensureFolderPath(msToken, driveId, rootFolderId, targetRelativePath);
+    } catch (e: any) {
+      return respond({ error: e.message || "Kunne ikke opprette målmappe", step: "ensure_folder" }, 502);
+    }
+
     const fileName = file.name.replace(/[^\w.\-() ]/g, "_");
-    console.log(`[sharepoint-upload] request_id=${requestId} job_id=${jobId} file=${fileName} size=${(file.size / 1024).toFixed(0)}KB`);
+    console.log(`[sharepoint-upload] request_id=${requestId} job_id=${jobId} category=${categoryKey} path=${targetRelativePath} file=${fileName} size=${(file.size / 1024).toFixed(0)}KB`);
 
     const fileBuffer = await file.arrayBuffer();
     let uploadedItem: any;
 
     if (file.size < 4 * 1024 * 1024) {
       const uploadRes = await fetch(
-        `${GRAPH_BASE}/drives/${driveId}/items/${folderId}:/${encodeURIComponent(fileName)}:/content`,
+        `${GRAPH_BASE}/drives/${driveId}/items/${targetFolder.id}:/${encodeURIComponent(fileName)}:/content`,
         {
           method: "PUT",
           headers: {
@@ -155,7 +256,7 @@ Deno.serve(async (req) => {
       uploadedItem = await uploadRes.json();
     } else {
       const sessionRes = await fetch(
-        `${GRAPH_BASE}/drives/${driveId}/items/${folderId}:/${encodeURIComponent(fileName)}:/createUploadSession`,
+        `${GRAPH_BASE}/drives/${driveId}/items/${targetFolder.id}:/${encodeURIComponent(fileName)}:/createUploadSession`,
         {
           method: "POST",
           headers: {
@@ -194,7 +295,7 @@ Deno.serve(async (req) => {
       uploadedItem = await chunkRes.json();
     }
 
-    console.log(`[sharepoint-upload] request_id=${requestId} uploaded: ${uploadedItem.id} ${uploadedItem.name}`);
+    console.log(`[sharepoint-upload] request_id=${requestId} uploaded: ${uploadedItem.id} ${uploadedItem.name} -> ${targetRelativePath}`);
 
     // Log in job_document_links
     if (job.company_id) {
@@ -218,7 +319,7 @@ Deno.serve(async (req) => {
         event_id: jobId,
         action_type: "sharepoint_upload",
         performed_by: authUserId,
-        change_summary: `Fil lastet opp til SharePoint: ${uploadedItem.name}`,
+        change_summary: `Fil lastet opp til SharePoint: ${uploadedItem.name} (${categoryKey})`,
       });
     } catch (_) { /* non-critical */ }
 
@@ -231,6 +332,8 @@ Deno.serve(async (req) => {
         size: uploadedItem.size,
         mimeType: uploadedItem.file?.mimeType,
       },
+      final_path: targetRelativePath + "/" + uploadedItem.name,
+      category_key: categoryKey,
     });
   } catch (err: any) {
     console.error(`[sharepoint-upload] request_id=${requestId} unhandled error:`, err.message);
