@@ -166,12 +166,13 @@ Deno.serve(async (req) => {
       }, 401);
     }
 
-    // ─── HELPER: Build subject with ref_code ───
+    // ─── HELPER: Build subject with ref_code (bracket format) ───
     const buildSubjectWithRef = (rawSubject: string, refCode: string | null): string => {
       if (!refCode) return rawSubject;
-      // Don't duplicate if ref is already in subject
+      // Don't duplicate if ref is already in subject (check both bracket and old format)
       if (rawSubject.includes(refCode)) return rawSubject;
-      return `Ref: ${refCode} | ${rawSubject}`;
+      // Use bracket format: [JOB-000010] Subject
+      return `[${refCode}] ${rawSubject}`;
     };
 
     // ─── HELPER: Append ref footer to body ───
@@ -188,8 +189,12 @@ Deno.serve(async (req) => {
         return data?.lead_ref_code || null;
       }
       if (entityType === "job") {
-        const { data } = await supabaseAdmin.from("events").select("internal_number").eq("id", entityId).single();
-        return data?.internal_number || null;
+        const { data } = await supabaseAdmin.from("events").select("internal_number, project_number").eq("id", entityId).single();
+        return data?.internal_number || data?.project_number || null;
+      }
+      if (entityType === "case") {
+        const { data } = await supabaseAdmin.from("cases").select("case_number").eq("id", entityId).single();
+        return data?.case_number || null;
       }
       return null;
     };

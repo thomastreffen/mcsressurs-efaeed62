@@ -239,10 +239,13 @@ export type Database = {
           from_email: string | null
           from_name: string | null
           id: string
+          in_reply_to: string | null
           internet_message_id: string | null
           received_at: string | null
+          references_header: string | null
           sent_at: string | null
           subject: string | null
+          subject_normalized: string | null
           to_emails: string[] | null
           type: string
         }
@@ -261,10 +264,13 @@ export type Database = {
           from_email?: string | null
           from_name?: string | null
           id?: string
+          in_reply_to?: string | null
           internet_message_id?: string | null
           received_at?: string | null
+          references_header?: string | null
           sent_at?: string | null
           subject?: string | null
+          subject_normalized?: string | null
           to_emails?: string[] | null
           type?: string
         }
@@ -283,10 +289,13 @@ export type Database = {
           from_email?: string | null
           from_name?: string | null
           id?: string
+          in_reply_to?: string | null
           internet_message_id?: string | null
           received_at?: string | null
+          references_header?: string | null
           sent_at?: string | null
           subject?: string | null
+          subject_normalized?: string | null
           to_emails?: string[] | null
           type?: string
         }
