@@ -267,13 +267,17 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         body: { action: "search", project_code: projectCode.trim(), company_id: companyId },
       });
 
-      if (error) {
-        setSearchError(parseError({ error: "Nettverksfeil. Sjekk tilkoblingen." }));
+      // supabase.functions.invoke returns error for network / non-2xx
+      // but data may still contain JSON body — prefer data if available
+      const result = data ?? {};
+
+      if (error && !data) {
+        setSearchError(parseError({ error: typeof error === "string" ? error : (error?.message || "Nettverksfeil. Sjekk tilkoblingen.") }));
         return;
       }
 
-      if (data?.error && (!data?.folders || data.folders.length === 0)) {
-        const parsed = parseError(data);
+      if (result.error && (!result.folders || result.folders.length === 0)) {
+        const parsed = parseError(result);
         if (parsed.step === "config") {
           setShowSetup(true);
         }
@@ -281,18 +285,18 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         return;
       }
 
-      setSearchResults(data.folders || []);
-      if ((data.folders || []).length === 0) {
+      setSearchResults(result.folders || []);
+      if ((result.folders || []).length === 0) {
         setSearchError(parseError({
           error: `Ingen mapper funnet med koden "${projectCode}"`,
           graph_status: 404,
           graph_error_code: "itemNotFound",
           step: "search",
-          request_id: data?.request_id,
+          request_id: result.request_id,
         }));
       }
     } catch (err: any) {
-      setSearchError(parseError({ error: err.message }));
+      setSearchError(parseError({ error: err?.message || "Uventet feil under søk" }));
     } finally {
       setSearching(false);
     }
@@ -316,18 +320,20 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         },
       });
 
-      if (error || data?.error) {
-        setSearchError(parseError(data || { error: error?.message }));
+      const result = data ?? {};
+
+      if ((error && !data) || result.error) {
+        setSearchError(parseError(result.error ? result : { error: typeof error === "string" ? error : (error?.message || "Resolve feilet") }));
         return;
       }
 
-      toast.success(`SharePoint konfigurert: ${data.site_name || "OK"}`, {
-        description: `Drive: ${data.drive_name || data.drive_id}`,
+      toast.success(`SharePoint konfigurert: ${result.site_name || "OK"}`, {
+        description: `Drive: ${result.drive_name || result.drive_id}`,
       });
       setShowSetup(false);
       setSearchError(null);
     } catch (err: any) {
-      setSearchError(parseError({ error: err.message }));
+      setSearchError(parseError({ error: err?.message || "Uventet feil under oppslag" }));
     } finally {
       setResolving(false);
     }
@@ -349,8 +355,10 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         },
       });
 
-      if (error || data?.error) {
-        showErrorToast(parseError(data || { error: error?.message }));
+      const result = data ?? {};
+
+      if ((error && !data) || result.error) {
+        showErrorToast(parseError(result.error ? result : { error: typeof error === "string" ? error : (error?.message || "Kobling feilet") }));
         return;
       }
 
@@ -360,7 +368,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       setSearchError(null);
       onConnectionChange();
     } catch (err: any) {
-      showErrorToast(parseError({ error: err.message }));
+      showErrorToast(parseError({ error: err?.message || "Uventet feil under kobling" }));
     } finally {
       setConnecting(false);
     }
@@ -369,13 +377,18 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
   // Disconnect
   const handleDisconnect = async () => {
     try {
-      await supabase.functions.invoke("sharepoint-connect", {
+      const { data, error } = await supabase.functions.invoke("sharepoint-connect", {
         body: { action: "disconnect", job_id: jobId },
       });
+      const result = data ?? {};
+      if ((error && !data) || result.error) {
+        showErrorToast(parseError(result.error ? result : { error: typeof error === "string" ? error : (error?.message || "Frakobling feilet") }));
+        return;
+      }
       toast.success("SharePoint-kobling fjernet");
       onConnectionChange();
     } catch (err: any) {
-      showErrorToast(parseError({ error: err.message }));
+      showErrorToast(parseError({ error: err?.message || "Uventet feil under frakobling" }));
     }
   };
 
