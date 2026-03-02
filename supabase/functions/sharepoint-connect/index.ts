@@ -431,12 +431,14 @@ Deno.serve(async (req) => {
           return respond({ error: "Kunne ikke lagre kobling", detail: updateErr.message }, 500);
         }
 
-        await supabaseAdmin.from("event_logs").insert({
-          event_id: job_id,
-          action_type: "sharepoint_connected",
-          performed_by: userId,
-          change_summary: `SharePoint-mappe koblet: ${project_code || folder_id}`,
-        }).catch(() => {});
+        try {
+          await supabaseAdmin.from("event_logs").insert({
+            event_id: job_id,
+            action_type: "sharepoint_connected",
+            performed_by: userId,
+            change_summary: `SharePoint-mappe koblet: ${project_code || folder_id}`,
+          });
+        } catch (_) { /* ignore logging errors */ }
 
         return respond({ success: true });
       } catch (connectErr: any) {
@@ -462,12 +464,14 @@ Deno.serve(async (req) => {
           })
           .eq("id", job_id);
 
-        await supabaseAdmin.from("event_logs").insert({
-          event_id: job_id,
-          action_type: "sharepoint_disconnected",
-          performed_by: userId,
-          change_summary: "SharePoint-kobling fjernet",
-        }).catch(() => {});
+        try {
+          await supabaseAdmin.from("event_logs").insert({
+            event_id: job_id,
+            action_type: "sharepoint_disconnected",
+            performed_by: userId,
+            change_summary: "SharePoint-kobling fjernet",
+          });
+        } catch (_) { /* ignore logging errors */ }
 
         return respond({ success: true });
       } catch (disconnectErr: any) {
