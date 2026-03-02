@@ -11,15 +11,14 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Separator } from "@/components/ui/separator";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import {
-  Loader2, ArrowLeft, User, Building, Shield, Lock, Activity,
-  Archive, ArchiveRestore, ShieldAlert, Info,
+  Loader2, ArrowLeft, User, Building, Shield, Activity,
+  Archive, ArchiveRestore,
 } from "lucide-react";
 import { toast } from "sonner";
-import { PERMISSION_CATEGORIES, SCOPE_OPTIONS, getPermLabel, getPermDescription } from "@/lib/permission-labels";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
+import { TooltipProvider } from "@/components/ui/tooltip";
+import { PermissionsPanel } from "@/components/permissions/PermissionsPanel";
 
 interface PersonData {
   id: string;
@@ -50,7 +49,7 @@ interface UserAccountData {
   is_active: boolean;
 }
 
-interface RoleOption { id: string; name: string; }
+interface RoleOption { id: string; name: string; description?: string | null; }
 interface CompanyOption { id: string; name: string; departments: { id: string; name: string }[]; }
 
 interface AuditEntry {
@@ -72,16 +71,16 @@ export default function PersonDetailPage() {
 
   // Org tab
   const [companies, setCompanies] = useState<CompanyOption[]>([]);
-  const [scopes, setScopes] = useState<{ company_id: string; department_id: string | null }[]>([]);
 
-  // Roles tab
+  // Permissions (unified)
   const [roles, setRoles] = useState<RoleOption[]>([]);
   const [assignedRoles, setAssignedRoles] = useState<string[]>([]);
-
-  // Permissions tab
-  const [overrides, setOverrides] = useState<Record<string, "allow" | "deny" | "inherit">>({});
+  const [scopes, setScopes] = useState<{ company_id: string; department_id: string | null }[]>([]);
+  const [overrides, setOverrides] = useState<Record<string, "allow" | "deny">>({});
   const [scopeOverride, setScopeOverride] = useState("inherit");
   const [rolePermissions, setRolePermissions] = useState<Record<string, boolean>>({});
+  const [rolePermSourceMap, setRolePermSourceMap] = useState<Record<string, string>>({});
+  const [allRolePerms, setAllRolePerms] = useState<any[]>([]);
 
   // Audit tab
   const [auditEntries, setAuditEntries] = useState<AuditEntry[]>([]);
@@ -101,7 +100,7 @@ export default function PersonDetailPage() {
       supabase.from("people").select("*").eq("id", id).single(),
       supabase.from("employment_profiles").select("*").eq("person_id", id).maybeSingle(),
       supabase.from("user_accounts").select("*").eq("person_id", id).maybeSingle(),
-      supabase.from("roles").select("id, name").order("name"),
+      supabase.from("roles").select("id, name, description").order("name"),
       supabase.from("internal_companies").select("id, name").eq("is_active", true),
       supabase.from("departments").select("id, name, company_id").eq("is_active", true),
     ]);
@@ -118,7 +117,6 @@ export default function PersonDetailPage() {
       }))
     );
 
-    // If user has an account, fetch roles, scopes, overrides
     if (uaData) {
       const ua = uaData as any;
       const [
@@ -137,19 +135,14 @@ export default function PersonDetailPage() {
 
       const assignedRoleIds = (urData as any[] || []).map((r: any) => r.role_id);
       setAssignedRoles(assignedRoleIds);
+      setAllRolePerms((rpData as any[]) || []);
       setScopes((usData as any[] || []).map((s: any) => ({ company_id: s.company_id, department_id: s.department_id })));
 
-      // Build role permissions map
-      const rp: Record<string, boolean> = {};
-      for (const p of (rpData as any[] || [])) {
-        if (assignedRoleIds.includes(p.role_id) && p.allowed) {
-          rp[p.permission_key] = true;
-        }
-      }
-      setRolePermissions(rp);
+      // Build role permissions map + source map
+      buildRolePermMaps(assignedRoleIds, rpData as any[], rolesData as any[]);
 
       // Build overrides
-      const ov: Record<string, "allow" | "deny" | "inherit"> = {};
+      const ov: Record<string, "allow" | "deny"> = {};
       let sc = "inherit";
       for (const o of (uoData as any[] || [])) {
         if (o.permission_key.startsWith("scope.view.")) {
@@ -165,6 +158,26 @@ export default function PersonDetailPage() {
 
     setLoading(false);
   }, [id]);
+
+  const buildRolePermMaps = (assignedRoleIds: string[], rpData: any[], rolesData: any[]) => {
+    const rp: Record<string, boolean> = {};
+    const srcMap: Record<string, string> = {};
+    const roleNameMap = new Map((rolesData || []).map((r: any) => [r.id, r.name]));
+    for (const p of (rpData || [])) {
+      if (assignedRoleIds.includes(p.role_id) && p.allowed) {
+        rp[p.permission_key] = true;
+        srcMap[p.permission_key] = roleNameMap.get(p.role_id) || "Rolle";
+      }
+    }
+    setRolePermissions(rp);
+    setRolePermSourceMap(srcMap);
+  };
+
+  // When assignedRoles change locally, rebuild perm maps
+  const handleAssignedRolesChange = useCallback((newRoles: string[]) => {
+    setAssignedRoles(newRoles);
+    buildRolePermMaps(newRoles, allRolePerms, roles);
+  }, [allRolePerms, roles]);
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -206,19 +219,17 @@ export default function PersonDetailPage() {
     fetchData();
   };
 
-  const handleSaveRolesAndScopes = async () => {
+  const handleSaveAll = async () => {
     if (!account) return;
     setSaving(true);
     try {
-      // Save roles
+      // Save roles (v2 + legacy sync)
       await supabase.from("user_roles_v2").delete().eq("user_account_id", account.id);
       if (assignedRoles.length > 0) {
         await supabase.from("user_roles_v2").insert(
           assignedRoles.map((rid) => ({ user_account_id: account.id, role_id: rid }))
         );
       }
-
-      // Also sync to legacy user_role_assignments for backward compat
       await supabase.from("user_role_assignments").delete().eq("user_id", account.auth_user_id);
       if (assignedRoles.length > 0) {
         await supabase.from("user_role_assignments").insert(
@@ -226,15 +237,13 @@ export default function PersonDetailPage() {
         );
       }
 
-      // Save scopes
+      // Save scopes (v2 + legacy sync)
       await supabase.from("user_scopes").delete().eq("user_account_id", account.id);
       if (scopes.length > 0) {
         await supabase.from("user_scopes").insert(
           scopes.map((s) => ({ user_account_id: account.id, company_id: s.company_id, department_id: s.department_id }))
         );
       }
-
-      // Also sync to legacy user_memberships
       await supabase.from("user_memberships").delete().eq("user_id", account.auth_user_id);
       if (scopes.length > 0) {
         await supabase.from("user_memberships").insert(
@@ -242,23 +251,11 @@ export default function PersonDetailPage() {
         );
       }
 
-      toast.success("Roller og tilhørighet oppdatert");
-      fetchData();
-    } catch (err: any) {
-      toast.error("Feil", { description: err.message });
-    } finally {
-      setSaving(false);
-    }
-  };
-
-  const handleSavePermissions = async () => {
-    if (!account) return;
-    setSaving(true);
-    try {
+      // Save permission overrides (v2 + legacy sync)
       await supabase.from("user_permission_overrides_v2").delete().eq("user_account_id", account.id);
-      const rows: any[] = Object.entries(overrides)
-        .filter(([, v]) => v !== "inherit")
-        .map(([key, mode]) => ({ user_account_id: account.id, permission_key: key, mode }));
+      const rows: any[] = Object.entries(overrides).map(([key, mode]) => ({
+        user_account_id: account.id, permission_key: key, mode,
+      }));
       if (scopeOverride !== "inherit") {
         rows.push({ user_account_id: account.id, permission_key: scopeOverride, mode: "allow" });
       }
@@ -266,7 +263,6 @@ export default function PersonDetailPage() {
         await supabase.from("user_permission_overrides_v2").insert(rows);
       }
 
-      // Sync to legacy
       await supabase.from("user_permission_overrides").delete().eq("user_id", account.auth_user_id);
       const legacyRows = rows.map((r) => ({
         user_id: account.auth_user_id,
@@ -277,47 +273,13 @@ export default function PersonDetailPage() {
         await supabase.from("user_permission_overrides").insert(legacyRows);
       }
 
-      toast.success("Rettigheter oppdatert");
+      toast.success("Roller, omfang og rettigheter lagret");
       fetchData();
     } catch (err: any) {
       toast.error("Feil", { description: err.message });
     } finally {
       setSaving(false);
     }
-  };
-
-  const selectRole = (roleId: string) => {
-    setAssignedRoles((prev) => prev.includes(roleId) ? [] : [roleId]);
-  };
-
-  const toggleScope = (companyId: string, deptId: string | null) => {
-    setScopes((prev) => {
-      const exists = prev.some((s) => s.company_id === companyId && s.department_id === deptId);
-      if (exists) return prev.filter((s) => !(s.company_id === companyId && s.department_id === deptId));
-      return [...prev, { company_id: companyId, department_id: deptId }];
-    });
-  };
-
-  const cycleOverride = (key: string) => {
-    setOverrides((prev) => {
-      const current = prev[key] || "inherit";
-      const next = current === "inherit" ? "allow" : current === "allow" ? "deny" : "inherit";
-      const copy = { ...prev };
-      if (next === "inherit") delete copy[key];
-      else copy[key] = next;
-      return copy;
-    });
-  };
-
-  const getEffectiveState = (key: string): { source: string; allowed: boolean } => {
-    const ov = overrides[key];
-    if (ov === "allow") return { source: "Manuell overstyring: Tillatt", allowed: true };
-    if (ov === "deny") return { source: "Manuell overstyring: Nektet", allowed: false };
-    if (rolePermissions[key]) {
-      const roleName = roles.find((r) => assignedRoles.includes(r.id))?.name || "rolle";
-      return { source: `Via rolle: ${roleName}`, allowed: true };
-    }
-    return { source: "Ingen tilgang", allowed: false };
   };
 
   if (loading) {
@@ -377,8 +339,7 @@ export default function PersonDetailPage() {
           <TabsList>
             <TabsTrigger value="profile"><User className="h-4 w-4 mr-1.5" />Profil</TabsTrigger>
             <TabsTrigger value="org"><Building className="h-4 w-4 mr-1.5" />Organisasjon</TabsTrigger>
-            {account && <TabsTrigger value="roles"><Shield className="h-4 w-4 mr-1.5" />Roller</TabsTrigger>}
-            {account && <TabsTrigger value="permissions"><Lock className="h-4 w-4 mr-1.5" />Rettigheter</TabsTrigger>}
+            {account && <TabsTrigger value="permissions"><Shield className="h-4 w-4 mr-1.5" />Rettigheter</TabsTrigger>}
             <TabsTrigger value="audit"><Activity className="h-4 w-4 mr-1.5" />Aktivitet</TabsTrigger>
           </TabsList>
 
@@ -472,142 +433,34 @@ export default function PersonDetailPage() {
                   </div>
                 </div>
               )}
-
-              {account && (
-                <>
-                  <Separator />
-                  <div>
-                    <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Tilgangsomfang (Scopes)</Label>
-                    <p className="text-[11px] text-muted-foreground mb-2">Bestemmer hvilke selskaper/avdelinger brukeren kan se data i.</p>
-                    <div className="space-y-3 mt-2">
-                      {companies.map((c) => (
-                        <div key={c.id}>
-                          <label className="flex items-center gap-2 cursor-pointer text-sm font-medium">
-                            <Checkbox
-                              checked={scopes.some((s) => s.company_id === c.id && s.department_id === null)}
-                              onCheckedChange={() => toggleScope(c.id, null)}
-                            />
-                            {c.name} <span className="text-xs text-muted-foreground">(hele selskapet)</span>
-                          </label>
-                          {c.departments.map((d) => (
-                            <label key={d.id} className="flex items-center gap-2 cursor-pointer text-sm ml-6 mt-1">
-                              <Checkbox
-                                checked={scopes.some((s) => s.company_id === c.id && s.department_id === d.id)}
-                                onCheckedChange={() => toggleScope(c.id, d.id)}
-                              />
-                              {d.name}
-                            </label>
-                          ))}
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </>
-              )}
-
               <div className="flex justify-end">
-                <Button onClick={account ? handleSaveRolesAndScopes : handleSaveProfile} disabled={saving}>
+                <Button onClick={handleSaveProfile} disabled={saving}>
                   {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lagre"}
                 </Button>
               </div>
             </div>
           </TabsContent>
 
-          {/* Roles Tab */}
-          {account && (
-            <TabsContent value="roles">
-              <div className="rounded-lg border p-4 sm:p-6 space-y-5 max-w-2xl">
-                <div>
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Roller</Label>
-                  <p className="text-[11px] text-muted-foreground mb-2">Velg rolle. Roller er gjensidig utelukkende.</p>
-                  <div className="space-y-1.5 mt-2">
-                    {roles.map((r) => (
-                      <label key={r.id} className="flex items-center gap-2 cursor-pointer text-sm">
-                        <Checkbox checked={assignedRoles.includes(r.id)} onCheckedChange={() => selectRole(r.id)} />
-                        {r.name}
-                      </label>
-                    ))}
-                  </div>
-                </div>
-                <div className="flex justify-end">
-                  <Button onClick={handleSaveRolesAndScopes} disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lagre roller"}
-                  </Button>
-                </div>
-              </div>
-            </TabsContent>
-          )}
-
-          {/* Permissions Tab */}
+          {/* Permissions Tab – flat Tripletex-style */}
           {account && (
             <TabsContent value="permissions">
-              <div className="rounded-lg border p-4 sm:p-6 space-y-5 max-w-2xl">
-                <div>
-                  <Label className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">Omfang-overstyring</Label>
-                  <Select value={scopeOverride} onValueChange={setScopeOverride}>
-                    <SelectTrigger className="mt-1.5"><SelectValue /></SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="inherit">Arv fra rolle</SelectItem>
-                      {SCOPE_OPTIONS.map((opt) => (
-                        <SelectItem key={opt.key} value={opt.key}>{opt.label}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <ScrollArea className="h-[400px] pr-4">
-                  <div className="space-y-5">
-                    {PERMISSION_CATEGORIES.map((group) => (
-                      <div key={group.category}>
-                        <p className="text-xs font-semibold text-muted-foreground uppercase tracking-wider">{group.category}</p>
-                        <div className="space-y-1.5 mt-2">
-                          {group.keys.map((key) => {
-                            const state = overrides[key] || "inherit";
-                            const effective = getEffectiveState(key);
-                            const desc = getPermDescription(key);
-                            return (
-                              <div key={key} className="flex items-center justify-between gap-2 py-1">
-                                <div className="flex items-center gap-2 min-w-0">
-                                  <button
-                                    onClick={() => cycleOverride(key)}
-                                    className={`shrink-0 px-2 py-0.5 rounded text-[10px] font-medium border transition-colors ${
-                                      state === "allow"
-                                        ? "bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-900/30 dark:text-emerald-400 dark:border-emerald-800"
-                                        : state === "deny"
-                                        ? "bg-red-100 text-red-800 border-red-300 dark:bg-red-900/30 dark:text-red-400 dark:border-red-800"
-                                        : "bg-muted text-muted-foreground border-border"
-                                    }`}
-                                  >
-                                    {state === "allow" ? "Tillatt" : state === "deny" ? "Nektet" : "Arv"}
-                                  </button>
-                                  <span className="text-sm">{getPermLabel(key)}</span>
-                                  {desc && (
-                                    <Tooltip>
-                                      <TooltipTrigger asChild>
-                                        <Info className="h-3.5 w-3.5 text-muted-foreground shrink-0" />
-                                      </TooltipTrigger>
-                                      <TooltipContent side="right" className="max-w-[250px] text-xs">{desc}</TooltipContent>
-                                    </Tooltip>
-                                  )}
-                                </div>
-                                <span className={`text-[10px] shrink-0 ${effective.allowed ? "text-emerald-600 dark:text-emerald-400" : "text-muted-foreground"}`}>
-                                  {effective.source}
-                                </span>
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </ScrollArea>
-
-                <div className="flex justify-end">
-                  <Button onClick={handleSavePermissions} disabled={saving}>
-                    {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : "Lagre rettigheter"}
-                  </Button>
-                </div>
-              </div>
+              <PermissionsPanel
+                userAccountId={account.id}
+                roles={roles}
+                assignedRoles={assignedRoles}
+                onAssignedRolesChange={handleAssignedRolesChange}
+                rolePermissions={rolePermissions}
+                rolePermSourceMap={rolePermSourceMap}
+                overrides={overrides}
+                onOverridesChange={setOverrides}
+                scopeOverride={scopeOverride}
+                onScopeOverrideChange={setScopeOverride}
+                scopes={scopes}
+                onScopesChange={setScopes}
+                companies={companies}
+                saving={saving}
+                onSave={handleSaveAll}
+              />
             </TabsContent>
           )}
 
