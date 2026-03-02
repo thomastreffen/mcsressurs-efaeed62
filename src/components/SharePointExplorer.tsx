@@ -85,6 +85,12 @@ interface StructuredError {
   step: string | null;
 }
 
+interface ResolveSiteForm {
+  siteHostname: string;
+  sitePath: string;
+  basePath: string;
+}
+
 function formatSize(bytes: number): string {
   if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -180,6 +186,9 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
   const [searchResults, setSearchResults] = useState<SharePointFolder[]>([]);
   const [connecting, setConnecting] = useState(false);
   const [searchError, setSearchError] = useState<StructuredError | null>(null);
+  const [showSetup, setShowSetup] = useState(false);
+  const [setupForm, setSetupForm] = useState<ResolveSiteForm>({ siteHostname: "mcselektrotavler.sharepoint.com", sitePath: "/sites/BCDokumentarkiv", basePath: "" });
+  const [resolving, setResolving] = useState(false);
 
   // Explorer state
   const [items, setItems] = useState<SharePointItem[]>([]);
@@ -264,7 +273,11 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       }
 
       if (data?.error && (!data?.folders || data.folders.length === 0)) {
-        setSearchError(parseError(data));
+        const parsed = parseError(data);
+        if (parsed.step === "config") {
+          setShowSetup(true);
+        }
+        setSearchError(parsed);
         return;
       }
 
@@ -282,6 +295,41 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       setSearchError(parseError({ error: err.message }));
     } finally {
       setSearching(false);
+    }
+  };
+
+  // Resolve SharePoint site config
+  const handleResolveSite = async () => {
+    if (!setupForm.siteHostname || !setupForm.sitePath) {
+      toast.error("Fyll inn SharePoint-adresse og site-sti");
+      return;
+    }
+    setResolving(true);
+    setSearchError(null);
+    try {
+      const { data, error } = await supabase.functions.invoke("sharepoint-connect", {
+        body: {
+          action: "resolve_site",
+          site_hostname: setupForm.siteHostname.trim(),
+          site_path: setupForm.sitePath.trim().replace(/^\/+/, "/"),
+          base_path: setupForm.basePath.trim(),
+        },
+      });
+
+      if (error || data?.error) {
+        setSearchError(parseError(data || { error: error?.message }));
+        return;
+      }
+
+      toast.success(`SharePoint konfigurert: ${data.site_name || "OK"}`, {
+        description: `Drive: ${data.drive_name || data.drive_id}`,
+      });
+      setShowSetup(false);
+      setSearchError(null);
+    } catch (err: any) {
+      setSearchError(parseError({ error: err.message }));
+    } finally {
+      setResolving(false);
     }
   };
 
@@ -472,6 +520,56 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
           {searchError && (
             <div className="max-w-md mx-auto">
               <InlineError error={searchError} onDismiss={() => setSearchError(null)} />
+            </div>
+          )}
+
+          {/* Setup form when config is missing */}
+          {showSetup && (
+            <div className="max-w-md mx-auto text-left space-y-3 rounded-lg border border-border/40 bg-card p-4">
+              <h5 className="text-sm font-semibold">Konfigurer SharePoint-tilkobling</h5>
+              <p className="text-xs text-muted-foreground">
+                Oppgi SharePoint-adressen for dokumentarkivet. Eksempel: for URL-en
+                <code className="mx-1 text-[11px] bg-muted px-1 py-0.5 rounded">https://firma.sharepoint.com/sites/Dokumentarkiv</code>
+              </p>
+              <div className="space-y-2">
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">SharePoint-domene</label>
+                  <Input
+                    value={setupForm.siteHostname}
+                    onChange={(e) => setSetupForm(f => ({ ...f, siteHostname: e.target.value }))}
+                    placeholder="firma.sharepoint.com"
+                    className="text-sm mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Site-sti</label>
+                  <Input
+                    value={setupForm.sitePath}
+                    onChange={(e) => setSetupForm(f => ({ ...f, sitePath: e.target.value }))}
+                    placeholder="/sites/Dokumentarkiv"
+                    className="text-sm mt-1"
+                  />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-muted-foreground">Rot-mappe (valgfritt)</label>
+                  <Input
+                    value={setupForm.basePath}
+                    onChange={(e) => setSetupForm(f => ({ ...f, basePath: e.target.value }))}
+                    placeholder="f.eks. Drift"
+                    className="text-sm mt-1"
+                  />
+                  <p className="text-[11px] text-muted-foreground mt-0.5">Undermappen der prosjektmappene ligger</p>
+                </div>
+              </div>
+              <div className="flex gap-2">
+                <Button size="sm" onClick={handleResolveSite} disabled={resolving} className="gap-1.5">
+                  {resolving ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                  Koble til
+                </Button>
+                <Button size="sm" variant="ghost" onClick={() => { setShowSetup(false); setSearchError(null); }}>
+                  Avbryt
+                </Button>
+              </div>
             </div>
           )}
 

@@ -293,6 +293,100 @@ Deno.serve(async (req) => {
       return respond({ success: true });
     }
 
+    // ── RESOLVE_SITE: Lookup site_id & drive_id from SharePoint hostname/path ──
+    if (action === "resolve_site") {
+      const siteHostname = (body.site_hostname || "").trim();
+      const sitePath = (body.site_path || "").trim();
+      const basePath = (body.base_path || "").trim();
+
+      if (!siteHostname || !sitePath) {
+        return respond({ error: "site_hostname og site_path er påkrevd (f.eks. 'mcselektrotavler.sharepoint.com' og '/sites/BCDokumentarkiv')" }, 400);
+      }
+
+      let msToken: string;
+      try {
+        msToken = await getAppToken();
+      } catch (e: any) {
+        console.error(`[sharepoint-connect] request_id=${requestId} step=token error=${e.message}`);
+        return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
+      }
+
+      // Resolve site
+      const siteUrl = `${GRAPH_BASE}/sites/${siteHostname}:${sitePath}`;
+      console.log(`[sharepoint-connect] request_id=${requestId} step=resolve_site url=${siteUrl}`);
+      const siteRes = await graphFetch(msToken, siteUrl);
+
+      if (!siteRes.ok) {
+        const status = siteRes.status;
+        await siteRes.text();
+        return respond({
+          error: graphErrorMessage(status),
+          graph_status: status,
+          step: "resolve_site",
+        }, 502);
+      }
+
+      const siteData = await siteRes.json();
+      const resolvedSiteId = siteData.id; // e.g. "tenant,siteCollectionId,siteId"
+
+      // Get default document library (drive)
+      const drivesUrl = `${GRAPH_BASE}/sites/${resolvedSiteId}/drives`;
+      console.log(`[sharepoint-connect] request_id=${requestId} step=resolve_drives url=${drivesUrl}`);
+      const drivesRes = await graphFetch(msToken, drivesUrl);
+
+      if (!drivesRes.ok) {
+        const status = drivesRes.status;
+        await drivesRes.text();
+        return respond({
+          error: graphErrorMessage(status),
+          graph_status: status,
+          step: "resolve_drives",
+          site_id: resolvedSiteId,
+        }, 502);
+      }
+
+      const drivesData = await drivesRes.json();
+      const drives = (drivesData.value || []).map((d: any) => ({
+        id: d.id,
+        name: d.name,
+        webUrl: d.webUrl,
+        driveType: d.driveType,
+      }));
+
+      // Pick the first documentLibrary or first drive
+      const defaultDrive = drives.find((d: any) => d.driveType === "documentLibrary") || drives[0];
+
+      if (!defaultDrive) {
+        return respond({ error: "Fant ingen dokumentbibliotek på dette SharePoint-området.", step: "resolve_drives", site_id: resolvedSiteId }, 404);
+      }
+
+      // Save to company_settings
+      const { error: saveErr } = await supabaseAdmin
+        .from("company_settings")
+        .update({
+          sharepoint_site_id: resolvedSiteId,
+          sharepoint_drive_id: defaultDrive.id,
+          sharepoint_base_path: basePath || null,
+        })
+        .eq("id", (await supabaseAdmin.from("company_settings").select("id").limit(1).maybeSingle()).data?.id || "");
+
+      if (saveErr) {
+        console.error(`[sharepoint-connect] request_id=${requestId} step=save error=${saveErr.message}`);
+        return respond({ error: "Kunne ikke lagre konfigurasjon", detail: saveErr.message }, 500);
+      }
+
+      return respond({
+        success: true,
+        site_id: resolvedSiteId,
+        site_name: siteData.displayName,
+        site_web_url: siteData.webUrl,
+        drive_id: defaultDrive.id,
+        drive_name: defaultDrive.name,
+        drives,
+        base_path: basePath || null,
+      });
+    }
+
     return respond({ error: "Unknown action" }, 400);
   } catch (err: any) {
     console.error(`[sharepoint-connect] request_id=${requestId} unhandled error:`, err.message);
