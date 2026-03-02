@@ -8,6 +8,15 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
+function graphErrorMessage(status: number, code?: string): string {
+  if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
+  if (status === 403) return "Appen mangler rettigheter til SharePoint-området eller drive. Sjekk Graph permissions og site-tilgang.";
+  if (status === 404) return "Fant ikke ressursen i SharePoint. Sjekk at mappen finnes i riktig dokumentbibliotek.";
+  if (status === 429) return "For mange forespørsler mot Microsoft. Prøv igjen om litt.";
+  if (status >= 500) return "Microsoft/Graph midlertidig feil. Prøv igjen.";
+  return `SharePoint-feil (HTTP ${status})`;
+}
+
 async function getAppToken(): Promise<string> {
   const res = await fetch(
     `https://login.microsoftonline.com/${Deno.env.get("AZURE_TENANT_ID")}/oauth2/v2.0/token`,
@@ -35,8 +44,10 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   const respond = (data: any, status = 200) =>
-    new Response(JSON.stringify(data), {
+    new Response(JSON.stringify({ ...data, request_id: requestId }), {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -51,9 +62,9 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: claimsData, error: claimsErr } = await supabaseAnon.auth.getClaims(jwt);
-    if (claimsErr || !claimsData?.claims) return respond({ error: "Invalid session" }, 401);
-    const userId = claimsData.claims.sub as string;
+    const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
+    if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
+    const userId = userData.user.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -64,24 +75,41 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { action, job_id, project_code, folder_id, site_id, drive_id } = body;
 
-    const msToken = await getAppToken();
+    console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id} project_code=${project_code}`);
 
     // ── SEARCH: Find folders matching project_code ──
     if (action === "search") {
-      if (!project_code) return respond({ error: "project_code required" }, 400);
+      const code = (project_code || "").trim().toUpperCase().replace(/\s+/g, "");
+      if (!code) return respond({ error: "project_code required" }, 400);
 
-      console.log(`[sharepoint-connect] Searching for: ${project_code}`);
+      let msToken: string;
+      try {
+        msToken = await getAppToken();
+      } catch (e: any) {
+        console.error(`[sharepoint-connect] request_id=${requestId} step=token error=${e.message}`);
+        return respond({
+          error: "Microsoft-token feilet. Sjekk client secret og tenant.",
+          graph_status: 401,
+          graph_error_code: "invalid_token",
+          step: "token",
+        }, 502);
+      }
 
-      // Try searching in the default site's drive
-      // First get the root site
+      // Get root site
       const siteRes = await fetch(`${GRAPH_BASE}/sites/root`, {
         headers: { Authorization: `Bearer ${msToken}` },
       });
 
       if (!siteRes.ok) {
-        const errText = await siteRes.text();
-        console.error(`[sharepoint-connect] Site fetch failed: ${siteRes.status} ${errText.substring(0, 200)}`);
-        return respond({ error: "Kunne ikke koble til SharePoint", detail: `HTTP ${siteRes.status}` }, 502);
+        const errBody = await siteRes.json().catch(() => ({}));
+        const errCode = errBody?.error?.code || "";
+        console.error(`[sharepoint-connect] request_id=${requestId} step=resolve graph_status=${siteRes.status} graph_error_code=${errCode}`);
+        return respond({
+          error: graphErrorMessage(siteRes.status, errCode),
+          graph_status: siteRes.status,
+          graph_error_code: errCode,
+          step: "resolve",
+        }, 502);
       }
 
       const siteData = await siteRes.json();
@@ -89,36 +117,38 @@ Deno.serve(async (req) => {
 
       // Search for folders matching the project code
       const searchRes = await fetch(
-        `${GRAPH_BASE}/sites/${rootSiteId}/drive/root/search(q='${encodeURIComponent(project_code)}')`,
+        `${GRAPH_BASE}/sites/${rootSiteId}/drive/root/search(q='${encodeURIComponent(code)}')`,
         { headers: { Authorization: `Bearer ${msToken}` } }
       );
 
       if (!searchRes.ok) {
-        const errText = await searchRes.text();
-        console.error(`[sharepoint-connect] Search failed: ${searchRes.status}`);
-        // Try alternative: search across all sites
-        const altSearchRes = await fetch(
-          `${GRAPH_BASE}/search/query`,
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${msToken}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({
-              requests: [{
-                entityTypes: ["driveItem"],
-                query: { queryString: `${project_code} AND isDocument:false` },
-                from: 0,
-                size: 10,
-              }],
-            }),
-          }
-        );
+        // Fallback: search API across all sites
+        const altSearchRes = await fetch(`${GRAPH_BASE}/search/query`, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${msToken}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            requests: [{
+              entityTypes: ["driveItem"],
+              query: { queryString: `${code} AND isDocument:false` },
+              from: 0,
+              size: 10,
+            }],
+          }),
+        });
 
         if (!altSearchRes.ok) {
-          const altErr = await altSearchRes.text();
-          return respond({ error: "Søk feilet", detail: altErr.substring(0, 200) }, 502);
+          const errBody = await altSearchRes.json().catch(() => ({}));
+          const errCode = errBody?.error?.code || "";
+          console.error(`[sharepoint-connect] request_id=${requestId} step=search graph_status=${altSearchRes.status} graph_error_code=${errCode}`);
+          return respond({
+            error: graphErrorMessage(altSearchRes.status, errCode),
+            graph_status: altSearchRes.status,
+            graph_error_code: errCode,
+            step: "search",
+          }, 502);
         }
 
         const altData = await altSearchRes.json();
@@ -134,11 +164,22 @@ Deno.serve(async (req) => {
             lastModified: h.resource.lastModifiedDateTime,
           }));
 
+        if (folders.length === 0) {
+          return respond({
+            error: `Fant ikke "${code}" under valgt base path. Sjekk at mappen finnes i riktig dokumentbibliotek.`,
+            graph_status: 404,
+            graph_error_code: "itemNotFound",
+            step: "search",
+            folders: [],
+          }, 200);
+        }
+
         return respond({ folders, source: "search_api" });
       }
 
       const searchData = await searchRes.json();
       const items = searchData.value || [];
+      // Prioritize exact match, then prefix match
       const folders = items
         .filter((item: any) => item.folder)
         .map((item: any) => ({
@@ -148,7 +189,25 @@ Deno.serve(async (req) => {
           siteId: rootSiteId,
           driveId: item.parentReference?.driveId,
           lastModified: item.lastModifiedDateTime,
-        }));
+        }))
+        .sort((a: any, b: any) => {
+          const aExact = a.name.toUpperCase() === code ? 0 : 1;
+          const bExact = b.name.toUpperCase() === code ? 0 : 1;
+          if (aExact !== bExact) return aExact - bExact;
+          const aPrefix = a.name.toUpperCase().startsWith(code) ? 0 : 1;
+          const bPrefix = b.name.toUpperCase().startsWith(code) ? 0 : 1;
+          return aPrefix - bPrefix;
+        });
+
+      if (folders.length === 0) {
+        return respond({
+          error: `Fant ikke "${code}" under valgt base path. Sjekk at mappen finnes i riktig dokumentbibliotek.`,
+          graph_status: 404,
+          graph_error_code: "itemNotFound",
+          step: "search",
+          folders: [],
+        }, 200);
+      }
 
       return respond({ folders, source: "drive_search" });
     }
@@ -161,7 +220,7 @@ Deno.serve(async (req) => {
       const { error: updateErr } = await supabaseAdmin
         .from("events")
         .update({
-          sharepoint_project_code: project_code || null,
+          sharepoint_project_code: (project_code || "").trim().toUpperCase().replace(/\s+/g, "") || null,
           sharepoint_site_id: site_id || null,
           sharepoint_drive_id: drive_id || null,
           sharepoint_folder_id: folder_id,
@@ -171,11 +230,10 @@ Deno.serve(async (req) => {
         .eq("id", job_id);
 
       if (updateErr) {
-        console.error(`[sharepoint-connect] Update failed:`, updateErr.message);
+        console.error(`[sharepoint-connect] request_id=${requestId} step=connect error=${updateErr.message}`);
         return respond({ error: "Kunne ikke lagre kobling", detail: updateErr.message }, 500);
       }
 
-      // Log activity
       await supabaseAdmin.from("event_logs").insert({
         event_id: job_id,
         action_type: "sharepoint_connected",
@@ -214,7 +272,7 @@ Deno.serve(async (req) => {
 
     return respond({ error: "Unknown action" }, 400);
   } catch (err: any) {
-    console.error("[sharepoint-connect] Error:", err.message);
-    return respond({ error: err.message || "Internal error" }, 500);
+    console.error(`[sharepoint-connect] request_id=${requestId} unhandled error:`, err.message);
+    return respond({ error: err.message || "Internal error", step: "unknown" }, 500);
   }
 });
