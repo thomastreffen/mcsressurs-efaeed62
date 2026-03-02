@@ -1475,6 +1475,12 @@ export type Database = {
           project_type: string
           proposed_end: string | null
           proposed_start: string | null
+          sharepoint_connected_at: string | null
+          sharepoint_drive_id: string | null
+          sharepoint_folder_id: string | null
+          sharepoint_folder_web_url: string | null
+          sharepoint_project_code: string | null
+          sharepoint_site_id: string | null
           start_time: string
           status: Database["public"]["Enums"]["job_status"]
           task_id: string | null
@@ -1526,6 +1532,12 @@ export type Database = {
           project_type?: string
           proposed_end?: string | null
           proposed_start?: string | null
+          sharepoint_connected_at?: string | null
+          sharepoint_drive_id?: string | null
+          sharepoint_folder_id?: string | null
+          sharepoint_folder_web_url?: string | null
+          sharepoint_project_code?: string | null
+          sharepoint_site_id?: string | null
           start_time: string
           status?: Database["public"]["Enums"]["job_status"]
           task_id?: string | null
@@ -1577,6 +1589,12 @@ export type Database = {
           project_type?: string
           proposed_end?: string | null
           proposed_start?: string | null
+          sharepoint_connected_at?: string | null
+          sharepoint_drive_id?: string | null
+          sharepoint_folder_id?: string | null
+          sharepoint_folder_web_url?: string | null
+          sharepoint_project_code?: string | null
+          sharepoint_site_id?: string | null
           start_time?: string
           status?: Database["public"]["Enums"]["job_status"]
           task_id?: string | null
@@ -2496,6 +2514,63 @@ export type Database = {
             columns: ["linked_risk_id"]
             isOneToOne: false
             referencedRelation: "job_risk_items"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      job_document_links: {
+        Row: {
+          company_id: string
+          created_at: string
+          file_size: number | null
+          id: string
+          item_id: string
+          job_id: string
+          mime_type: string | null
+          name: string
+          source: string
+          uploaded_by: string | null
+          web_url: string | null
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          file_size?: number | null
+          id?: string
+          item_id: string
+          job_id: string
+          mime_type?: string | null
+          name: string
+          source?: string
+          uploaded_by?: string | null
+          web_url?: string | null
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          file_size?: number | null
+          id?: string
+          item_id?: string
+          job_id?: string
+          mime_type?: string | null
+          name?: string
+          source?: string
+          uploaded_by?: string | null
+          web_url?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "job_document_links_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "job_document_links_job_id_fkey"
+            columns: ["job_id"]
+            isOneToOne: false
+            referencedRelation: "events"
             referencedColumns: ["id"]
           },
         ]
