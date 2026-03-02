@@ -154,8 +154,8 @@ const forwardedReason = (c: Case): string => {
 
 /** Route for a linked entity */
 const linkedEntityRoute = (c: Case): string | null => {
-  if (c.linked_project_id) return `/projects/${c.linked_project_id}`;
-  if (c.linked_work_order_id) return `/projects/${c.linked_work_order_id}`;
+  if (c.linked_project_id) return `/projects/${c.linked_project_id}?tab=epost`;
+  if (c.linked_work_order_id) return `/projects/${c.linked_work_order_id}?tab=epost`;
   if (c.linked_lead_id) return `/sales/leads/${c.linked_lead_id}`;
   if (c.linked_offer_id) return `/sales/offers/${c.linked_offer_id}`;
   return null;
@@ -1178,7 +1178,12 @@ function CaseDetail({
           caseId={caseData.id}
           companyId={caseData.company_id}
           onLinked={(field, id) => {
-            onUpdateField({ [field]: id } as any);
+            // Set linked field + move status to in_progress if new/triage
+            const statusUpdate: Partial<Case> = { [field]: id } as any;
+            if (["new", "triage"].includes(caseData.status)) {
+              (statusUpdate as any).status = "in_progress";
+            }
+            onUpdateField(statusUpdate);
             onCaseUpdated();
           }}
         />

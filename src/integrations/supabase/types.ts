@@ -241,6 +241,7 @@ export type Database = {
           id: string
           in_reply_to: string | null
           internet_message_id: string | null
+          is_read: boolean
           mention_parse_version: number
           mentioned_emails: string[]
           mentioned_user_ids: string[]
@@ -269,6 +270,7 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           internet_message_id?: string | null
+          is_read?: boolean
           mention_parse_version?: number
           mentioned_emails?: string[]
           mentioned_user_ids?: string[]
@@ -297,6 +299,7 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           internet_message_id?: string | null
+          is_read?: boolean
           mention_parse_version?: number
           mentioned_emails?: string[]
           mentioned_user_ids?: string[]
