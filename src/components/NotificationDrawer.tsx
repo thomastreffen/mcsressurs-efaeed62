@@ -11,7 +11,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { JobStatusBadge } from "@/components/JobStatusBadge";
-import { Bell, CheckCheck, Clock, AlertTriangle, XCircle, CalendarCheck, Plug } from "lucide-react";
+import { Bell, CheckCheck, Clock, AlertTriangle, XCircle, CalendarCheck, Plug, AtSign } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type { Notification } from "@/hooks/useNotifications";
 import type { JobStatus } from "@/lib/job-status";
@@ -30,6 +30,9 @@ const TYPE_ICONS: Record<string, React.ElementType> = {
   rejected: XCircle,
   conflict: AlertTriangle,
   ms_connect_request: Plug,
+  mention: AtSign,
+  assignment: CalendarCheck,
+  triage: AlertTriangle,
 };
 
 const TYPE_STATUS_MAP: Record<string, JobStatus> = {

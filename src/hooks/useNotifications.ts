@@ -11,6 +11,8 @@ export interface Notification {
   link_url: string | null;
   read: boolean;
   created_at: string;
+  entity_type?: string | null;
+  entity_id?: string | null;
 }
 
 export function useNotifications() {

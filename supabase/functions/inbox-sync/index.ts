@@ -548,6 +548,75 @@ async function triggerClassification(documentIds: string[], supabaseUrl: string,
   }
 }
 
+// ── Mention parsing (inline, no external import in edge functions) ──
+function parseMentionsFromText(text: string): { emails: string[]; names: string[] } {
+  const emails: string[] = [];
+  const names: string[] = [];
+  // Match @user@domain.com
+  for (const m of text.matchAll(/@([a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,})/g)) {
+    const email = m[1].toLowerCase();
+    if (!emails.includes(email)) emails.push(email);
+  }
+  // Match @"Name with spaces" or @SingleWord (min 2 chars)
+  for (const m of text.matchAll(/@"([^"]+)"|@(\w{2,30})/g)) {
+    const name = m[1] || m[2];
+    // Skip if it looks like an email (already captured above)
+    if (name && !name.includes("@") && !names.includes(name)) names.push(name);
+  }
+  return { emails, names };
+}
+
+async function parseMentionsAndResolve(
+  text: string, companyId: string, admin: any
+): Promise<{ mentionedEmails: string[]; mentionedUserIds: string[] }> {
+  const { emails, names } = parseMentionsFromText(text);
+  if (emails.length === 0 && names.length === 0) {
+    return { mentionedEmails: [], mentionedUserIds: [] };
+  }
+
+  const resolvedUserIds: string[] = [];
+
+  // Resolve email mentions via technicians table (canonical person source)
+  if (emails.length > 0) {
+    const { data: techs } = await admin
+      .from("technicians")
+      .select("user_id, email")
+      .not("user_id", "is", null);
+    if (techs) {
+      for (const email of emails) {
+        const match = techs.find((t: any) => t.email?.toLowerCase() === email);
+        if (match?.user_id && !resolvedUserIds.includes(match.user_id)) {
+          resolvedUserIds.push(match.user_id);
+        }
+      }
+    }
+  }
+
+  // Resolve name mentions via technicians.name
+  if (names.length > 0) {
+    const { data: techs } = await admin
+      .from("technicians")
+      .select("user_id, name")
+      .not("user_id", "is", null);
+    if (techs) {
+      for (const mention of names) {
+        const lower = mention.toLowerCase();
+        const match = techs.find((t: any) =>
+          t.name?.toLowerCase() === lower ||
+          t.name?.toLowerCase().startsWith(lower) ||
+          t.name?.toLowerCase().includes(lower)
+        );
+        if (match?.user_id && !resolvedUserIds.includes(match.user_id)) {
+          resolvedUserIds.push(match.user_id);
+        }
+      }
+    }
+  }
+
+  console.log(`[inbox-sync] Mentions: emails=${emails.join(",")}, names=${names.join(",")}, resolved=${resolvedUserIds.length}`);
+  return { mentionedEmails: emails, mentionedUserIds: resolvedUserIds };
+}
+
 // ═══════════════════════════════════════════════════════════════
 // MAIN HANDLER
 // ═══════════════════════════════════════════════════════════════
@@ -990,8 +1059,14 @@ Deno.serve(async (req) => {
             }
           }
 
-          // Insert case_item with full email data including threading headers
-          const { error: itemErr } = await supabaseAdmin.from("case_items").insert({
+          // ── MENTION PARSING ──
+          const mentionText = bodyText || bodyPreview || "";
+          const { mentionedEmails, mentionedUserIds } = await parseMentionsAndResolve(
+            mentionText, companyId, supabaseAdmin
+          );
+
+          // Insert case_item with full email data including threading headers and mentions
+          const { data: insertedCaseItem, error: itemErr } = await supabaseAdmin.from("case_items").insert({
             company_id: companyId,
             case_id: caseId,
             type: "email",
@@ -1012,7 +1087,33 @@ Deno.serve(async (req) => {
             cc_emails: ccRecipients.length > 0 ? ccRecipients : null,
             received_at: msg.receivedDateTime || new Date().toISOString(),
             created_by: userId,
-          });
+            mentioned_emails: mentionedEmails,
+            mentioned_user_ids: mentionedUserIds,
+            mention_parse_version: mentionedEmails.length > 0 || mentionedUserIds.length > 0 ? 1 : 0,
+          }).select("id").single();
+
+          // ── CREATE MENTION NOTIFICATIONS ──
+          if (mentionedUserIds.length > 0 && caseId) {
+            // Fetch current case assignment
+            const { data: currentCase } = await supabaseAdmin
+              .from("cases").select("assigned_to_user_id, case_number").eq("id", caseId).single();
+            const caseNumber = currentCase?.case_number || "";
+            for (const mentionedUserId of mentionedUserIds) {
+              // Skip if user is already assigned to this case
+              if (currentCase?.assigned_to_user_id === mentionedUserId) continue;
+              await supabaseAdmin.from("notifications").insert({
+                user_id: mentionedUserId,
+                company_id: companyId,
+                type: "mention",
+                title: "Du ble nevnt i en e-post",
+                message: `Sak ${caseNumber || "ukjent"}. Fra: ${fromName || fromEmail || "ukjent"}`,
+                entity_type: "case",
+                entity_id: caseId,
+                link_url: `/inbox`,
+              });
+            }
+            console.log(`[inbox-sync] Created ${mentionedUserIds.length} mention notification(s) for case ${caseId}`);
+          }
 
           if (itemErr) {
             console.error(`[inbox-sync] Item insert error: ${itemErr.message}`);

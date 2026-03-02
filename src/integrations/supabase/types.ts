@@ -241,6 +241,9 @@ export type Database = {
           id: string
           in_reply_to: string | null
           internet_message_id: string | null
+          mention_parse_version: number
+          mentioned_emails: string[]
+          mentioned_user_ids: string[]
           received_at: string | null
           references_header: string | null
           sent_at: string | null
@@ -266,6 +269,9 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           internet_message_id?: string | null
+          mention_parse_version?: number
+          mentioned_emails?: string[]
+          mentioned_user_ids?: string[]
           received_at?: string | null
           references_header?: string | null
           sent_at?: string | null
@@ -291,6 +297,9 @@ export type Database = {
           id?: string
           in_reply_to?: string | null
           internet_message_id?: string | null
+          mention_parse_version?: number
+          mentioned_emails?: string[]
+          mentioned_user_ids?: string[]
           received_at?: string | null
           references_header?: string | null
           sent_at?: string | null
@@ -3009,6 +3018,8 @@ export type Database = {
         Row: {
           company_id: string | null
           created_at: string
+          entity_id: string | null
+          entity_type: string | null
           event_id: string | null
           id: string
           link_url: string | null
@@ -3022,6 +3033,8 @@ export type Database = {
         Insert: {
           company_id?: string | null
           created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           event_id?: string | null
           id?: string
           link_url?: string | null
@@ -3035,6 +3048,8 @@ export type Database = {
         Update: {
           company_id?: string | null
           created_at?: string
+          entity_id?: string | null
+          entity_type?: string | null
           event_id?: string | null
           id?: string
           link_url?: string | null

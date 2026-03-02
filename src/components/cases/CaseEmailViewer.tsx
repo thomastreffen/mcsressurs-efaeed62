@@ -5,12 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Mail, ArrowRightLeft, FileText, Clock, ChevronDown, ChevronUp,
-  MessageSquare, Paperclip, ListTodo, Reply,
+  MessageSquare, Paperclip, ListTodo, Reply, AtSign,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
 import { CreateTaskPanel } from "@/components/tasks/CreateTaskPanel";
 import { AIActionChips, type SuggestedAction } from "@/components/tasks/AIActionChips";
+import { useAuth } from "@/hooks/useAuth";
 
 interface CaseItem {
   id: string;
@@ -34,6 +35,8 @@ interface CaseItem {
   in_reply_to?: string | null;
   references_header?: string | null;
   attachments_meta?: any[] | null;
+  mentioned_user_ids?: string[] | null;
+  mentioned_emails?: string[] | null;
 }
 
 interface CaseEmailViewerProps {
@@ -54,6 +57,7 @@ const SANITIZE_CONFIG = {
 };
 
 export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, linkedProjectId, linkedLeadId, linkedOfferId, documents }: CaseEmailViewerProps) {
+  const { user } = useAuth();
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [showThread, setShowThread] = useState(false);
   const [showCreateTask, setShowCreateTask] = useState(false);
@@ -136,8 +140,12 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
     const hasAttachments = item.attachments_meta && (item.attachments_meta as any[]).length > 0;
     const isOlderInThread = threadSize > 1 && !isLatest;
 
+    const hasMentions = item.mentioned_user_ids && item.mentioned_user_ids.length > 0;
+    const mentionsCurrentUser = hasMentions && user?.id && item.mentioned_user_ids!.includes(user.id);
+    const mentionEmails = item.mentioned_emails || [];
+
     return (
-      <Card key={item.id} className={`overflow-hidden transition-all ${isExpanded ? "ring-1 ring-primary/20" : ""} ${isOlderInThread && !isExpanded ? "opacity-70" : ""}`}>
+      <Card key={item.id} className={`overflow-hidden transition-all ${isExpanded ? "ring-1 ring-primary/20" : ""} ${isOlderInThread && !isExpanded ? "opacity-70" : ""} ${mentionsCurrentUser ? "ring-1 ring-violet-300 dark:ring-violet-700" : ""}`}>
         <button
           type="button"
           onClick={() => toggleExpanded(item.id)}
@@ -146,12 +154,25 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
           <div className="flex items-start gap-3">
             <Mail className={`h-4 w-4 mt-0.5 shrink-0 ${isOlderInThread ? "text-muted-foreground" : "text-primary"}`} />
             <div className="flex-1 min-w-0">
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
                 <p className={`text-sm font-medium truncate ${isOlderInThread && !isExpanded ? "text-muted-foreground" : "text-foreground"}`}>
                   {item.subject || "(Uten emne)"}
                 </p>
                 {hasAttachments && <Paperclip className="h-3 w-3 text-muted-foreground shrink-0" />}
                 {item.in_reply_to && <Reply className="h-3 w-3 text-muted-foreground shrink-0" />}
+                {mentionsCurrentUser && (
+                  <Badge variant="outline" className="text-[10px] gap-1 border-violet-300 dark:border-violet-700 text-violet-700 dark:text-violet-300 bg-violet-50 dark:bg-violet-950/20">
+                    <AtSign className="h-3 w-3" />
+                    Nevner deg
+                  </Badge>
+                )}
+                {hasMentions && !mentionsCurrentUser && (
+                  <Badge variant="outline" className="text-[10px] gap-1">
+                    <AtSign className="h-3 w-3" />
+                    Nevner: {mentionEmails.slice(0, 3).map(e => e.split("@")[0]).join(", ")}
+                    {mentionEmails.length > 3 && ` +${mentionEmails.length - 3}`}
+                  </Badge>
+                )}
               </div>
               <div className="flex items-center gap-2 mt-0.5 flex-wrap">
                 <span className="text-xs text-muted-foreground font-medium">
