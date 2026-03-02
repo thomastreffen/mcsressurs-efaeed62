@@ -109,6 +109,7 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
   "sharepoint.upload": { label: "Laste opp til SharePoint", description: "Kan laste opp filer til SharePoint.", category: "SharePoint" },
   "sharepoint.delete": { label: "Slette fra SharePoint", description: "Kan slette filer i SharePoint.", category: "SharePoint" },
   "sharepoint.link_job": { label: "Koble jobb til SharePoint", description: "Kan koble en jobb til en SharePoint-mappe.", category: "SharePoint" },
+  "sharepoint.admin": { label: "Administrere SharePoint-konfig", description: "Kan kjøre self-heal og endre SharePoint-tilkobling for selskapet.", category: "SharePoint" },
 };
 
 /** All permission keys excluding scope (scope is handled as a dropdown) */
@@ -176,7 +177,7 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
   {
     category: "SharePoint",
     description: "Tilgang til SharePoint-integrasjonen.",
-    keys: ["sharepoint.view", "sharepoint.upload", "sharepoint.delete", "sharepoint.link_job"],
+    keys: ["sharepoint.view", "sharepoint.upload", "sharepoint.delete", "sharepoint.link_job", "sharepoint.admin"],
   },
 ];
 
