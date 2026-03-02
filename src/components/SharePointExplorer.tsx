@@ -255,7 +255,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
 
     try {
       const { data, error } = await supabase.functions.invoke("sharepoint-connect", {
-        body: { action: "search", project_code: projectCode.trim() },
+        body: { action: "search", project_code: projectCode.trim(), company_id: companyId },
       });
 
       if (error) {
