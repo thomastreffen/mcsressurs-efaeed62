@@ -8,9 +8,17 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-// Simple in-memory cache (per cold start)
 const cache = new Map<string, { data: any; expires: number }>();
-const CACHE_TTL_MS = 120_000; // 2 minutes
+const CACHE_TTL_MS = 120_000;
+
+function graphErrorMessage(status: number, code?: string): string {
+  if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
+  if (status === 403) return "Appen mangler rettigheter til SharePoint-området eller drive. Sjekk Graph permissions og site-tilgang.";
+  if (status === 404) return "Fant ikke mappen i SharePoint. Sjekk at koblingen er riktig.";
+  if (status === 429) return "For mange forespørsler mot Microsoft. Prøv igjen om litt.";
+  if (status >= 500) return "Microsoft/Graph midlertidig feil. Prøv igjen.";
+  return `SharePoint-feil (HTTP ${status})`;
+}
 
 async function getAppToken(): Promise<string> {
   const cached = cache.get("app_token");
@@ -40,14 +48,15 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   const respond = (data: any, status = 200) =>
-    new Response(JSON.stringify(data), {
+    new Response(JSON.stringify({ ...data, request_id: requestId }), {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
 
   try {
-    // Validate JWT
     const authHeader = req.headers.get("Authorization");
     if (!authHeader?.startsWith("Bearer ")) return respond({ error: "Unauthorized" }, 401);
 
@@ -57,32 +66,78 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: claimsData, error: claimsErr } = await supabaseAnon.auth.getClaims(jwt);
-    if (claimsErr || !claimsData?.claims) return respond({ error: "Invalid session" }, 401);
+    const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
+    if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
+
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
 
     const body = await req.json().catch(() => ({}));
-    const { drive_id, folder_id, query, sort } = body;
+    const { job_id, folder_id: subfolderId, query, sort } = body;
 
-    if (!drive_id || !folder_id) {
-      return respond({ error: "drive_id and folder_id required" }, 400);
+    // Support legacy direct calls and new job-centric calls
+    let driveId: string;
+    let folderId: string;
+
+    if (job_id) {
+      // Job-centric: lookup from DB
+      const { data: job, error: jobErr } = await supabaseAdmin
+        .from("events")
+        .select("sharepoint_drive_id, sharepoint_folder_id, company_id")
+        .eq("id", job_id)
+        .single();
+
+      if (jobErr || !job) {
+        return respond({ error: "Jobb ikke funnet" }, 404);
+      }
+
+      if (!job.sharepoint_drive_id || !job.sharepoint_folder_id) {
+        return respond({
+          error: "Jobben er ikke koblet til SharePoint. Koble først via Dokumenter-fanen.",
+          step: "lookup",
+        }, 409);
+      }
+
+      driveId = job.sharepoint_drive_id;
+      folderId = subfolderId || job.sharepoint_folder_id;
+    } else if (body.drive_id && body.folder_id) {
+      // Legacy fallback
+      driveId = body.drive_id;
+      folderId = body.folder_id;
+    } else {
+      return respond({ error: "job_id required" }, 400);
     }
 
+    console.log(`[sharepoint-list] request_id=${requestId} job_id=${job_id} folder=${folderId} query=${query || ""}`);
+
     // Check cache
-    const cacheKey = `list:${drive_id}:${folder_id}:${query || ""}`;
+    const cacheKey = `list:${driveId}:${folderId}:${query || ""}:${sort || ""}`;
     const cached = cache.get(cacheKey);
     if (cached && cached.expires > Date.now()) {
       return respond({ items: cached.data, cached: true });
     }
 
-    const msToken = await getAppToken();
+    let msToken: string;
+    try {
+      msToken = await getAppToken();
+    } catch (e: any) {
+      console.error(`[sharepoint-list] request_id=${requestId} step=token error=${e.message}`);
+      return respond({
+        error: "Microsoft-token feilet. Sjekk client secret og tenant.",
+        graph_status: 401,
+        graph_error_code: "invalid_token",
+        step: "token",
+      }, 502);
+    }
 
-    // Build URL
     let url: string;
     if (query) {
-      // Search within the folder
-      url = `${GRAPH_BASE}/drives/${drive_id}/items/${folder_id}/search(q='${encodeURIComponent(query)}')`;
+      url = `${GRAPH_BASE}/drives/${driveId}/items/${folderId}/search(q='${encodeURIComponent(query)}')`;
     } else {
-      url = `${GRAPH_BASE}/drives/${drive_id}/items/${folder_id}/children?$top=200&$orderby=lastModifiedDateTime desc`;
+      url = `${GRAPH_BASE}/drives/${driveId}/items/${folderId}/children?$top=200&$orderby=lastModifiedDateTime desc`;
     }
 
     const graphRes = await fetch(url, {
@@ -90,9 +145,15 @@ Deno.serve(async (req) => {
     });
 
     if (!graphRes.ok) {
-      const errText = await graphRes.text();
-      console.error(`[sharepoint-list] Graph error: ${graphRes.status} ${errText.substring(0, 300)}`);
-      return respond({ error: "Kunne ikke hente filer", detail: `HTTP ${graphRes.status}` }, 502);
+      const errBody = await graphRes.json().catch(() => ({}));
+      const errCode = errBody?.error?.code || "";
+      console.error(`[sharepoint-list] request_id=${requestId} step=list graph_status=${graphRes.status} graph_error_code=${errCode}`);
+      return respond({
+        error: graphErrorMessage(graphRes.status, errCode),
+        graph_status: graphRes.status,
+        graph_error_code: errCode,
+        step: "list",
+      }, 502);
     }
 
     const graphData = await graphRes.json();
@@ -108,23 +169,19 @@ Deno.serve(async (req) => {
       lastModified: item.lastModifiedDateTime,
       lastModifiedBy: item.lastModifiedBy?.user?.displayName || null,
       childCount: item.folder?.childCount || 0,
-      thumbnailUrl: null, // Could fetch thumbnails separately if needed
     }));
 
-    // Sort
     if (sort === "name") {
       items.sort((a: any, b: any) => a.name.localeCompare(b.name, "nb"));
     } else if (sort === "size") {
       items.sort((a: any, b: any) => b.size - a.size);
     }
-    // Default is already lastModified desc from Graph
 
-    // Cache result
     cache.set(cacheKey, { data: items, expires: Date.now() + CACHE_TTL_MS });
 
     return respond({ items });
   } catch (err: any) {
-    console.error("[sharepoint-list] Error:", err.message);
-    return respond({ error: err.message || "Internal error" }, 500);
+    console.error(`[sharepoint-list] request_id=${requestId} unhandled error:`, err.message);
+    return respond({ error: err.message || "Internal error", step: "unknown" }, 500);
   }
 });

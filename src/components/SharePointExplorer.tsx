@@ -20,6 +20,8 @@ import {
   ArrowUpDown,
   RefreshCw,
   X,
+  AlertTriangle,
+  Copy,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -75,6 +77,14 @@ interface SharePointExplorerProps {
   onConnectionChange: () => void;
 }
 
+interface StructuredError {
+  message: string;
+  requestId: string | null;
+  graphStatus: number | null;
+  graphErrorCode: string | null;
+  step: string | null;
+}
+
 function formatSize(bytes: number): string {
   if (!bytes) return "";
   if (bytes < 1024) return `${bytes} B`;
@@ -97,6 +107,70 @@ function getFileIcon(item: SharePointItem) {
   return <File className="h-4 w-4 text-muted-foreground shrink-0" />;
 }
 
+/** Parse structured error from edge function response */
+function parseError(data: any): StructuredError {
+  return {
+    message: data?.error || "Ukjent feil",
+    requestId: data?.request_id || null,
+    graphStatus: data?.graph_status || null,
+    graphErrorCode: data?.graph_error_code || null,
+    step: data?.step || null,
+  };
+}
+
+function showErrorToast(err: StructuredError) {
+  const details = [
+    err.graphStatus && `HTTP ${err.graphStatus}`,
+    err.graphErrorCode,
+    err.step && `Steg: ${err.step}`,
+  ].filter(Boolean).join(" · ");
+
+  toast.error(err.message, {
+    description: details || undefined,
+    duration: 8000,
+    action: err.requestId ? {
+      label: "Kopier ref",
+      onClick: () => {
+        navigator.clipboard.writeText(err.requestId!);
+        toast.info("Referanse kopiert til utklippstavlen");
+      },
+    } : undefined,
+  });
+}
+
+function InlineError({ error, onDismiss }: { error: StructuredError; onDismiss: () => void }) {
+  return (
+    <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 space-y-1.5">
+      <div className="flex items-start gap-2">
+        <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-medium text-destructive">{error.message}</p>
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-1 flex-wrap">
+            {error.graphStatus && <span>HTTP {error.graphStatus}</span>}
+            {error.graphErrorCode && <span>· {error.graphErrorCode}</span>}
+            {error.step && <span>· Steg: {error.step}</span>}
+          </div>
+        </div>
+        <button onClick={onDismiss} className="text-muted-foreground hover:text-foreground shrink-0">
+          <X className="h-3.5 w-3.5" />
+        </button>
+      </div>
+      {error.requestId && (
+        <button
+          onClick={() => {
+            navigator.clipboard.writeText(error.requestId!);
+            toast.info("Referanse kopiert");
+          }}
+          className="flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground"
+        >
+          <Copy className="h-3 w-3" />
+          Kopier feilreferanse: {error.requestId.substring(0, 8)}…
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function SharePointExplorer({ jobId, companyId, connection, onConnectionChange }: SharePointExplorerProps) {
   const { user } = useAuth();
 
@@ -105,6 +179,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
   const [searching, setSearching] = useState(false);
   const [searchResults, setSearchResults] = useState<SharePointFolder[]>([]);
   const [connecting, setConnecting] = useState(false);
+  const [searchError, setSearchError] = useState<StructuredError | null>(null);
 
   // Explorer state
   const [items, setItems] = useState<SharePointItem[]>([]);
@@ -113,6 +188,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
   const [sortBy, setSortBy] = useState<"newest" | "name" | "size">("newest");
   const [breadcrumb, setBreadcrumb] = useState<{ id: string; name: string }[]>([]);
   const [currentFolderId, setCurrentFolderId] = useState<string | null>(null);
+  const [listError, setListError] = useState<StructuredError | null>(null);
 
   // Upload state
   const [uploading, setUploading] = useState(false);
@@ -125,36 +201,42 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
 
   const isConnected = !!connection.folderId;
 
-  // Load files when connected
+  // Load files using job_id (server looks up drive/folder)
   const loadFiles = useCallback(async (folderId?: string, query?: string) => {
-    if (!connection.driveId) return;
-    const targetFolder = folderId || connection.folderId;
-    if (!targetFolder) return;
+    if (!connection.folderId) return;
 
     setLoadingItems(true);
+    setListError(null);
     try {
       const sortMap = { newest: "lastModified", name: "name", size: "size" };
       const { data, error } = await supabase.functions.invoke("sharepoint-list", {
         body: {
-          drive_id: connection.driveId,
-          folder_id: targetFolder,
+          job_id: jobId,
+          folder_id: folderId && folderId !== connection.folderId ? folderId : undefined,
           query: query || undefined,
           sort: sortMap[sortBy],
         },
       });
 
-      if (error || data?.error) {
-        toast.error("Kunne ikke hente filer", { description: data?.error || error?.message });
+      if (error) {
+        const parsed = parseError({ error: "Nettverksfeil ved filhenting" });
+        setListError(parsed);
+        return;
+      }
+
+      if (data?.error) {
+        const parsed = parseError(data);
+        setListError(parsed);
         return;
       }
 
       setItems(data.items || []);
     } catch (err: any) {
-      toast.error("Feil ved filhenting", { description: err.message });
+      setListError(parseError({ error: err.message }));
     } finally {
       setLoadingItems(false);
     }
-  }, [connection.driveId, connection.folderId, sortBy]);
+  }, [jobId, connection.folderId, sortBy]);
 
   useEffect(() => {
     if (isConnected) {
@@ -169,23 +251,35 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     if (!projectCode.trim()) return;
     setSearching(true);
     setSearchResults([]);
+    setSearchError(null);
 
     try {
       const { data, error } = await supabase.functions.invoke("sharepoint-connect", {
         body: { action: "search", project_code: projectCode.trim() },
       });
 
-      if (error || data?.error) {
-        toast.error("Søk feilet", { description: data?.error || error?.message });
+      if (error) {
+        setSearchError(parseError({ error: "Nettverksfeil. Sjekk tilkoblingen." }));
+        return;
+      }
+
+      if (data?.error && (!data?.folders || data.folders.length === 0)) {
+        setSearchError(parseError(data));
         return;
       }
 
       setSearchResults(data.folders || []);
       if ((data.folders || []).length === 0) {
-        toast.info("Ingen mapper funnet", { description: `Fant ingen mapper med koden "${projectCode}"` });
+        setSearchError(parseError({
+          error: `Ingen mapper funnet med koden "${projectCode}"`,
+          graph_status: 404,
+          graph_error_code: "itemNotFound",
+          step: "search",
+          request_id: data?.request_id,
+        }));
       }
     } catch (err: any) {
-      toast.error("Søk feilet", { description: err.message });
+      setSearchError(parseError({ error: err.message }));
     } finally {
       setSearching(false);
     }
@@ -208,16 +302,17 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       });
 
       if (error || data?.error) {
-        toast.error("Kobling feilet", { description: data?.error || error?.message });
+        showErrorToast(parseError(data || { error: error?.message }));
         return;
       }
 
       toast.success("SharePoint-mappe koblet!");
       setSearchResults([]);
       setProjectCode("");
+      setSearchError(null);
       onConnectionChange();
     } catch (err: any) {
-      toast.error("Kobling feilet", { description: err.message });
+      showErrorToast(parseError({ error: err.message }));
     } finally {
       setConnecting(false);
     }
@@ -232,7 +327,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       toast.success("SharePoint-kobling fjernet");
       onConnectionChange();
     } catch (err: any) {
-      toast.error("Kunne ikke fjerne kobling", { description: err.message });
+      showErrorToast(parseError({ error: err.message }));
     }
   };
 
@@ -252,10 +347,10 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     loadFiles(target.id);
   };
 
-  // Upload file
+  // Upload file – now uses job_id, server looks up drive/folder
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
-    if (!files.length || !connection.driveId) return;
+    if (!files.length) return;
 
     setUploading(true);
     for (const file of files) {
@@ -267,10 +362,11 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       try {
         const formData = new FormData();
         formData.append("file", file);
-        formData.append("drive_id", connection.driveId);
-        formData.append("folder_id", currentFolderId || connection.folderId!);
         formData.append("job_id", jobId);
-        if (companyId) formData.append("company_id", companyId);
+        // Only send subfolder if navigated deeper
+        if (currentFolderId && currentFolderId !== connection.folderId) {
+          formData.append("folder_id", currentFolderId);
+        }
 
         const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
         const session = (await supabase.auth.getSession()).data.session;
@@ -285,13 +381,13 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
 
         const data = await res.json();
         if (!res.ok || data.error) {
-          toast.error(`Opplasting feilet: ${file.name}`, { description: data.error });
+          showErrorToast(parseError(data));
           continue;
         }
 
         toast.success(`${file.name} lastet opp til SharePoint`);
       } catch (err: any) {
-        toast.error(`Feil: ${file.name}`, { description: err.message });
+        showErrorToast(parseError({ error: err.message }));
       }
     }
 
@@ -300,7 +396,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     loadFiles(currentFolderId || undefined);
   };
 
-  // Preview a file
+  // Preview a file – uses job_id
   const handlePreview = async (item: SharePointItem) => {
     if (item.isFolder) {
       navigateToFolder(item);
@@ -312,11 +408,10 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
 
     try {
       const { data, error } = await supabase.functions.invoke("sharepoint-preview-url", {
-        body: { drive_id: connection.driveId, item_id: item.id },
+        body: { job_id: jobId, item_id: item.id },
       });
 
       if (error || data?.error) {
-        // Fallback to webUrl
         window.open(item.webUrl, "_blank");
         setPreviewName(null);
         return;
@@ -357,7 +452,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
           <div className="flex items-center gap-2 max-w-md mx-auto">
             <Input
               value={projectCode}
-              onChange={(e) => setProjectCode(e.target.value)}
+              onChange={(e) => { setProjectCode(e.target.value); setSearchError(null); }}
               placeholder="Prosjektkode (f.eks. J12345)"
               className="text-sm"
               onKeyDown={(e) => e.key === "Enter" && handleSearch()}
@@ -372,6 +467,13 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
               Søk
             </Button>
           </div>
+
+          {/* Inline error under search */}
+          {searchError && (
+            <div className="max-w-md mx-auto">
+              <InlineError error={searchError} onDismiss={() => setSearchError(null)} />
+            </div>
+          )}
 
           {searchResults.length > 0 && (
             <div className="space-y-1.5 max-w-md mx-auto text-left">
@@ -510,12 +612,17 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         </Breadcrumb>
       )}
 
+      {/* List error */}
+      {listError && (
+        <InlineError error={listError} onDismiss={() => setListError(null)} />
+      )}
+
       {/* File list */}
       {loadingItems ? (
         <div className="flex justify-center py-8">
           <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
         </div>
-      ) : filteredItems.length === 0 ? (
+      ) : !listError && filteredItems.length === 0 ? (
         <div className="text-center py-8">
           <p className="text-sm text-muted-foreground">Ingen filer funnet</p>
           <Button
@@ -530,7 +637,6 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         </div>
       ) : (
         <div className="space-y-1">
-          {/* Folders first, then files */}
           {filteredItems
             .sort((a, b) => {
               if (a.isFolder && !b.isFolder) return -1;

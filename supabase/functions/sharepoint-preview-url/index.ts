@@ -8,6 +8,15 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
+function graphErrorMessage(status: number, code?: string): string {
+  if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
+  if (status === 403) return "Appen mangler rettigheter til SharePoint-området.";
+  if (status === 404) return "Filen ble ikke funnet i SharePoint.";
+  if (status === 429) return "For mange forespørsler. Prøv igjen om litt.";
+  if (status >= 500) return "Microsoft/Graph midlertidig feil.";
+  return `SharePoint-feil (HTTP ${status})`;
+}
+
 async function getAppToken(): Promise<string> {
   const res = await fetch(
     `https://login.microsoftonline.com/${Deno.env.get("AZURE_TENANT_ID")}/oauth2/v2.0/token`,
@@ -32,8 +41,10 @@ Deno.serve(async (req) => {
     return new Response(null, { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   const respond = (data: any, status = 200) =>
-    new Response(JSON.stringify(data), {
+    new Response(JSON.stringify({ ...data, request_id: requestId }), {
       status,
       headers: { ...corsHeaders, "Content-Type": "application/json" },
     });
@@ -48,21 +59,61 @@ Deno.serve(async (req) => {
       Deno.env.get("SUPABASE_ANON_KEY")!,
       { global: { headers: { Authorization: authHeader } } }
     );
-    const { data: claimsData, error: claimsErr } = await supabaseAnon.auth.getClaims(jwt);
-    if (claimsErr || !claimsData?.claims) return respond({ error: "Invalid session" }, 401);
+    const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
+    if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
+
+    const supabaseAdmin = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { auth: { autoRefreshToken: false, persistSession: false } }
+    );
 
     const body = await req.json().catch(() => ({}));
-    const { drive_id, item_id } = body;
+    const { job_id, item_id } = body;
 
-    if (!drive_id || !item_id) {
-      return respond({ error: "drive_id and item_id required" }, 400);
+    if (!item_id) return respond({ error: "item_id required" }, 400);
+
+    // Lookup drive_id from job
+    let driveId: string;
+
+    if (job_id) {
+      const { data: job } = await supabaseAdmin
+        .from("events")
+        .select("sharepoint_drive_id")
+        .eq("id", job_id)
+        .single();
+
+      if (!job?.sharepoint_drive_id) {
+        return respond({
+          error: "Jobben er ikke koblet til SharePoint.",
+          step: "lookup",
+        }, 409);
+      }
+      driveId = job.sharepoint_drive_id;
+    } else if (body.drive_id) {
+      // Legacy fallback
+      driveId = body.drive_id;
+    } else {
+      return respond({ error: "job_id required" }, 400);
     }
 
-    const msToken = await getAppToken();
+    console.log(`[sharepoint-preview-url] request_id=${requestId} job_id=${job_id} item_id=${item_id}`);
 
-    // Get preview URL using the preview API
+    let msToken: string;
+    try {
+      msToken = await getAppToken();
+    } catch (e: any) {
+      console.error(`[sharepoint-preview-url] request_id=${requestId} step=token error=${e.message}`);
+      return respond({
+        error: "Microsoft-token feilet.",
+        graph_status: 401,
+        step: "token",
+      }, 502);
+    }
+
+    // Try preview API
     const previewRes = await fetch(
-      `${GRAPH_BASE}/drives/${drive_id}/items/${item_id}/preview`,
+      `${GRAPH_BASE}/drives/${driveId}/items/${item_id}/preview`,
       {
         method: "POST",
         headers: {
@@ -75,30 +126,33 @@ Deno.serve(async (req) => {
 
     if (previewRes.ok) {
       const previewData = await previewRes.json();
-      return respond({
-        previewUrl: previewData.getUrl,
-        type: "embed",
-      });
+      return respond({ previewUrl: previewData.getUrl, type: "embed" });
     }
 
-    // Fallback: get the webUrl for Office Online viewing
+    // Fallback: get webUrl
     const itemRes = await fetch(
-      `${GRAPH_BASE}/drives/${drive_id}/items/${item_id}?$select=webUrl,file,name`,
+      `${GRAPH_BASE}/drives/${driveId}/items/${item_id}?$select=webUrl,file,name`,
       { headers: { Authorization: `Bearer ${msToken}` } }
     );
 
     if (!itemRes.ok) {
-      const errText = await itemRes.text();
-      return respond({ error: "Kunne ikke hente forhåndsvisning", detail: `HTTP ${itemRes.status}` }, 502);
+      const errBody = await itemRes.json().catch(() => ({}));
+      const errCode = errBody?.error?.code || "";
+      console.error(`[sharepoint-preview-url] request_id=${requestId} step=preview graph_status=${itemRes.status} graph_error_code=${errCode}`);
+      return respond({
+        error: graphErrorMessage(itemRes.status, errCode),
+        graph_status: itemRes.status,
+        graph_error_code: errCode,
+        step: "preview",
+      }, 502);
     }
 
     const itemData = await itemRes.json();
     const mimeType = itemData.file?.mimeType || "";
 
-    // For images, create a sharing link for direct access
     if (mimeType.startsWith("image/")) {
       const shareRes = await fetch(
-        `${GRAPH_BASE}/drives/${drive_id}/items/${item_id}/createLink`,
+        `${GRAPH_BASE}/drives/${driveId}/items/${item_id}/createLink`,
         {
           method: "POST",
           headers: {
@@ -118,14 +172,13 @@ Deno.serve(async (req) => {
       }
     }
 
-    // Fallback to webUrl (opens in Office Online or browser)
     return respond({
       previewUrl: itemData.webUrl,
       type: "web",
       webUrl: itemData.webUrl,
     });
   } catch (err: any) {
-    console.error("[sharepoint-preview-url] Error:", err.message);
-    return respond({ error: err.message || "Internal error" }, 500);
+    console.error(`[sharepoint-preview-url] request_id=${requestId} unhandled error:`, err.message);
+    return respond({ error: err.message || "Internal error", step: "unknown" }, 500);
   }
 });
