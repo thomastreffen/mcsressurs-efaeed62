@@ -86,3 +86,15 @@ verify_jwt = false
 
 [functions.fag-image-analyze]
 verify_jwt = false
+
+[functions.sharepoint-connect]
+verify_jwt = false
+
+[functions.sharepoint-list]
+verify_jwt = false
+
+[functions.sharepoint-upload]
+verify_jwt = false
+
+[functions.sharepoint-preview-url]
+verify_jwt = false

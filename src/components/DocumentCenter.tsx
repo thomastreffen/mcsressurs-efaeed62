@@ -7,6 +7,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Tabs, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { toast } from "sonner";
 import { useAuth } from "@/hooks/useAuth";
+import { SharePointExplorer } from "@/components/SharePointExplorer";
 import {
   FileText,
   Upload,
@@ -113,6 +114,18 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
   const fileRef = useRef<HTMLInputElement>(null);
   const analysisInFlightRef = useRef(false);
 
+  // SharePoint connection state
+  const [spConnection, setSpConnection] = useState<{
+    projectCode: string | null;
+    siteId: string | null;
+    driveId: string | null;
+    folderId: string | null;
+    folderWebUrl: string | null;
+    connectedAt: string | null;
+  }>({
+    projectCode: null, siteId: null, driveId: null, folderId: null, folderWebUrl: null, connectedAt: null,
+  });
+
   // Quick note state
   const [showQuickNote, setShowQuickNote] = useState(false);
   const [noteText, setNoteText] = useState("");
@@ -146,7 +159,25 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
     setLoading(false);
   }, [jobId]);
 
-  useEffect(() => { fetchDocs(); }, [fetchDocs]);
+  const fetchSharePointConnection = useCallback(async () => {
+    const { data } = await supabase
+      .from("events")
+      .select("sharepoint_project_code, sharepoint_site_id, sharepoint_drive_id, sharepoint_folder_id, sharepoint_folder_web_url, sharepoint_connected_at")
+      .eq("id", jobId)
+      .single();
+    if (data) {
+      setSpConnection({
+        projectCode: (data as any).sharepoint_project_code,
+        siteId: (data as any).sharepoint_site_id,
+        driveId: (data as any).sharepoint_drive_id,
+        folderId: (data as any).sharepoint_folder_id,
+        folderWebUrl: (data as any).sharepoint_folder_web_url,
+        connectedAt: (data as any).sharepoint_connected_at,
+      });
+    }
+  }, [jobId]);
+
+  useEffect(() => { fetchDocs(); fetchSharePointConnection(); }, [fetchDocs, fetchSharePointConnection]);
 
   // Handle note image selection
   const handleNoteImage = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -492,6 +523,16 @@ export function DocumentCenter({ jobId, companyId }: DocumentCenterProps) {
         </div>
       )}
 
+
+      {/* SharePoint Explorer */}
+      <div className="rounded-xl border border-border/60 bg-card p-4">
+        <SharePointExplorer
+          jobId={jobId}
+          companyId={companyId}
+          connection={spConnection}
+          onConnectionChange={fetchSharePointConnection}
+        />
+      </div>
 
       {/* Analysis summary cards */}
       {latestOfferAnalysis && (
