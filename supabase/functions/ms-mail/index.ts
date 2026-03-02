@@ -199,16 +199,40 @@ Deno.serve(async (req) => {
       return null;
     };
 
+    // Company default inbox for Reply-To / BCC fail-safe capture
+    const COMPANY_INBOX = "postkontoret@mcsservice.no";
+
     // ─── HELPER: Build Graph message object ───
-    const buildGraphMessage = (subject: string, bodyHtml: string, to: string[], cc?: string[], bcc?: string[]) => {
+    const buildGraphMessage = (
+      subject: string, bodyHtml: string, to: string[], cc?: string[], bcc?: string[],
+      entityType?: string, entityId?: string, refCode?: string | null
+    ) => {
+      // Merge user BCC with fail-safe company inbox BCC
+      const allBcc = [...(bcc || [])];
+      if (!allBcc.some(e => e.toLowerCase() === COMPANY_INBOX.toLowerCase())) {
+        allBcc.push(COMPANY_INBOX);
+      }
+
       const msg: any = {
         subject,
         body: { contentType: "HTML", content: bodyHtml },
         toRecipients: to.map((e: string) => ({ emailAddress: { address: e } })),
         isDraft: true,
+        // Set Reply-To to company inbox so replies always land in Postkontoret
+        replyTo: [{ emailAddress: { address: COMPANY_INBOX } }],
+        bccRecipients: allBcc.map((e: string) => ({ emailAddress: { address: e } })),
       };
       if (cc?.length) msg.ccRecipients = cc.map((e: string) => ({ emailAddress: { address: e } }));
-      if (bcc?.length) msg.bccRecipients = bcc.map((e: string) => ({ emailAddress: { address: e } }));
+
+      // Add custom internet message headers for robust routing
+      const customHeaders: { name: string; value: string }[] = [];
+      if (entityType) customHeaders.push({ name: "X-MCS-ENTITY", value: entityType.toUpperCase() });
+      if (refCode) customHeaders.push({ name: "X-MCS-ID", value: refCode });
+      if (entityId) customHeaders.push({ name: "X-MCS-THREAD", value: entityId });
+      if (customHeaders.length > 0) {
+        msg.internetMessageHeaders = customHeaders;
+      }
+
       return msg;
     };
 
@@ -244,7 +268,7 @@ Deno.serve(async (req) => {
 
       log(`Creating draft for ${entity_type}/${entity_id}, ref: ${refCode}`);
 
-      const graphMsg = buildGraphMessage(subject, bodyHtml, to || [], cc, bcc);
+      const graphMsg = buildGraphMessage(subject, bodyHtml, to || [], cc, bcc, entity_type, entity_id, refCode);
       const graphRes = await fetch(`${GRAPH_BASE}/me/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
@@ -412,7 +436,7 @@ Deno.serve(async (req) => {
       log(`Claimed operation, log_id: ${claimId}`);
 
       // ── Step 1: Create draft ──
-      const graphMsg = buildGraphMessage(subject, bodyHtml, to, cc, bcc);
+      const graphMsg = buildGraphMessage(subject, bodyHtml, to, cc, bcc, entity_type, entity_id, refCode);
       const draftRes = await fetch(`${GRAPH_BASE}/me/messages`, {
         method: "POST",
         headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },

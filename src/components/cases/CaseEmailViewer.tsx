@@ -242,30 +242,55 @@ export function CaseEmailViewer({ items, caseId, companyId, linkedWorkOrderId, l
     );
   };
 
-  const renderSystemItem = (item: CaseItem) => (
-    <Card key={item.id} className="p-4">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5">
-          {item.type === "system" ? (
-            <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
-          ) : item.type === "note" ? (
-            <FileText className="h-4 w-4 text-muted-foreground" />
-          ) : (
-            <Clock className="h-4 w-4 text-muted-foreground" />
-          )}
+  const ROUTING_LABELS: Record<string, string> = {
+    xheader: "X-MCS Header",
+    xheader_thread: "X-MCS Thread",
+    in_reply_to_outgoing: "In-Reply-To (utgående)",
+    references_outgoing: "References (utgående)",
+    subject_id: "Emne-ID",
+    body_id: "Innhold-ID",
+    thread_id: "Tråd-ID",
+    in_reply_to: "In-Reply-To",
+    references: "References",
+    new_case: "Ny sak",
+  };
+
+  const renderSystemItem = (item: CaseItem) => {
+    const isRouting = item.subject === "routing_decision";
+    const routingMethod = isRouting ? (item.body_preview?.match(/rutet via (\S+)/)?.[1] || null) : null;
+
+    return (
+      <Card key={item.id} className="p-4">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5">
+            {item.type === "system" ? (
+              <ArrowRightLeft className="h-4 w-4 text-muted-foreground" />
+            ) : item.type === "note" ? (
+              <FileText className="h-4 w-4 text-muted-foreground" />
+            ) : (
+              <Clock className="h-4 w-4 text-muted-foreground" />
+            )}
+          </div>
+          <div className="flex-1 min-w-0">
+            <div className="flex items-center gap-2">
+              {item.subject && <p className="text-sm font-medium text-foreground">{item.subject === "routing_decision" ? "Ruteringslogg" : item.subject}</p>}
+              {routingMethod && (
+                <Badge variant="outline" className="text-[10px] h-4 px-1.5 shrink-0">
+                  {ROUTING_LABELS[routingMethod] || routingMethod}
+                </Badge>
+              )}
+            </div>
+            {item.body_preview && (
+              <p className="text-sm text-muted-foreground mt-1">{item.body_preview}</p>
+            )}
+            <span className="text-xs text-muted-foreground mt-1 block">
+              {format(new Date(item.received_at || item.created_at), "d. MMM yyyy, HH:mm", { locale: nb })}
+            </span>
+          </div>
         </div>
-        <div className="flex-1 min-w-0">
-          {item.subject && <p className="text-sm font-medium text-foreground">{item.subject}</p>}
-          {item.body_preview && (
-            <p className="text-sm text-muted-foreground mt-1">{item.body_preview}</p>
-          )}
-          <span className="text-xs text-muted-foreground mt-1 block">
-            {format(new Date(item.received_at || item.created_at), "d. MMM yyyy, HH:mm", { locale: nb })}
-          </span>
-        </div>
-      </div>
-    </Card>
-  );
+      </Card>
+    );
+  };
 
   // Sort all items chronologically
   const allSorted = [...items].sort(
