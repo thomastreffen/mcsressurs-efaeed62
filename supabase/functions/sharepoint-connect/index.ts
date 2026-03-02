@@ -520,6 +520,65 @@ Deno.serve(async (req) => {
           return respond({ error: "Kunne ikke lagre kobling", detail: updateErr.message, step: "connect" }, 500);
         }
 
+        // Auto-create "90 Service" folder structure
+        if (driveId && folder_id) {
+          try {
+            let msToken: string;
+            try {
+              msToken = await getAppToken();
+            } catch (_) {
+              msToken = "";
+            }
+            if (msToken) {
+              const serviceFolders = ["90 Service", "90 Service/Bilder", "90 Service/Servicerapporter", "90 Service/Avvik", "90 Service/Annet"];
+              for (const folderPath of serviceFolders) {
+                const segments = folderPath.split("/");
+                let parentId = folder_id;
+                for (const seg of segments) {
+                  const checkUrl = `${GRAPH_BASE}/drives/${driveId}/items/${parentId}:/${encodeURIComponent(seg)}`;
+                  const checkRes = await graphFetch(msToken, checkUrl);
+                  if (checkRes.ok) {
+                    const existing = await checkRes.json();
+                    parentId = existing.id;
+                  } else {
+                    await checkRes.text();
+                    const createRes = await fetch(
+                      `${GRAPH_BASE}/drives/${driveId}/items/${parentId}/children`,
+                      {
+                        method: "POST",
+                        headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
+                        body: JSON.stringify({ name: seg, folder: {}, "@microsoft.graph.conflictBehavior": "fail" }),
+                      }
+                    );
+                    if (createRes.ok) {
+                      const created = await createRes.json();
+                      parentId = created.id;
+                    } else if (createRes.status === 409) {
+                      await createRes.text();
+                      // Already exists (race), re-fetch
+                      const reFetch = await graphFetch(msToken, checkUrl);
+                      if (reFetch.ok) {
+                        const existing = await reFetch.json();
+                        parentId = existing.id;
+                      } else {
+                        await reFetch.text();
+                        break;
+                      }
+                    } else {
+                      await createRes.text();
+                      break;
+                    }
+                  }
+                }
+              }
+              console.log(`[sharepoint-connect] request_id=${requestId} auto-created 90 Service folders`);
+            }
+          } catch (e: any) {
+            console.warn(`[sharepoint-connect] request_id=${requestId} service folder creation failed:`, e.message);
+            // Non-critical — don't block connect
+          }
+        }
+
         // Audit log
         await auditLog(supabaseAdmin, authUserId, "sharepoint_connected", job_id, "event", {
           project_code: project_code || folder_id,
