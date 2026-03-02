@@ -568,8 +568,7 @@ export default function JobDetail() {
                   onSent={() => fetchLogs()}
                 />
               </SectionCard>
-              <SectionCard>
-                <SectionTitle icon={<Mail className="h-4 w-4 text-primary" />}>Koblede e-poster fra Postkontoret</SectionTitle>
+              <SectionCard className="p-0 overflow-hidden">
                 <JobEmailTab jobId={job.id} linkField="linked_work_order_id" />
               </SectionCard>
             </div>
