@@ -8,12 +8,12 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-function graphErrorMessage(status: number, code?: string): string {
+function graphErrorMessage(status: number, _code?: string): string {
   if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
-  if (status === 403) return "Appen mangler rettigheter til SharePoint-området. Sjekk Graph permissions.";
-  if (status === 404) return "Fant ikke mappen i SharePoint. Sjekk at koblingen er riktig.";
-  if (status === 429) return "For mange forespørsler mot Microsoft. Prøv igjen om litt.";
-  if (status >= 500) return "Microsoft/Graph midlertidig feil. Prøv igjen.";
+  if (status === 403) return "Appen mangler rettigheter til SharePoint-området.";
+  if (status === 404) return "Filen ble ikke funnet i SharePoint.";
+  if (status === 429) return "For mange forespørsler. Prøv igjen om litt.";
+  if (status >= 500) return "Microsoft/Graph midlertidig feil.";
   return `SharePoint-feil (HTTP ${status})`;
 }
 
@@ -38,11 +38,10 @@ async function getAppToken(): Promise<string> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { status: 200, headers: corsHeaders });
   }
 
   const requestId = crypto.randomUUID();
-
   const respond = (data: any, status = 200) =>
     new Response(JSON.stringify({ ...data, request_id: requestId }), {
       status,
@@ -61,7 +60,7 @@ Deno.serve(async (req) => {
     );
     const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
     if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
-    const userId = userData.user.id;
+    const authUserId = userData.user.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -74,29 +73,42 @@ Deno.serve(async (req) => {
     const jobId = formData.get("job_id") as string | null;
     const subFolderId = formData.get("folder_id") as string | null;
 
-    if (!file || !jobId) {
-      return respond({ error: "file and job_id required" }, 400);
-    }
+    if (!file || !jobId) return respond({ error: "file and job_id required" }, 400);
 
     if (file.size > 50 * 1024 * 1024) {
       return respond({ error: "Filen er for stor (maks 50 MB)" }, 413);
     }
 
-    // Lookup SharePoint config from job
+    // Job lookup — server-side
     const { data: job, error: jobErr } = await supabaseAdmin
       .from("events")
-      .select("sharepoint_drive_id, sharepoint_folder_id, company_id")
+      .select("id, company_id, department_id, created_by, sharepoint_drive_id, sharepoint_folder_id")
       .eq("id", jobId)
       .single();
 
-    if (jobErr || !job) {
-      return respond({ error: "Jobb ikke funnet" }, 404);
-    }
+    if (jobErr || !job) return respond({ error: "Jobb ikke funnet", step: "lookup" }, 404);
+
+    // RBAC: scope access
+    const { data: hasAccess } = await supabaseAdmin.rpc("can_access_record_v2", {
+      _auth_user_id: authUserId,
+      _record_company_id: job.company_id,
+      _record_department_id: job.department_id || null,
+      _record_created_by: job.created_by || null,
+      _record_id: job.id,
+    });
+    if (!hasAccess) return respond({ error: "Du mangler tilgang til SharePoint for dette selskapet.", step: "rbac" }, 403);
+
+    // RBAC: upload permission
+    const { data: canUpload } = await supabaseAdmin.rpc("check_permission_v2", {
+      _auth_user_id: authUserId,
+      _perm: "sharepoint.upload",
+    });
+    if (!canUpload) return respond({ error: "Du mangler rettighet til å laste opp filer til SharePoint.", step: "rbac" }, 403);
 
     if (!job.sharepoint_drive_id || !job.sharepoint_folder_id) {
       return respond({
         error: "Jobben er ikke koblet til SharePoint. Koble først via Dokumenter-fanen.",
-        step: "lookup",
+        step: "not_linked",
       }, 409);
     }
 
@@ -107,13 +119,7 @@ Deno.serve(async (req) => {
     try {
       msToken = await getAppToken();
     } catch (e: any) {
-      console.error(`[sharepoint-upload] request_id=${requestId} step=token error=${e.message}`);
-      return respond({
-        error: "Microsoft-token feilet. Sjekk client secret og tenant.",
-        graph_status: 401,
-        graph_error_code: "invalid_token",
-        step: "token",
-      }, 502);
+      return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
     }
 
     const fileName = file.name.replace(/[^\w.\-() ]/g, "_");
@@ -138,7 +144,6 @@ Deno.serve(async (req) => {
       if (!uploadRes.ok) {
         const errBody = await uploadRes.json().catch(() => ({}));
         const errCode = errBody?.error?.code || "";
-        console.error(`[sharepoint-upload] request_id=${requestId} step=upload graph_status=${uploadRes.status} graph_error_code=${errCode}`);
         return respond({
           error: graphErrorMessage(uploadRes.status, errCode),
           graph_status: uploadRes.status,
@@ -164,7 +169,6 @@ Deno.serve(async (req) => {
       if (!sessionRes.ok) {
         const errBody = await sessionRes.json().catch(() => ({}));
         const errCode = errBody?.error?.code || "";
-        console.error(`[sharepoint-upload] request_id=${requestId} step=upload_session graph_status=${sessionRes.status}`);
         return respond({
           error: graphErrorMessage(sessionRes.status, errCode),
           graph_status: sessionRes.status,
@@ -184,12 +188,7 @@ Deno.serve(async (req) => {
       });
 
       if (!chunkRes.ok) {
-        console.error(`[sharepoint-upload] request_id=${requestId} step=upload_chunk status=${chunkRes.status}`);
-        return respond({
-          error: "Opplasting feilet. Prøv igjen.",
-          graph_status: chunkRes.status,
-          step: "upload_chunk",
-        }, 502);
+        return respond({ error: "Opplasting feilet. Prøv igjen.", graph_status: chunkRes.status, step: "upload_chunk" }, 502);
       }
 
       uploadedItem = await chunkRes.json();
@@ -199,25 +198,29 @@ Deno.serve(async (req) => {
 
     // Log in job_document_links
     if (job.company_id) {
-      await supabaseAdmin.from("job_document_links").insert({
-        job_id: jobId,
-        company_id: job.company_id,
-        source: "sharepoint",
-        item_id: uploadedItem.id,
-        name: uploadedItem.name,
-        web_url: uploadedItem.webUrl,
-        mime_type: uploadedItem.file?.mimeType || file.type,
-        file_size: uploadedItem.size,
-        uploaded_by: userId,
-      });
+      try {
+        await supabaseAdmin.from("job_document_links").insert({
+          job_id: jobId,
+          company_id: job.company_id,
+          source: "sharepoint",
+          item_id: uploadedItem.id,
+          name: uploadedItem.name,
+          web_url: uploadedItem.webUrl,
+          mime_type: uploadedItem.file?.mimeType || file.type,
+          file_size: uploadedItem.size,
+          uploaded_by: authUserId,
+        });
+      } catch (_) { /* non-critical */ }
     }
 
-    await supabaseAdmin.from("event_logs").insert({
-      event_id: jobId,
-      action_type: "sharepoint_upload",
-      performed_by: userId,
-      change_summary: `Fil lastet opp til SharePoint: ${uploadedItem.name}`,
-    });
+    try {
+      await supabaseAdmin.from("event_logs").insert({
+        event_id: jobId,
+        action_type: "sharepoint_upload",
+        performed_by: authUserId,
+        change_summary: `Fil lastet opp til SharePoint: ${uploadedItem.name}`,
+      });
+    } catch (_) { /* non-critical */ }
 
     return respond({
       success: true,

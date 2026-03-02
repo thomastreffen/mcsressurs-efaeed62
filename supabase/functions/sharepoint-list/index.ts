@@ -11,9 +11,9 @@ const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 const cache = new Map<string, { data: any; expires: number }>();
 const CACHE_TTL_MS = 120_000;
 
-function graphErrorMessage(status: number, code?: string): string {
+function graphErrorMessage(status: number, _code?: string): string {
   if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
-  if (status === 403) return "Appen mangler rettigheter til SharePoint-området eller drive. Sjekk Graph permissions og site-tilgang.";
+  if (status === 403) return "Appen mangler rettigheter til SharePoint-området eller drive.";
   if (status === 404) return "Fant ikke mappen i SharePoint. Sjekk at koblingen er riktig.";
   if (status === 429) return "For mange forespørsler mot Microsoft. Prøv igjen om litt.";
   if (status >= 500) return "Microsoft/Graph midlertidig feil. Prøv igjen.";
@@ -45,11 +45,10 @@ async function getAppToken(): Promise<string> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { status: 200, headers: corsHeaders });
   }
 
   const requestId = crypto.randomUUID();
-
   const respond = (data: any, status = 200) =>
     new Response(JSON.stringify({ ...data, request_id: requestId }), {
       status,
@@ -68,6 +67,7 @@ Deno.serve(async (req) => {
     );
     const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
     if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
+    const authUserId = userData.user.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -78,38 +78,43 @@ Deno.serve(async (req) => {
     const body = await req.json().catch(() => ({}));
     const { job_id, folder_id: subfolderId, query, sort } = body;
 
-    // Support legacy direct calls and new job-centric calls
-    let driveId: string;
-    let folderId: string;
+    if (!job_id) return respond({ error: "job_id required" }, 400);
 
-    if (job_id) {
-      // Job-centric: lookup from DB
-      const { data: job, error: jobErr } = await supabaseAdmin
-        .from("events")
-        .select("sharepoint_drive_id, sharepoint_folder_id, company_id")
-        .eq("id", job_id)
-        .single();
+    // Job lookup — server-side only
+    const { data: job, error: jobErr } = await supabaseAdmin
+      .from("events")
+      .select("id, company_id, department_id, created_by, sharepoint_drive_id, sharepoint_folder_id")
+      .eq("id", job_id)
+      .single();
 
-      if (jobErr || !job) {
-        return respond({ error: "Jobb ikke funnet" }, 404);
-      }
+    if (jobErr || !job) return respond({ error: "Jobb ikke funnet", step: "lookup" }, 404);
 
-      if (!job.sharepoint_drive_id || !job.sharepoint_folder_id) {
-        return respond({
-          error: "Jobben er ikke koblet til SharePoint. Koble først via Dokumenter-fanen.",
-          step: "lookup",
-        }, 409);
-      }
+    // RBAC: scope access
+    const { data: hasAccess } = await supabaseAdmin.rpc("can_access_record_v2", {
+      _auth_user_id: authUserId,
+      _record_company_id: job.company_id,
+      _record_department_id: job.department_id || null,
+      _record_created_by: job.created_by || null,
+      _record_id: job.id,
+    });
+    if (!hasAccess) return respond({ error: "Du mangler tilgang til SharePoint for dette selskapet.", step: "rbac" }, 403);
 
-      driveId = job.sharepoint_drive_id;
-      folderId = subfolderId || job.sharepoint_folder_id;
-    } else if (body.drive_id && body.folder_id) {
-      // Legacy fallback
-      driveId = body.drive_id;
-      folderId = body.folder_id;
-    } else {
-      return respond({ error: "job_id required" }, 400);
+    // RBAC: permission
+    const { data: canView } = await supabaseAdmin.rpc("check_permission_v2", {
+      _auth_user_id: authUserId,
+      _perm: "sharepoint.view",
+    });
+    if (!canView) return respond({ error: "Du mangler SharePoint-leserettigheter.", step: "rbac" }, 403);
+
+    if (!job.sharepoint_drive_id || !job.sharepoint_folder_id) {
+      return respond({
+        error: "Jobben er ikke koblet til SharePoint. Koble først via Dokumenter-fanen.",
+        step: "not_linked",
+      }, 409);
     }
+
+    const driveId = job.sharepoint_drive_id;
+    const folderId = subfolderId || job.sharepoint_folder_id;
 
     console.log(`[sharepoint-list] request_id=${requestId} job_id=${job_id} folder=${folderId} query=${query || ""}`);
 
@@ -125,12 +130,7 @@ Deno.serve(async (req) => {
       msToken = await getAppToken();
     } catch (e: any) {
       console.error(`[sharepoint-list] request_id=${requestId} step=token error=${e.message}`);
-      return respond({
-        error: "Microsoft-token feilet. Sjekk client secret og tenant.",
-        graph_status: 401,
-        graph_error_code: "invalid_token",
-        step: "token",
-      }, 502);
+      return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
     }
 
     let url: string;
@@ -147,7 +147,6 @@ Deno.serve(async (req) => {
     if (!graphRes.ok) {
       const errBody = await graphRes.json().catch(() => ({}));
       const errCode = errBody?.error?.code || "";
-      console.error(`[sharepoint-list] request_id=${requestId} step=list graph_status=${graphRes.status} graph_error_code=${errCode}`);
       return respond({
         error: graphErrorMessage(graphRes.status, errCode),
         graph_status: graphRes.status,

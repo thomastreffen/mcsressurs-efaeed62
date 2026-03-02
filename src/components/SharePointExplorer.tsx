@@ -22,6 +22,7 @@ import {
   X,
   AlertTriangle,
   Copy,
+  FolderSync,
 } from "lucide-react";
 import { format } from "date-fns";
 import { nb } from "date-fns/locale";
@@ -113,7 +114,6 @@ function getFileIcon(item: SharePointItem) {
   return <File className="h-4 w-4 text-muted-foreground shrink-0" />;
 }
 
-/** Parse structured error from edge function response */
 function parseError(data: any): StructuredError {
   return {
     message: data?.error || "Ukjent feil",
@@ -124,6 +124,15 @@ function parseError(data: any): StructuredError {
   };
 }
 
+/** Map step codes to user-friendly messages */
+function friendlyErrorMessage(err: StructuredError): string {
+  if (err.step === "rbac") return err.message; // already user-friendly
+  if (err.step === "not_linked") return "Jobben er ikke koblet til SharePoint. Velg en mappe.";
+  if (err.graphStatus === 403) return "Du mangler tilgang til SharePoint for dette selskapet.";
+  if (err.graphStatus === 409) return "Jobben er ikke koblet. Velg mappe.";
+  return err.message;
+}
+
 function showErrorToast(err: StructuredError) {
   const details = [
     err.graphStatus && `HTTP ${err.graphStatus}`,
@@ -131,7 +140,7 @@ function showErrorToast(err: StructuredError) {
     err.step && `Steg: ${err.step}`,
   ].filter(Boolean).join(" · ");
 
-  toast.error(err.message, {
+  toast.error(friendlyErrorMessage(err), {
     description: details || undefined,
     duration: 8000,
     action: err.requestId ? {
@@ -150,7 +159,7 @@ function InlineError({ error, onDismiss }: { error: StructuredError; onDismiss: 
       <div className="flex items-start gap-2">
         <AlertTriangle className="h-4 w-4 text-destructive shrink-0 mt-0.5" />
         <div className="flex-1 min-w-0">
-          <p className="text-sm font-medium text-destructive">{error.message}</p>
+          <p className="text-sm font-medium text-destructive">{friendlyErrorMessage(error)}</p>
           <div className="flex items-center gap-2 text-[11px] text-muted-foreground mt-1 flex-wrap">
             {error.graphStatus && <span>HTTP {error.graphStatus}</span>}
             {error.graphErrorCode && <span>· {error.graphErrorCode}</span>}
@@ -187,8 +196,9 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
   const [connecting, setConnecting] = useState(false);
   const [searchError, setSearchError] = useState<StructuredError | null>(null);
   const [showSetup, setShowSetup] = useState(false);
-  const [setupForm, setSetupForm] = useState<ResolveSiteForm>({ siteHostname: "mcselektrotavler.sharepoint.com", sitePath: "/sites/BCDokumentarkiv", basePath: "" });
+  const [setupForm, setSetupForm] = useState<ResolveSiteForm>({ siteHostname: "mcselektrotavler.sharepoint.com", sitePath: "/sites/BCDokumentarkiv", basePath: "Drift" });
   const [resolving, setResolving] = useState(false);
+  const [switchingFolder, setSwitchingFolder] = useState(false);
 
   // Explorer state
   const [items, setItems] = useState<SharePointItem[]>([]);
@@ -227,19 +237,19 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         },
       });
 
-      if (error) {
-        const parsed = parseError({ error: "Nettverksfeil ved filhenting" });
-        setListError(parsed);
+      const result = data ?? {};
+
+      if (error && !data) {
+        setListError(parseError({ error: "Nettverksfeil ved filhenting" }));
         return;
       }
 
-      if (data?.error) {
-        const parsed = parseError(data);
-        setListError(parsed);
+      if (result.error) {
+        setListError(parseError(result));
         return;
       }
 
-      setItems(data.items || []);
+      setItems(result.items || []);
     } catch (err: any) {
       setListError(parseError({ error: err.message }));
     } finally {
@@ -255,7 +265,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     }
   }, [isConnected, connection.folderId]);
 
-  // Search for SharePoint folders
+  // Search for SharePoint folders — sends job_id, NOT company_id
   const handleSearch = async () => {
     if (!projectCode.trim()) return;
     setSearching(true);
@@ -264,11 +274,9 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
 
     try {
       const { data, error } = await supabase.functions.invoke("sharepoint-connect", {
-        body: { action: "search", project_code: projectCode.trim(), company_id: companyId },
+        body: { action: "search", job_id: jobId, project_code: projectCode.trim() },
       });
 
-      // supabase.functions.invoke returns error for network / non-2xx
-      // but data may still contain JSON body — prefer data if available
       const result = data ?? {};
 
       if (error && !data) {
@@ -310,7 +318,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     }
   };
 
-  // Resolve SharePoint site config
+  // Resolve SharePoint site config — no company_id
   const handleResolveSite = async () => {
     if (!setupForm.siteHostname || !setupForm.sitePath) {
       toast.error("Fyll inn SharePoint-adresse og site-sti");
@@ -347,7 +355,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     }
   };
 
-  // Connect to a folder
+  // Connect to a folder — no company_id
   const handleConnect = async (folder: SharePointFolder) => {
     setConnecting(true);
     try {
@@ -374,6 +382,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
       setSearchResults([]);
       setProjectCode("");
       setSearchError(null);
+      setSwitchingFolder(false);
       onConnectionChange();
     } catch (err: any) {
       showErrorToast(parseError({ error: err?.message || "Uventet feil under kobling" }));
@@ -382,7 +391,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     }
   };
 
-  // Disconnect
+  // Disconnect — no company_id
   const handleDisconnect = async () => {
     try {
       const { data, error } = await supabase.functions.invoke("sharepoint-connect", {
@@ -394,6 +403,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         return;
       }
       toast.success("SharePoint-kobling fjernet");
+      setSwitchingFolder(false);
       onConnectionChange();
     } catch (err: any) {
       showErrorToast(parseError({ error: err?.message || "Uventet feil under frakobling" }));
@@ -416,7 +426,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     loadFiles(target.id);
   };
 
-  // Upload file – now uses job_id, server looks up drive/folder
+  // Upload file
   const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = Array.from(e.target.files || []);
     if (!files.length) return;
@@ -432,7 +442,6 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
         const formData = new FormData();
         formData.append("file", file);
         formData.append("job_id", jobId);
-        // Only send subfolder if navigated deeper
         if (currentFolderId && currentFolderId !== connection.folderId) {
           formData.append("folder_id", currentFolderId);
         }
@@ -448,7 +457,8 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
           body: formData,
         });
 
-        const data = await res.json();
+        let data: any = {};
+        try { data = await res.json(); } catch (_) { /* empty */ }
         if (!res.ok || data.error) {
           showErrorToast(parseError(data));
           continue;
@@ -465,7 +475,7 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     loadFiles(currentFolderId || undefined);
   };
 
-  // Preview a file – uses job_id
+  // Preview a file
   const handlePreview = async (item: SharePointItem) => {
     if (item.isFolder) {
       navigateToFolder(item);
@@ -505,10 +515,19 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
     loadFiles(currentFolderId || undefined, searchQuery || undefined);
   }, [searchQuery, currentFolderId, loadFiles]);
 
-  // ── NOT CONNECTED: Show connection UI ──
-  if (!isConnected) {
+  // ── NOT CONNECTED or SWITCHING FOLDER: Show connection UI ──
+  if (!isConnected || switchingFolder) {
     return (
       <div className="space-y-4">
+        {switchingFolder && (
+          <div className="flex items-center gap-2 text-xs text-muted-foreground">
+            <FolderSync className="h-3.5 w-3.5" />
+            Bytter mappe for {connection.projectCode || "denne jobben"}
+            <Button variant="ghost" size="sm" className="h-6 text-xs ml-auto" onClick={() => setSwitchingFolder(false)}>
+              Avbryt
+            </Button>
+          </div>
+        )}
         <div className="rounded-xl border border-dashed border-border/60 bg-secondary/20 p-6 text-center space-y-3">
           <Link2 className="h-8 w-8 text-muted-foreground mx-auto" />
           <div>
@@ -630,9 +649,9 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
 
   return (
     <div className="space-y-3">
-      {/* Status bar */}
+      {/* Status bar with connection info */}
       <div className="flex items-center justify-between gap-2 flex-wrap">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <Badge variant="outline" className="gap-1 text-xs border-green-200 text-green-700 dark:border-green-800 dark:text-green-400">
             <Link2 className="h-3 w-3" />
             SharePoint: {connection.projectCode || "Koblet"}
@@ -679,8 +698,21 @@ export function SharePointExplorer({ jobId, companyId, connection, onConnectionC
           <Button
             variant="ghost"
             size="sm"
+            className="h-7 text-xs gap-1"
+            onClick={() => {
+              setSwitchingFolder(true);
+              setProjectCode(connection.projectCode || "");
+            }}
+            title="Bytt mappe"
+          >
+            <FolderSync className="h-3 w-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
             className="h-7 text-xs gap-1 text-destructive hover:text-destructive"
             onClick={handleDisconnect}
+            title="Koble fra SharePoint"
           >
             <Unlink className="h-3 w-3" />
           </Button>
