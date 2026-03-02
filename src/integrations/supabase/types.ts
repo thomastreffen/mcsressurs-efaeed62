@@ -62,6 +62,44 @@ export type Database = {
         }
         Relationships: []
       }
+      audit_log: {
+        Row: {
+          action: string
+          actor_user_account_id: string | null
+          created_at: string
+          id: string
+          metadata: Json | null
+          target_id: string | null
+          target_type: string
+        }
+        Insert: {
+          action: string
+          actor_user_account_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          target_id?: string | null
+          target_type: string
+        }
+        Update: {
+          action?: string
+          actor_user_account_id?: string | null
+          created_at?: string
+          id?: string
+          metadata?: Json | null
+          target_id?: string | null
+          target_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "audit_log_actor_user_account_id_fkey"
+            columns: ["actor_user_account_id"]
+            isOneToOne: false
+            referencedRelation: "user_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       calculation_items: {
         Row: {
           calculation_id: string
@@ -1356,6 +1394,89 @@ export type Database = {
             columns: ["department_id"]
             isOneToOne: false
             referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      employment_profiles: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          birth_date: string | null
+          color: string | null
+          company_id: string
+          created_at: string
+          department_id: string | null
+          driver_license_classes: string | null
+          hms_card_expires_at: string | null
+          hms_card_number: string | null
+          id: string
+          is_plannable_resource: boolean
+          notes: string | null
+          person_id: string
+          trade_certificate_type: string | null
+        }
+        Insert: {
+          archived_at?: string | null
+          archived_by?: string | null
+          birth_date?: string | null
+          color?: string | null
+          company_id: string
+          created_at?: string
+          department_id?: string | null
+          driver_license_classes?: string | null
+          hms_card_expires_at?: string | null
+          hms_card_number?: string | null
+          id?: string
+          is_plannable_resource?: boolean
+          notes?: string | null
+          person_id: string
+          trade_certificate_type?: string | null
+        }
+        Update: {
+          archived_at?: string | null
+          archived_by?: string | null
+          birth_date?: string | null
+          color?: string | null
+          company_id?: string
+          created_at?: string
+          department_id?: string | null
+          driver_license_classes?: string | null
+          hms_card_expires_at?: string | null
+          hms_card_number?: string | null
+          id?: string
+          is_plannable_resource?: boolean
+          notes?: string | null
+          person_id?: string
+          trade_certificate_type?: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employment_profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_profiles_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_profiles_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_profiles_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_v"
             referencedColumns: ["id"]
           },
         ]
@@ -3291,6 +3412,54 @@ export type Database = {
           },
         ]
       }
+      people: {
+        Row: {
+          created_at: string
+          email: string
+          full_name: string
+          id: string
+          is_active: boolean
+          phone: string | null
+        }
+        Insert: {
+          created_at?: string
+          email: string
+          full_name: string
+          id?: string
+          is_active?: boolean
+          phone?: string | null
+        }
+        Update: {
+          created_at?: string
+          email?: string
+          full_name?: string
+          id?: string
+          is_active?: boolean
+          phone?: string | null
+        }
+        Relationships: []
+      }
+      permissions: {
+        Row: {
+          description: string | null
+          id: string
+          key: string
+          module: string
+        }
+        Insert: {
+          description?: string | null
+          id?: string
+          key: string
+          module: string
+        }
+        Update: {
+          description?: string | null
+          id?: string
+          key?: string
+          module?: string
+        }
+        Relationships: []
+      }
       regulation_queries: {
         Row: {
           actions: Json | null
@@ -3867,6 +4036,55 @@ export type Database = {
         }
         Relationships: []
       }
+      user_accounts: {
+        Row: {
+          auth_user_id: string
+          company_id: string
+          created_at: string
+          id: string
+          is_active: boolean
+          person_id: string
+        }
+        Insert: {
+          auth_user_id: string
+          company_id: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          person_id: string
+        }
+        Update: {
+          auth_user_id?: string
+          company_id?: string
+          created_at?: string
+          id?: string
+          is_active?: boolean
+          person_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_accounts_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_accounts_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "people"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_accounts_person_id_fkey"
+            columns: ["person_id"]
+            isOneToOne: false
+            referencedRelation: "technicians_v"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_documents: {
         Row: {
           ai_processed_at: string | null
@@ -3992,6 +4210,58 @@ export type Database = {
         }
         Relationships: []
       }
+      user_permission_overrides_v2: {
+        Row: {
+          created_at: string
+          id: string
+          mode: string
+          permission_key: string
+          scope_company_id: string | null
+          scope_department_id: string | null
+          user_account_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          mode?: string
+          permission_key: string
+          scope_company_id?: string | null
+          scope_department_id?: string | null
+          user_account_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          mode?: string
+          permission_key?: string
+          scope_company_id?: string | null
+          scope_department_id?: string | null
+          user_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_permission_overrides_v2_scope_company_id_fkey"
+            columns: ["scope_company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_permission_overrides_v2_scope_department_id_fkey"
+            columns: ["scope_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_permission_overrides_v2_user_account_id_fkey"
+            columns: ["user_account_id"]
+            isOneToOne: false
+            referencedRelation: "user_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       user_role_assignments: {
         Row: {
           created_at: string
@@ -4038,6 +4308,108 @@ export type Database = {
           user_id?: string
         }
         Relationships: []
+      }
+      user_roles_v2: {
+        Row: {
+          created_at: string
+          id: string
+          role_id: string
+          scope_company_id: string | null
+          scope_department_id: string | null
+          user_account_id: string
+        }
+        Insert: {
+          created_at?: string
+          id?: string
+          role_id: string
+          scope_company_id?: string | null
+          scope_department_id?: string | null
+          user_account_id: string
+        }
+        Update: {
+          created_at?: string
+          id?: string
+          role_id?: string
+          scope_company_id?: string | null
+          scope_department_id?: string | null
+          user_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_roles_v2_role_id_fkey"
+            columns: ["role_id"]
+            isOneToOne: false
+            referencedRelation: "roles"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_v2_scope_company_id_fkey"
+            columns: ["scope_company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_v2_scope_department_id_fkey"
+            columns: ["scope_department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_roles_v2_user_account_id_fkey"
+            columns: ["user_account_id"]
+            isOneToOne: false
+            referencedRelation: "user_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      user_scopes: {
+        Row: {
+          company_id: string
+          created_at: string
+          department_id: string | null
+          id: string
+          user_account_id: string
+        }
+        Insert: {
+          company_id: string
+          created_at?: string
+          department_id?: string | null
+          id?: string
+          user_account_id: string
+        }
+        Update: {
+          company_id?: string
+          created_at?: string
+          department_id?: string | null
+          id?: string
+          user_account_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "user_scopes_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_scopes_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "user_scopes_user_account_id_fkey"
+            columns: ["user_account_id"]
+            isOneToOne: false
+            referencedRelation: "user_accounts"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       work_orders: {
         Row: {
@@ -4118,7 +4490,43 @@ export type Database = {
       }
     }
     Views: {
-      [_ in never]: never
+      technicians_v: {
+        Row: {
+          archived_at: string | null
+          archived_by: string | null
+          birth_date: string | null
+          color: string | null
+          company_id: string | null
+          created_at: string | null
+          department_id: string | null
+          driver_license_classes: string | null
+          email: string | null
+          hms_card_expires_at: string | null
+          hms_card_number: string | null
+          id: string | null
+          is_plannable_resource: boolean | null
+          name: string | null
+          notes: string | null
+          trade_certificate_type: string | null
+          user_id: string | null
+        }
+        Relationships: [
+          {
+            foreignKeyName: "employment_profiles_company_id_fkey"
+            columns: ["company_id"]
+            isOneToOne: false
+            referencedRelation: "internal_companies"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "employment_profiles_department_id_fkey"
+            columns: ["department_id"]
+            isOneToOne: false
+            referencedRelation: "departments"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
     }
     Functions: {
       can_access_record: {
@@ -4131,8 +4539,22 @@ export type Database = {
         }
         Returns: boolean
       }
+      can_access_record_v2: {
+        Args: {
+          _auth_user_id: string
+          _record_company_id: string
+          _record_created_by: string
+          _record_department_id: string
+          _record_id: string
+        }
+        Returns: boolean
+      }
       check_permission: {
         Args: { _perm: string; _user_id: string }
+        Returns: boolean
+      }
+      check_permission_v2: {
+        Args: { _auth_user_id: string; _perm: string }
         Returns: boolean
       }
       claim_calendar_sync: {
@@ -4146,7 +4568,9 @@ export type Database = {
         }
         Returns: Json
       }
+      get_user_account_id: { Args: { _auth_user_id: string }; Returns: string }
       get_user_scope: { Args: { _user_id: string }; Returns: string }
+      get_user_scope_v2: { Args: { _auth_user_id: string }; Returns: string }
       has_role: {
         Args: {
           _role: Database["public"]["Enums"]["app_role"]

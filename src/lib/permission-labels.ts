@@ -103,6 +103,12 @@ export const PERMISSION_LABELS: Record<string, PermissionMeta> = {
 
   // Data
   "data.delete": { label: "Slette data", description: "Kan flytte elementer til papirkurven.", category: "Data" },
+
+  // SharePoint
+  "sharepoint.view": { label: "Se SharePoint-filer", description: "Kan se filer i koblet SharePoint-mappe.", category: "SharePoint" },
+  "sharepoint.upload": { label: "Laste opp til SharePoint", description: "Kan laste opp filer til SharePoint.", category: "SharePoint" },
+  "sharepoint.delete": { label: "Slette fra SharePoint", description: "Kan slette filer i SharePoint.", category: "SharePoint" },
+  "sharepoint.link_job": { label: "Koble jobb til SharePoint", description: "Kan koble en jobb til en SharePoint-mappe.", category: "SharePoint" },
 };
 
 /** All permission keys excluding scope (scope is handled as a dropdown) */
@@ -166,6 +172,11 @@ export const PERMISSION_CATEGORIES: { category: string; description: string; key
     category: "Data",
     description: "Generelle rettigheter for datahåndtering.",
     keys: ["data.delete"],
+  },
+  {
+    category: "SharePoint",
+    description: "Tilgang til SharePoint-integrasjonen.",
+    keys: ["sharepoint.view", "sharepoint.upload", "sharepoint.delete", "sharepoint.link_job"],
   },
 ];
 
