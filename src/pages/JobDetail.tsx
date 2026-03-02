@@ -95,6 +95,7 @@ export default function JobDetail() {
   const [offerData, setOfferData] = useState<any>(null);
   const [parentProjectId, setParentProjectId] = useState<string | null>(null);
   const [customerId, setCustomerId] = useState<string | null>(null);
+  const [jobCompanyId, setJobCompanyId] = useState<string | null>(null);
 
   // Economy
   const [econData, setEconData] = useState<{
@@ -171,6 +172,7 @@ export default function JobDetail() {
     });
     setParentProjectId(data.parent_project_id || null);
     setCustomerId(data.customer_id || null);
+    setJobCompanyId(data.company_id || null);
     setLoading(false);
   }, [id]);
 
@@ -442,7 +444,7 @@ export default function JobDetail() {
           {/* ── DOKUMENTER ── */}
           {activeTab === "dokumenter" && (
             <SectionCard>
-              <DocumentCenter jobId={id!} companyId={null} />
+              <DocumentCenter jobId={id!} companyId={jobCompanyId} />
             </SectionCard>
           )}
 
