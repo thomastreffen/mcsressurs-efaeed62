@@ -50,8 +50,161 @@ async function graphFetch(token: string, url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...init?.headers } });
 }
 
+// ── Pick the best drive from a list ──
+function pickBestDrive(drives: any[]): any | null {
+  // Priority: name == "Dokumenter" > "Documents" > webUrl contains /Dokumenter or Shared Documents > first
+  const byName = (n: string) => drives.find((d: any) => d.name === n);
+  const byUrl = (sub: string) => drives.find((d: any) => (d.webUrl || "").includes(sub));
+  return byName("Dokumenter") || byName("Documents") || byUrl("/Dokumenter") || byUrl("Shared Documents") || drives[0] || null;
+}
+
+// ── Verify / auto-heal company SharePoint config ──
+// Returns { site_id, drive_id, base_path, healed: boolean, healSummary?: string } or throws
+interface SpConfig {
+  id: string;
+  sharepoint_site_id: string | null;
+  sharepoint_drive_id: string | null;
+  sharepoint_base_path: string | null;
+}
+
+interface VerifyResult {
+  site_id: string;
+  drive_id: string;
+  base_path: string;
+  healed: boolean;
+  healSummary?: string;
+  drive_name?: string;
+  drive_webUrl?: string;
+}
+
+async function verifyConfig(
+  supabaseAdmin: any,
+  msToken: string,
+  spConfig: SpConfig,
+  requestId: string,
+): Promise<VerifyResult> {
+  let siteId = spConfig.sharepoint_site_id || "";
+  let driveId = spConfig.sharepoint_drive_id || "";
+  let basePath = (spConfig.sharepoint_base_path || "").replace(/^\/+|\/+$/g, "");
+  let healed = false;
+  const healParts: string[] = [];
+
+  // Step 1: If site_id missing, resolve it from known hostname/path
+  if (!siteId) {
+    const siteHostname = "mcselektrotavler.sharepoint.com";
+    const sitePath = "/sites/BCDokumentarkiv";
+    const siteUrl = `${GRAPH_BASE}/sites/${siteHostname}:${sitePath}`;
+    console.log(`[verify_config] request_id=${requestId} resolving site from ${siteUrl}`);
+    const siteRes = await graphFetch(msToken, siteUrl);
+    if (!siteRes.ok) {
+      const st = siteRes.status;
+      await siteRes.text();
+      throw { step: "verify_resolve_site", graph_status: st, message: graphErrorMessage(st) };
+    }
+    const siteData = await siteRes.json();
+    siteId = siteData.id;
+    healed = true;
+    healParts.push(`Site: ${siteData.displayName || siteId}`);
+  }
+
+  // Step 2: Resolve / verify drive_id
+  const drivesUrl = `${GRAPH_BASE}/sites/${siteId}/drives`;
+  console.log(`[verify_config] request_id=${requestId} listing drives`);
+  const drivesRes = await graphFetch(msToken, drivesUrl);
+  if (!drivesRes.ok) {
+    const st = drivesRes.status;
+    await drivesRes.text();
+    throw { step: "verify_drives", graph_status: st, message: graphErrorMessage(st) };
+  }
+  const drivesData = await drivesRes.json();
+  const allDrives = drivesData.value || [];
+
+  const bestDrive = pickBestDrive(allDrives);
+  if (!bestDrive) {
+    throw { step: "verify_drives", graph_status: 404, message: "Fant ingen dokumentbibliotek på SharePoint-området." };
+  }
+
+  if (!driveId || driveId !== bestDrive.id) {
+    // Check if current driveId is still valid
+    const currentValid = driveId && allDrives.some((d: any) => d.id === driveId);
+    if (!currentValid) {
+      driveId = bestDrive.id;
+      healed = true;
+      healParts.push(`Drive: ${bestDrive.name}`);
+    }
+  }
+
+  // Step 3: Verify base_path exists
+  if (!basePath) basePath = "Drift";
+  const alternativePaths = ["Drift", "drift", "Prosjekter/Drift", "Dokumenter/Drift"];
+
+  let basePathValid = false;
+  const pathUrl = `${GRAPH_BASE}/drives/${driveId}/root:/${encodeURIComponent(basePath).replace(/%2F/g, "/")}`;
+  console.log(`[verify_config] request_id=${requestId} checking base_path="${basePath}"`);
+  const pathRes = await graphFetch(msToken, pathUrl);
+  if (pathRes.ok) {
+    const item = await pathRes.json();
+    if (item.folder) basePathValid = true;
+    else await Promise.resolve(); // consumed
+  } else {
+    await pathRes.text(); // consume
+  }
+
+  if (!basePathValid) {
+    // Try alternatives
+    for (const alt of alternativePaths) {
+      if (alt === basePath) continue;
+      const altUrl = `${GRAPH_BASE}/drives/${driveId}/root:/${encodeURIComponent(alt).replace(/%2F/g, "/")}`;
+      console.log(`[verify_config] request_id=${requestId} trying alt base_path="${alt}"`);
+      const altRes = await graphFetch(msToken, altUrl);
+      if (altRes.ok) {
+        const altItem = await altRes.json();
+        if (altItem.folder) {
+          basePath = alt;
+          basePathValid = true;
+          healed = true;
+          healParts.push(`Base: ${alt}`);
+          break;
+        }
+      } else {
+        await altRes.text(); // consume
+      }
+    }
+
+    if (!basePathValid) {
+      throw {
+        step: "verify_base_path",
+        graph_status: 404,
+        message: `Rot-mappen "${basePath}" finnes ikke i dette dokumentbiblioteket. Prøvde også: ${alternativePaths.join(", ")}`,
+      };
+    }
+  }
+
+  // Step 4: Persist healed config
+  if (healed) {
+    console.log(`[verify_config] request_id=${requestId} saving healed config site=${siteId} drive=${driveId} base=${basePath}`);
+    await supabaseAdmin
+      .from("company_settings")
+      .update({
+        sharepoint_site_id: siteId,
+        sharepoint_drive_id: driveId,
+        sharepoint_base_path: basePath,
+      })
+      .eq("id", spConfig.id);
+  }
+
+  return {
+    site_id: siteId,
+    drive_id: driveId,
+    base_path: basePath,
+    healed,
+    healSummary: healParts.length > 0 ? healParts.join(", ") : undefined,
+    drive_name: bestDrive?.name,
+    drive_webUrl: bestDrive?.webUrl,
+  };
+}
+
 Deno.serve(async (req) => {
-  // OPTIONS must always succeed with CORS
   if (req.method === "OPTIONS") {
     return new Response("ok", { status: 200, headers: corsHeaders });
   }
@@ -87,13 +240,13 @@ Deno.serve(async (req) => {
     console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id} project_code=${project_code} company_id=${company_id}`);
 
     // ── Helper: load company SharePoint config ──
-    async function loadSpConfig() {
+    async function loadSpConfig(): Promise<SpConfig | null> {
       const { data } = await supabaseAdmin
         .from("company_settings")
         .select("id, sharepoint_site_id, sharepoint_drive_id, sharepoint_base_path")
         .limit(1)
         .maybeSingle();
-      return data as { id: string; sharepoint_site_id: string | null; sharepoint_drive_id: string | null; sharepoint_base_path: string | null } | null;
+      return data as SpConfig | null;
     }
 
     // ── SEARCH ──
@@ -103,17 +256,11 @@ Deno.serve(async (req) => {
         if (!code) return respond({ error: "project_code required" }, 400);
 
         const spConfig = await loadSpConfig();
-        const siteId = body.site_id || spConfig?.sharepoint_site_id;
-        const driveId = body.drive_id || spConfig?.sharepoint_drive_id;
-        const basePath = (body.base_path || spConfig?.sharepoint_base_path || "").replace(/^\/+|\/+$/g, "");
-
-        if (!siteId || !driveId) {
-          return respond({
-            error: "SharePoint site_id og drive_id er ikke konfigurert for dette selskapet. Gå til Firmainnstillinger → SharePoint.",
-            step: "config",
-          }, 400);
+        if (!spConfig) {
+          return respond({ error: "Ingen firmainnstillinger funnet. Opprett dem først.", step: "config" }, 400);
         }
 
+        // Get MS token
         let msToken: string;
         try {
           msToken = await getAppToken();
@@ -122,9 +269,29 @@ Deno.serve(async (req) => {
           return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
         }
 
+        // Auto-heal: verify and fix config
+        let verified: VerifyResult;
+        try {
+          verified = await verifyConfig(supabaseAdmin, msToken, spConfig, requestId);
+        } catch (vErr: any) {
+          console.error(`[sharepoint-connect] request_id=${requestId} verify_config failed:`, vErr.message || vErr);
+          return respond({
+            error: vErr.message || "Konfig-verifisering feilet",
+            step: vErr.step || "verify_config",
+            graph_status: vErr.graph_status || null,
+            debug: {
+              site_id: spConfig.sharepoint_site_id,
+              drive_id: spConfig.sharepoint_drive_id,
+              base_path: spConfig.sharepoint_base_path,
+            },
+          }, 502);
+        }
+
+        const { site_id: siteId, drive_id: driveId, base_path: basePath } = verified;
+
         // Strategy 1: Direct path lookup
         const attemptedPath = basePath ? `${basePath}/${code}` : code;
-        const pathUrl = `${GRAPH_BASE}/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(attemptedPath).replace(/%2F/g, "/")}`;
+        const pathUrl = `${GRAPH_BASE}/drives/${driveId}/root:/${encodeURIComponent(attemptedPath).replace(/%2F/g, "/")}`;
         console.log(`[sharepoint-connect] request_id=${requestId} step=path_lookup url=${pathUrl}`);
 
         const pathRes = await graphFetch(msToken, pathUrl);
@@ -143,6 +310,9 @@ Deno.serve(async (req) => {
               }],
               source: "direct_path",
               attempted_path: attemptedPath,
+              config_healed: verified.healed,
+              heal_summary: verified.healSummary,
+              debug: { site_id: siteId, drive_id: driveId, base_path: basePath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl, attempted_path: attemptedPath },
             });
           }
           // file, not folder — fall through
@@ -155,10 +325,7 @@ Deno.serve(async (req) => {
               error: graphErrorMessage(status),
               graph_status: status,
               step: "path_lookup",
-              site_id: siteId,
-              drive_id: driveId,
-              base_path: basePath,
-              attempted_path: attemptedPath,
+              debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl },
             }, 502);
           }
         }
@@ -177,10 +344,7 @@ Deno.serve(async (req) => {
             graph_status: searchRes.status,
             graph_error_code: errCode,
             step: "search",
-            site_id: siteId,
-            drive_id: driveId,
-            base_path: basePath,
-            attempted_path: attemptedPath,
+            debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath },
           }, 502);
         }
 
@@ -221,16 +385,22 @@ Deno.serve(async (req) => {
             graph_error_code: "itemNotFound",
             step: "search",
             folders: [],
-            site_id: siteId,
-            drive_id: driveId,
-            base_path: basePath,
-            attempted_path: attemptedPath,
+            config_healed: verified.healed,
+            heal_summary: verified.healSummary,
+            debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl },
           }, 200);
         }
 
-        return respond({ folders, source: "drive_search", attempted_path: attemptedPath });
+        return respond({
+          folders,
+          source: "drive_search",
+          attempted_path: attemptedPath,
+          config_healed: verified.healed,
+          heal_summary: verified.healSummary,
+          debug: { site_id: siteId, drive_id: driveId, base_path: basePath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl },
+        });
       } catch (searchErr: any) {
-        console.error(`[sharepoint-connect] request_id=${requestId} action=search unhandled:`, searchErr.message);
+        console.error(`[sharepoint-connect] request_id=${requestId} action=search unhandled:`, searchErr.message || searchErr);
         return respond({ error: searchErr.message || "Søk feilet", step: "search" }, 500);
       }
     }
@@ -367,7 +537,7 @@ Deno.serve(async (req) => {
           driveType: d.driveType,
         }));
 
-        const defaultDrive = drives.find((d: any) => d.driveType === "documentLibrary") || drives[0];
+        const defaultDrive = pickBestDrive(drivesData.value || []);
 
         if (!defaultDrive) {
           return respond({ error: "Fant ingen dokumentbibliotek på dette SharePoint-området.", step: "resolve_drives", site_id: resolvedSiteId }, 404);
