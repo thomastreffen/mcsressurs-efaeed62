@@ -722,6 +722,9 @@ export type Database = {
           postal_code: string | null
           primary_color: string | null
           secondary_color: string | null
+          sharepoint_base_path: string | null
+          sharepoint_drive_id: string | null
+          sharepoint_site_id: string | null
           swift: string | null
           updated_at: string
           website: string | null
@@ -746,6 +749,9 @@ export type Database = {
           postal_code?: string | null
           primary_color?: string | null
           secondary_color?: string | null
+          sharepoint_base_path?: string | null
+          sharepoint_drive_id?: string | null
+          sharepoint_site_id?: string | null
           swift?: string | null
           updated_at?: string
           website?: string | null
@@ -770,6 +776,9 @@ export type Database = {
           postal_code?: string | null
           primary_color?: string | null
           secondary_color?: string | null
+          sharepoint_base_path?: string | null
+          sharepoint_drive_id?: string | null
+          sharepoint_site_id?: string | null
           swift?: string | null
           updated_at?: string
           website?: string | null

@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-function graphErrorMessage(status: number, code?: string): string {
+function graphErrorMessage(status: number, _code?: string): string {
   if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
   if (status === 403) return "Appen mangler rettigheter til SharePoint-området eller drive. Sjekk Graph permissions og site-tilgang.";
   if (status === 404) return "Fant ikke ressursen i SharePoint. Sjekk at mappen finnes i riktig dokumentbibliotek.";
@@ -37,6 +37,11 @@ async function getAppToken(): Promise<string> {
   }
   const data = await res.json();
   return data.access_token;
+}
+
+// Helper: fetch with Graph token
+async function graphFetch(token: string, url: string, init?: RequestInit) {
+  return fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...init?.headers } });
 }
 
 Deno.serve(async (req) => {
@@ -73,122 +78,133 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const { action, job_id, project_code, folder_id, site_id, drive_id } = body;
+    const { action, job_id, project_code, folder_id, company_id } = body;
 
-    console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id} project_code=${project_code}`);
+    console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id} project_code=${project_code} company_id=${company_id}`);
+
+    // ── Helper: load company SharePoint config ──
+    async function loadSpConfig(cid: string) {
+      const { data } = await supabaseAdmin
+        .from("company_settings")
+        .select("sharepoint_site_id, sharepoint_drive_id, sharepoint_base_path")
+        .eq("id", cid)
+        .maybeSingle();
+      return data as { sharepoint_site_id: string | null; sharepoint_drive_id: string | null; sharepoint_base_path: string | null } | null;
+    }
 
     // ── SEARCH: Find folders matching project_code ──
     if (action === "search") {
       const code = (project_code || "").trim().toUpperCase().replace(/\s+/g, "");
       if (!code) return respond({ error: "project_code required" }, 400);
+      if (!company_id) return respond({ error: "company_id required" }, 400);
+
+      const spConfig = await loadSpConfig(company_id);
+      const siteId = body.site_id || spConfig?.sharepoint_site_id;
+      const driveId = body.drive_id || spConfig?.sharepoint_drive_id;
+      const basePath = (body.base_path || spConfig?.sharepoint_base_path || "").replace(/^\/+|\/+$/g, "");
+
+      if (!siteId || !driveId) {
+        return respond({
+          error: "SharePoint site_id og drive_id er ikke konfigurert for dette selskapet. Gå til Firmainnstillinger → SharePoint.",
+          step: "config",
+        }, 400);
+      }
 
       let msToken: string;
       try {
         msToken = await getAppToken();
       } catch (e: any) {
         console.error(`[sharepoint-connect] request_id=${requestId} step=token error=${e.message}`);
-        return respond({
-          error: "Microsoft-token feilet. Sjekk client secret og tenant.",
-          graph_status: 401,
-          graph_error_code: "invalid_token",
-          step: "token",
-        }, 502);
+        return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
       }
 
-      // Get root site
-      const siteRes = await fetch(`${GRAPH_BASE}/sites/root`, {
-        headers: { Authorization: `Bearer ${msToken}` },
-      });
+      // ── Strategy 1: Direct path lookup ──
+      const attemptedPath = basePath ? `${basePath}/${code}` : code;
+      const pathUrl = `${GRAPH_BASE}/sites/${siteId}/drives/${driveId}/root:/${encodeURIComponent(attemptedPath).replace(/%2F/g, "/")}`;
+      console.log(`[sharepoint-connect] request_id=${requestId} step=path_lookup url=${pathUrl}`);
 
-      if (!siteRes.ok) {
-        const errBody = await siteRes.json().catch(() => ({}));
-        const errCode = errBody?.error?.code || "";
-        console.error(`[sharepoint-connect] request_id=${requestId} step=resolve graph_status=${siteRes.status} graph_error_code=${errCode}`);
-        return respond({
-          error: graphErrorMessage(siteRes.status, errCode),
-          graph_status: siteRes.status,
-          graph_error_code: errCode,
-          step: "resolve",
-        }, 502);
-      }
+      const pathRes = await graphFetch(msToken, pathUrl);
 
-      const siteData = await siteRes.json();
-      const rootSiteId = siteData.id;
-
-      // Search for folders matching the project code
-      const searchRes = await fetch(
-        `${GRAPH_BASE}/sites/${rootSiteId}/drive/root/search(q='${encodeURIComponent(code)}')`,
-        { headers: { Authorization: `Bearer ${msToken}` } }
-      );
-
-      if (!searchRes.ok) {
-        // Fallback: search API across all sites
-        const altSearchRes = await fetch(`${GRAPH_BASE}/search/query`, {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${msToken}`,
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            requests: [{
-              entityTypes: ["driveItem"],
-              query: { queryString: `${code} AND isDocument:false` },
-              from: 0,
-              size: 10,
-            }],
-          }),
-        });
-
-        if (!altSearchRes.ok) {
-          const errBody = await altSearchRes.json().catch(() => ({}));
-          const errCode = errBody?.error?.code || "";
-          console.error(`[sharepoint-connect] request_id=${requestId} step=search graph_status=${altSearchRes.status} graph_error_code=${errCode}`);
+      if (pathRes.ok) {
+        const item = await pathRes.json();
+        if (item.folder) {
           return respond({
-            error: graphErrorMessage(altSearchRes.status, errCode),
-            graph_status: altSearchRes.status,
-            graph_error_code: errCode,
-            step: "search",
+            folders: [{
+              id: item.id,
+              name: item.name,
+              webUrl: item.webUrl,
+              siteId,
+              driveId,
+              lastModified: item.lastModifiedDateTime,
+            }],
+            source: "direct_path",
+            attempted_path: attemptedPath,
+          });
+        }
+        // It's a file, not a folder — fall through to search
+        await pathRes.text(); // consume
+      } else {
+        const status = pathRes.status;
+        await pathRes.text(); // consume body
+
+        if (status !== 404) {
+          const errCode = "";
+          console.error(`[sharepoint-connect] request_id=${requestId} step=path_lookup graph_status=${status}`);
+          return respond({
+            error: graphErrorMessage(status, errCode),
+            graph_status: status,
+            step: "path_lookup",
+            site_id: siteId,
+            drive_id: driveId,
+            base_path: basePath,
+            attempted_path: attemptedPath,
           }, 502);
         }
+        // 404 — fall through to search
+      }
 
-        const altData = await altSearchRes.json();
-        const hits = altData.value?.[0]?.hitsContainers?.[0]?.hits || [];
-        const folders = hits
-          .filter((h: any) => h.resource?.folder)
-          .map((h: any) => ({
-            id: h.resource.id,
-            name: h.resource.name,
-            webUrl: h.resource.webUrl,
-            siteId: h.resource.parentReference?.siteId || rootSiteId,
-            driveId: h.resource.parentReference?.driveId,
-            lastModified: h.resource.lastModifiedDateTime,
-          }));
+      // ── Strategy 2: Search within drive, filter by base_path ──
+      const searchUrl = `${GRAPH_BASE}/sites/${siteId}/drives/${driveId}/root/search(q='${encodeURIComponent(code)}')`;
+      console.log(`[sharepoint-connect] request_id=${requestId} step=search_fallback url=${searchUrl}`);
+      const searchRes = await graphFetch(msToken, searchUrl);
 
-        if (folders.length === 0) {
-          return respond({
-            error: `Fant ikke "${code}" under valgt base path. Sjekk at mappen finnes i riktig dokumentbibliotek.`,
-            graph_status: 404,
-            graph_error_code: "itemNotFound",
-            step: "search",
-            folders: [],
-          }, 200);
-        }
-
-        return respond({ folders, source: "search_api" });
+      if (!searchRes.ok) {
+        const errBody = await searchRes.json().catch(() => ({}));
+        const errCode = errBody?.error?.code || "";
+        console.error(`[sharepoint-connect] request_id=${requestId} step=search graph_status=${searchRes.status} graph_error_code=${errCode}`);
+        return respond({
+          error: graphErrorMessage(searchRes.status, errCode),
+          graph_status: searchRes.status,
+          graph_error_code: errCode,
+          step: "search",
+          site_id: siteId,
+          drive_id: driveId,
+          base_path: basePath,
+          attempted_path: attemptedPath,
+        }, 502);
       }
 
       const searchData = await searchRes.json();
       const items = searchData.value || [];
-      // Prioritize exact match, then prefix match
+
+      // Filter to folders, optionally within basePath subtree
+      const basePathLower = basePath.toLowerCase();
       const folders = items
-        .filter((item: any) => item.folder)
+        .filter((item: any) => {
+          if (!item.folder) return false;
+          if (!basePath) return true;
+          // parentReference.path looks like /drives/{id}/root:/Drift/Sub
+          const parentPath = (item.parentReference?.path || "").toLowerCase();
+          return parentPath.includes(`:/${basePathLower}`) || parentPath.includes(`:/${basePathLower}/`);
+        })
         .map((item: any) => ({
           id: item.id,
           name: item.name,
           webUrl: item.webUrl,
-          siteId: rootSiteId,
-          driveId: item.parentReference?.driveId,
+          siteId,
+          driveId,
           lastModified: item.lastModifiedDateTime,
+          parentPath: item.parentReference?.path || "",
         }))
         .sort((a: any, b: any) => {
           const aExact = a.name.toUpperCase() === code ? 0 : 1;
@@ -197,19 +213,24 @@ Deno.serve(async (req) => {
           const aPrefix = a.name.toUpperCase().startsWith(code) ? 0 : 1;
           const bPrefix = b.name.toUpperCase().startsWith(code) ? 0 : 1;
           return aPrefix - bPrefix;
-        });
+        })
+        .slice(0, 10);
 
       if (folders.length === 0) {
         return respond({
-          error: `Fant ikke "${code}" under valgt base path. Sjekk at mappen finnes i riktig dokumentbibliotek.`,
+          error: `Fant ikke "${code}" under ${basePath || "rot"}.`,
           graph_status: 404,
           graph_error_code: "itemNotFound",
           step: "search",
           folders: [],
+          site_id: siteId,
+          drive_id: driveId,
+          base_path: basePath,
+          attempted_path: attemptedPath,
         }, 200);
       }
 
-      return respond({ folders, source: "drive_search" });
+      return respond({ folders, source: "drive_search", attempted_path: attemptedPath });
     }
 
     // ── CONNECT: Save selected folder to job ──
@@ -217,12 +238,15 @@ Deno.serve(async (req) => {
       if (!job_id || !folder_id) return respond({ error: "job_id and folder_id required" }, 400);
 
       const webUrl = body.web_url || null;
+      const siteId = body.site_id || null;
+      const driveId = body.drive_id || null;
+
       const { error: updateErr } = await supabaseAdmin
         .from("events")
         .update({
           sharepoint_project_code: (project_code || "").trim().toUpperCase().replace(/\s+/g, "") || null,
-          sharepoint_site_id: site_id || null,
-          sharepoint_drive_id: drive_id || null,
+          sharepoint_site_id: siteId,
+          sharepoint_drive_id: driveId,
           sharepoint_folder_id: folder_id,
           sharepoint_folder_web_url: webUrl,
           sharepoint_connected_at: new Date().toISOString(),
