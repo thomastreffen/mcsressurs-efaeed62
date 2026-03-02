@@ -83,11 +83,11 @@ Deno.serve(async (req) => {
     console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id} project_code=${project_code} company_id=${company_id}`);
 
     // ── Helper: load company SharePoint config ──
-    async function loadSpConfig(cid: string) {
+    async function loadSpConfig() {
       const { data } = await supabaseAdmin
         .from("company_settings")
         .select("sharepoint_site_id, sharepoint_drive_id, sharepoint_base_path")
-        .eq("id", cid)
+        .limit(1)
         .maybeSingle();
       return data as { sharepoint_site_id: string | null; sharepoint_drive_id: string | null; sharepoint_base_path: string | null } | null;
     }
@@ -96,9 +96,8 @@ Deno.serve(async (req) => {
     if (action === "search") {
       const code = (project_code || "").trim().toUpperCase().replace(/\s+/g, "");
       if (!code) return respond({ error: "project_code required" }, 400);
-      if (!company_id) return respond({ error: "company_id required" }, 400);
 
-      const spConfig = await loadSpConfig(company_id);
+      const spConfig = await loadSpConfig();
       const siteId = body.site_id || spConfig?.sharepoint_site_id;
       const driveId = body.drive_id || spConfig?.sharepoint_drive_id;
       const basePath = (body.base_path || spConfig?.sharepoint_base_path || "").replace(/^\/+|\/+$/g, "");
