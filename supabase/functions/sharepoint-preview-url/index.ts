@@ -8,7 +8,7 @@ const corsHeaders = {
 
 const GRAPH_BASE = "https://graph.microsoft.com/v1.0";
 
-function graphErrorMessage(status: number, code?: string): string {
+function graphErrorMessage(status: number, _code?: string): string {
   if (status === 401) return "Microsoft-token feilet. Sjekk client secret og tenant.";
   if (status === 403) return "Appen mangler rettigheter til SharePoint-området.";
   if (status === 404) return "Filen ble ikke funnet i SharePoint.";
@@ -38,11 +38,10 @@ async function getAppToken(): Promise<string> {
 
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") {
-    return new Response(null, { headers: corsHeaders });
+    return new Response("ok", { status: 200, headers: corsHeaders });
   }
 
   const requestId = crypto.randomUUID();
-
   const respond = (data: any, status = 200) =>
     new Response(JSON.stringify({ ...data, request_id: requestId }), {
       status,
@@ -61,6 +60,7 @@ Deno.serve(async (req) => {
     );
     const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
     if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
+    const authUserId = userData.user.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -72,30 +72,39 @@ Deno.serve(async (req) => {
     const { job_id, item_id } = body;
 
     if (!item_id) return respond({ error: "item_id required" }, 400);
+    if (!job_id) return respond({ error: "job_id required" }, 400);
 
-    // Lookup drive_id from job
-    let driveId: string;
+    // Job lookup — server-side
+    const { data: job, error: jobErr } = await supabaseAdmin
+      .from("events")
+      .select("id, company_id, department_id, created_by, sharepoint_drive_id")
+      .eq("id", job_id)
+      .single();
 
-    if (job_id) {
-      const { data: job } = await supabaseAdmin
-        .from("events")
-        .select("sharepoint_drive_id")
-        .eq("id", job_id)
-        .single();
+    if (jobErr || !job) return respond({ error: "Jobb ikke funnet", step: "lookup" }, 404);
 
-      if (!job?.sharepoint_drive_id) {
-        return respond({
-          error: "Jobben er ikke koblet til SharePoint.",
-          step: "lookup",
-        }, 409);
-      }
-      driveId = job.sharepoint_drive_id;
-    } else if (body.drive_id) {
-      // Legacy fallback
-      driveId = body.drive_id;
-    } else {
-      return respond({ error: "job_id required" }, 400);
+    // RBAC: scope access
+    const { data: hasAccess } = await supabaseAdmin.rpc("can_access_record_v2", {
+      _auth_user_id: authUserId,
+      _record_company_id: job.company_id,
+      _record_department_id: job.department_id || null,
+      _record_created_by: job.created_by || null,
+      _record_id: job.id,
+    });
+    if (!hasAccess) return respond({ error: "Du mangler tilgang til SharePoint for dette selskapet.", step: "rbac" }, 403);
+
+    // RBAC: permission
+    const { data: canView } = await supabaseAdmin.rpc("check_permission_v2", {
+      _auth_user_id: authUserId,
+      _perm: "sharepoint.view",
+    });
+    if (!canView) return respond({ error: "Du mangler SharePoint-leserettigheter.", step: "rbac" }, 403);
+
+    if (!job.sharepoint_drive_id) {
+      return respond({ error: "Jobben er ikke koblet til SharePoint.", step: "not_linked" }, 409);
     }
+
+    const driveId = job.sharepoint_drive_id;
 
     console.log(`[sharepoint-preview-url] request_id=${requestId} job_id=${job_id} item_id=${item_id}`);
 
@@ -103,12 +112,7 @@ Deno.serve(async (req) => {
     try {
       msToken = await getAppToken();
     } catch (e: any) {
-      console.error(`[sharepoint-preview-url] request_id=${requestId} step=token error=${e.message}`);
-      return respond({
-        error: "Microsoft-token feilet.",
-        graph_status: 401,
-        step: "token",
-      }, 502);
+      return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
     }
 
     // Try preview API
@@ -116,10 +120,7 @@ Deno.serve(async (req) => {
       `${GRAPH_BASE}/drives/${driveId}/items/${item_id}/preview`,
       {
         method: "POST",
-        headers: {
-          Authorization: `Bearer ${msToken}`,
-          "Content-Type": "application/json",
-        },
+        headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
         body: JSON.stringify({}),
       }
     );
@@ -127,6 +128,8 @@ Deno.serve(async (req) => {
     if (previewRes.ok) {
       const previewData = await previewRes.json();
       return respond({ previewUrl: previewData.getUrl, type: "embed" });
+    } else {
+      await previewRes.text(); // consume
     }
 
     // Fallback: get webUrl
@@ -138,7 +141,6 @@ Deno.serve(async (req) => {
     if (!itemRes.ok) {
       const errBody = await itemRes.json().catch(() => ({}));
       const errCode = errBody?.error?.code || "";
-      console.error(`[sharepoint-preview-url] request_id=${requestId} step=preview graph_status=${itemRes.status} graph_error_code=${errCode}`);
       return respond({
         error: graphErrorMessage(itemRes.status, errCode),
         graph_status: itemRes.status,
@@ -155,10 +157,7 @@ Deno.serve(async (req) => {
         `${GRAPH_BASE}/drives/${driveId}/items/${item_id}/createLink`,
         {
           method: "POST",
-          headers: {
-            Authorization: `Bearer ${msToken}`,
-            "Content-Type": "application/json",
-          },
+          headers: { Authorization: `Bearer ${msToken}`, "Content-Type": "application/json" },
           body: JSON.stringify({ type: "view", scope: "organization" }),
         }
       );
@@ -169,14 +168,12 @@ Deno.serve(async (req) => {
           type: "image",
           webUrl: itemData.webUrl,
         });
+      } else {
+        await shareRes.text(); // consume
       }
     }
 
-    return respond({
-      previewUrl: itemData.webUrl,
-      type: "web",
-      webUrl: itemData.webUrl,
-    });
+    return respond({ previewUrl: itemData.webUrl, type: "web", webUrl: itemData.webUrl });
   } catch (err: any) {
     console.error(`[sharepoint-preview-url] request_id=${requestId} unhandled error:`, err.message);
     return respond({ error: err.message || "Internal error", step: "unknown" }, 500);

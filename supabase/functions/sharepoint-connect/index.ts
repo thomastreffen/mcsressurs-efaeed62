@@ -50,16 +50,70 @@ async function graphFetch(token: string, url: string, init?: RequestInit) {
   return fetch(url, { ...init, headers: { Authorization: `Bearer ${token}`, ...init?.headers } });
 }
 
-// ── Pick the best drive from a list ──
 function pickBestDrive(drives: any[]): any | null {
-  // Priority: name == "Dokumenter" > "Documents" > webUrl contains /Dokumenter or Shared Documents > first
   const byName = (n: string) => drives.find((d: any) => d.name === n);
   const byUrl = (sub: string) => drives.find((d: any) => (d.webUrl || "").includes(sub));
   return byName("Dokumenter") || byName("Documents") || byUrl("/Dokumenter") || byUrl("Shared Documents") || drives[0] || null;
 }
 
-// ── Verify / auto-heal company SharePoint config ──
-// Returns { site_id, drive_id, base_path, healed: boolean, healSummary?: string } or throws
+// ── RBAC helpers ──
+async function checkPermission(supabaseAdmin: any, authUserId: string, perm: string): Promise<boolean> {
+  const { data } = await supabaseAdmin.rpc("check_permission_v2", {
+    _auth_user_id: authUserId,
+    _perm: perm,
+  });
+  return data === true;
+}
+
+async function checkRecordAccess(supabaseAdmin: any, authUserId: string, job: any): Promise<boolean> {
+  const { data } = await supabaseAdmin.rpc("can_access_record_v2", {
+    _auth_user_id: authUserId,
+    _record_company_id: job.company_id,
+    _record_department_id: job.department_id || null,
+    _record_created_by: job.created_by || null,
+    _record_id: job.id,
+  });
+  return data === true;
+}
+
+// ── Lookup job + validate access ──
+interface JobContext {
+  id: string;
+  company_id: string;
+  department_id: string | null;
+  created_by: string | null;
+  sharepoint_folder_id: string | null;
+  sharepoint_drive_id: string | null;
+  sharepoint_site_id: string | null;
+  sharepoint_folder_web_url: string | null;
+  sharepoint_project_code: string | null;
+}
+
+async function loadJob(supabaseAdmin: any, jobId: string): Promise<JobContext | null> {
+  const { data } = await supabaseAdmin
+    .from("events")
+    .select("id, company_id, department_id, created_by, sharepoint_folder_id, sharepoint_drive_id, sharepoint_site_id, sharepoint_folder_web_url, sharepoint_project_code")
+    .eq("id", jobId)
+    .single();
+  return data as JobContext | null;
+}
+
+// ── Audit log helper ──
+async function auditLog(supabaseAdmin: any, authUserId: string, action: string, targetId: string | null, targetType: string, metadata: Record<string, unknown> = {}) {
+  try {
+    // Get user_account_id for audit_log
+    const { data: uaId } = await supabaseAdmin.rpc("get_user_account_id", { _auth_user_id: authUserId });
+    await supabaseAdmin.from("audit_log").insert({
+      action,
+      actor_user_account_id: uaId || null,
+      target_id: targetId,
+      target_type: targetType,
+      metadata,
+    });
+  } catch (_) { /* non-critical */ }
+}
+
+// ── SpConfig ──
 interface SpConfig {
   id: string;
   sharepoint_site_id: string | null;
@@ -89,7 +143,6 @@ async function verifyConfig(
   let healed = false;
   const healParts: string[] = [];
 
-  // Step 1: If site_id missing, resolve it from known hostname/path
   if (!siteId) {
     const siteHostname = "mcselektrotavler.sharepoint.com";
     const sitePath = "/sites/BCDokumentarkiv";
@@ -107,7 +160,6 @@ async function verifyConfig(
     healParts.push(`Site: ${siteData.displayName || siteId}`);
   }
 
-  // Step 2: Resolve / verify drive_id
   const drivesUrl = `${GRAPH_BASE}/sites/${siteId}/drives`;
   console.log(`[verify_config] request_id=${requestId} listing drives`);
   const drivesRes = await graphFetch(msToken, drivesUrl);
@@ -125,7 +177,6 @@ async function verifyConfig(
   }
 
   if (!driveId || driveId !== bestDrive.id) {
-    // Check if current driveId is still valid
     const currentValid = driveId && allDrives.some((d: any) => d.id === driveId);
     if (!currentValid) {
       driveId = bestDrive.id;
@@ -134,7 +185,6 @@ async function verifyConfig(
     }
   }
 
-  // Step 3: Verify base_path exists
   if (!basePath) basePath = "Drift";
   const alternativePaths = ["Drift", "drift", "Prosjekter/Drift", "Dokumenter/Drift"];
 
@@ -145,13 +195,11 @@ async function verifyConfig(
   if (pathRes.ok) {
     const item = await pathRes.json();
     if (item.folder) basePathValid = true;
-    else await Promise.resolve(); // consumed
   } else {
-    await pathRes.text(); // consume
+    await pathRes.text();
   }
 
   if (!basePathValid) {
-    // Try alternatives
     for (const alt of alternativePaths) {
       if (alt === basePath) continue;
       const altUrl = `${GRAPH_BASE}/drives/${driveId}/root:/${encodeURIComponent(alt).replace(/%2F/g, "/")}`;
@@ -167,7 +215,7 @@ async function verifyConfig(
           break;
         }
       } else {
-        await altRes.text(); // consume
+        await altRes.text();
       }
     }
 
@@ -175,12 +223,11 @@ async function verifyConfig(
       throw {
         step: "verify_base_path",
         graph_status: 404,
-        message: `Rot-mappen "${basePath}" finnes ikke i dette dokumentbiblioteket. Prøvde også: ${alternativePaths.join(", ")}`,
+        message: `Rot-mappen "${basePath}" finnes ikke. Prøvde også: ${alternativePaths.join(", ")}`,
       };
     }
   }
 
-  // Step 4: Persist healed config
   if (healed) {
     console.log(`[verify_config] request_id=${requestId} saving healed config site=${siteId} drive=${driveId} base=${basePath}`);
     await supabaseAdmin
@@ -210,7 +257,6 @@ Deno.serve(async (req) => {
   }
 
   const requestId = crypto.randomUUID();
-
   const respond = (data: Record<string, unknown>, status = 200) =>
     jsonResponse({ ...data, request_id: requestId }, status);
 
@@ -226,7 +272,7 @@ Deno.serve(async (req) => {
     );
     const { data: userData, error: userErr } = await supabaseAnon.auth.getUser(jwt);
     if (userErr || !userData?.user) return respond({ error: "Invalid session" }, 401);
-    const userId = userData.user.id;
+    const authUserId = userData.user.id;
 
     const supabaseAdmin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -235,32 +281,50 @@ Deno.serve(async (req) => {
     );
 
     const body = await req.json().catch(() => ({}));
-    const { action, job_id, project_code, folder_id, company_id } = body;
+    const { action, job_id, project_code, folder_id } = body;
 
-    console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id} project_code=${project_code} company_id=${company_id}`);
+    console.log(`[sharepoint-connect] request_id=${requestId} action=${action} job_id=${job_id}`);
 
-    // ── Helper: load company SharePoint config ──
-    async function loadSpConfig(): Promise<SpConfig | null> {
-      const { data } = await supabaseAdmin
+    // ── Helper: load company SharePoint config by company_id ──
+    async function loadSpConfig(companyId?: string): Promise<SpConfig | null> {
+      const q = supabaseAdmin
         .from("company_settings")
-        .select("id, sharepoint_site_id, sharepoint_drive_id, sharepoint_base_path")
-        .limit(1)
-        .maybeSingle();
+        .select("id, sharepoint_site_id, sharepoint_drive_id, sharepoint_base_path");
+      // company_settings is a singleton — just get first row
+      const { data } = await q.limit(1).maybeSingle();
       return data as SpConfig | null;
     }
 
     // ── SEARCH ──
+    // Requires: job_id + project_code. Resolves company from job server-side.
     if (action === "search") {
       try {
         const code = (project_code || "").trim().toUpperCase().replace(/\s+/g, "");
         if (!code) return respond({ error: "project_code required" }, 400);
+        if (!job_id) return respond({ error: "job_id required" }, 400);
+
+        // Load job server-side
+        const job = await loadJob(supabaseAdmin, job_id);
+        if (!job) return respond({ error: "Jobb ikke funnet", step: "lookup" }, 404);
+
+        // RBAC: check scope access
+        const hasAccess = await checkRecordAccess(supabaseAdmin, authUserId, job);
+        if (!hasAccess) {
+          return respond({ error: "Du mangler tilgang til SharePoint for dette selskapet.", step: "rbac" }, 403);
+        }
+
+        // RBAC: check permission
+        const canView = await checkPermission(supabaseAdmin, authUserId, "sharepoint.view");
+        const canLink = await checkPermission(supabaseAdmin, authUserId, "sharepoint.link_job");
+        if (!canView && !canLink) {
+          return respond({ error: "Du mangler SharePoint-rettigheter.", step: "rbac" }, 403);
+        }
 
         const spConfig = await loadSpConfig();
         if (!spConfig) {
           return respond({ error: "Ingen firmainnstillinger funnet. Opprett dem først.", step: "config" }, 400);
         }
 
-        // Get MS token
         let msToken: string;
         try {
           msToken = await getAppToken();
@@ -269,22 +333,42 @@ Deno.serve(async (req) => {
           return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
         }
 
-        // Auto-heal: verify and fix config
+        // Self-heal: only if config is incomplete AND user is admin
         let verified: VerifyResult;
-        try {
-          verified = await verifyConfig(supabaseAdmin, msToken, spConfig, requestId);
-        } catch (vErr: any) {
-          console.error(`[sharepoint-connect] request_id=${requestId} verify_config failed:`, vErr.message || vErr);
-          return respond({
-            error: vErr.message || "Konfig-verifisering feilet",
-            step: vErr.step || "verify_config",
-            graph_status: vErr.graph_status || null,
-            debug: {
-              site_id: spConfig.sharepoint_site_id,
-              drive_id: spConfig.sharepoint_drive_id,
-              base_path: spConfig.sharepoint_base_path,
-            },
-          }, 502);
+        const configIncomplete = !spConfig.sharepoint_site_id || !spConfig.sharepoint_drive_id;
+        if (configIncomplete) {
+          const isAdmin = await checkPermission(supabaseAdmin, authUserId, "sharepoint.admin");
+          if (!isAdmin) {
+            return respond({
+              error: "SharePoint-konfigurasjon mangler. Kontakt administrator.",
+              step: "config",
+            }, 400);
+          }
+          try {
+            verified = await verifyConfig(supabaseAdmin, msToken, spConfig, requestId);
+            // Audit log the self-heal
+            await auditLog(supabaseAdmin, authUserId, "sharepoint_config_healed", spConfig.id, "company_settings", {
+              heal_summary: verified.healSummary,
+              site_id: verified.site_id,
+              drive_id: verified.drive_id,
+              base_path: verified.base_path,
+            });
+          } catch (vErr: any) {
+            console.error(`[sharepoint-connect] request_id=${requestId} verify_config failed:`, vErr.message || vErr);
+            return respond({
+              error: vErr.message || "Konfig-verifisering feilet",
+              step: vErr.step || "verify_config",
+              graph_status: vErr.graph_status || null,
+              debug: { site_id: spConfig.sharepoint_site_id, drive_id: spConfig.sharepoint_drive_id, base_path: spConfig.sharepoint_base_path },
+            }, 502);
+          }
+        } else {
+          verified = {
+            site_id: spConfig.sharepoint_site_id!,
+            drive_id: spConfig.sharepoint_drive_id!,
+            base_path: (spConfig.sharepoint_base_path || "Drift").replace(/^\/+|\/+$/g, ""),
+            healed: false,
+          };
         }
 
         const { site_id: siteId, drive_id: driveId, base_path: basePath } = verified;
@@ -315,30 +399,27 @@ Deno.serve(async (req) => {
               debug: { site_id: siteId, drive_id: driveId, base_path: basePath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl, attempted_path: attemptedPath },
             });
           }
-          // file, not folder — fall through
         } else {
           const status = pathRes.status;
           await pathRes.text();
           if (status !== 404) {
-            console.error(`[sharepoint-connect] request_id=${requestId} step=path_lookup graph_status=${status}`);
             return respond({
               error: graphErrorMessage(status),
               graph_status: status,
               step: "path_lookup",
-              debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl },
+              debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath },
             }, 502);
           }
         }
 
         // Strategy 2: Search within drive
         const searchUrl = `${GRAPH_BASE}/sites/${siteId}/drives/${driveId}/root/search(q='${encodeURIComponent(code)}')`;
-        console.log(`[sharepoint-connect] request_id=${requestId} step=search_fallback url=${searchUrl}`);
+        console.log(`[sharepoint-connect] request_id=${requestId} step=search_fallback`);
         const searchRes = await graphFetch(msToken, searchUrl);
 
         if (!searchRes.ok) {
           const errBody = await searchRes.json().catch(() => ({}));
           const errCode = errBody?.error?.code || "";
-          console.error(`[sharepoint-connect] request_id=${requestId} step=search graph_status=${searchRes.status} graph_error_code=${errCode}`);
           return respond({
             error: graphErrorMessage(searchRes.status, errCode),
             graph_status: searchRes.status,
@@ -350,7 +431,6 @@ Deno.serve(async (req) => {
 
         const searchData = await searchRes.json();
         const items = searchData.value || [];
-
         const basePathLower = basePath.toLowerCase();
         const folders = items
           .filter((item: any) => {
@@ -387,7 +467,7 @@ Deno.serve(async (req) => {
             folders: [],
             config_healed: verified.healed,
             heal_summary: verified.healSummary,
-            debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl },
+            debug: { site_id: siteId, drive_id: driveId, base_path: basePath, attempted_path: attemptedPath },
           }, 200);
         }
 
@@ -397,7 +477,7 @@ Deno.serve(async (req) => {
           attempted_path: attemptedPath,
           config_healed: verified.healed,
           heal_summary: verified.healSummary,
-          debug: { site_id: siteId, drive_id: driveId, base_path: basePath, drive_name: verified.drive_name, drive_webUrl: verified.drive_webUrl },
+          debug: { site_id: siteId, drive_id: driveId, base_path: basePath },
         });
       } catch (searchErr: any) {
         console.error(`[sharepoint-connect] request_id=${requestId} action=search unhandled:`, searchErr.message || searchErr);
@@ -409,6 +489,15 @@ Deno.serve(async (req) => {
     if (action === "connect") {
       try {
         if (!job_id || !folder_id) return respond({ error: "job_id and folder_id required" }, 400);
+
+        const job = await loadJob(supabaseAdmin, job_id);
+        if (!job) return respond({ error: "Jobb ikke funnet", step: "lookup" }, 404);
+
+        const hasAccess = await checkRecordAccess(supabaseAdmin, authUserId, job);
+        if (!hasAccess) return respond({ error: "Du mangler tilgang til denne jobben.", step: "rbac" }, 403);
+
+        const canLink = await checkPermission(supabaseAdmin, authUserId, "sharepoint.link_job");
+        if (!canLink) return respond({ error: "Du mangler rettighet til å koble SharePoint-mapper.", step: "rbac" }, 403);
 
         const webUrl = body.web_url || null;
         const siteId = body.site_id || null;
@@ -428,17 +517,24 @@ Deno.serve(async (req) => {
 
         if (updateErr) {
           console.error(`[sharepoint-connect] request_id=${requestId} step=connect error=${updateErr.message}`);
-          return respond({ error: "Kunne ikke lagre kobling", detail: updateErr.message }, 500);
+          return respond({ error: "Kunne ikke lagre kobling", detail: updateErr.message, step: "connect" }, 500);
         }
+
+        // Audit log
+        await auditLog(supabaseAdmin, authUserId, "sharepoint_connected", job_id, "event", {
+          project_code: project_code || folder_id,
+          folder_id,
+          drive_id: driveId,
+        });
 
         try {
           await supabaseAdmin.from("event_logs").insert({
             event_id: job_id,
             action_type: "sharepoint_connected",
-            performed_by: userId,
+            performed_by: authUserId,
             change_summary: `SharePoint-mappe koblet: ${project_code || folder_id}`,
           });
-        } catch (_) { /* ignore logging errors */ }
+        } catch (_) { /* non-critical */ }
 
         return respond({ success: true });
       } catch (connectErr: any) {
@@ -452,7 +548,16 @@ Deno.serve(async (req) => {
       try {
         if (!job_id) return respond({ error: "job_id required" }, 400);
 
-        await supabaseAdmin
+        const job = await loadJob(supabaseAdmin, job_id);
+        if (!job) return respond({ error: "Jobb ikke funnet", step: "lookup" }, 404);
+
+        const hasAccess = await checkRecordAccess(supabaseAdmin, authUserId, job);
+        if (!hasAccess) return respond({ error: "Du mangler tilgang til denne jobben.", step: "rbac" }, 403);
+
+        const canLink = await checkPermission(supabaseAdmin, authUserId, "sharepoint.link_job");
+        if (!canLink) return respond({ error: "Du mangler rettighet til å koble fra SharePoint-mapper.", step: "rbac" }, 403);
+
+        const { error: updateErr } = await supabaseAdmin
           .from("events")
           .update({
             sharepoint_project_code: null,
@@ -464,14 +569,22 @@ Deno.serve(async (req) => {
           })
           .eq("id", job_id);
 
+        if (updateErr) {
+          return respond({ error: "Kunne ikke fjerne kobling", detail: updateErr.message, step: "disconnect" }, 500);
+        }
+
+        await auditLog(supabaseAdmin, authUserId, "sharepoint_disconnected", job_id, "event", {
+          previous_code: job.sharepoint_project_code,
+        });
+
         try {
           await supabaseAdmin.from("event_logs").insert({
             event_id: job_id,
             action_type: "sharepoint_disconnected",
-            performed_by: userId,
+            performed_by: authUserId,
             change_summary: "SharePoint-kobling fjernet",
           });
-        } catch (_) { /* ignore logging errors */ }
+        } catch (_) { /* non-critical */ }
 
         return respond({ success: true });
       } catch (disconnectErr: any) {
@@ -480,79 +593,61 @@ Deno.serve(async (req) => {
       }
     }
 
-    // ── RESOLVE_SITE ──
+    // ── RESOLVE_SITE ── (admin only)
     if (action === "resolve_site") {
       try {
+        const isAdmin = await checkPermission(supabaseAdmin, authUserId, "sharepoint.admin");
+        if (!isAdmin) {
+          return respond({ error: "Kun administratorer kan konfigurere SharePoint-integrasjon.", step: "rbac" }, 403);
+        }
+
         const siteHostname = (body.site_hostname || "").trim();
         const sitePath = (body.site_path || "").trim();
         const basePath = (body.base_path || "").trim();
 
         if (!siteHostname || !sitePath) {
-          return respond({ error: "site_hostname og site_path er påkrevd (f.eks. 'mcselektrotavler.sharepoint.com' og '/sites/BCDokumentarkiv')" }, 400);
+          return respond({ error: "site_hostname og site_path er påkrevd" }, 400);
         }
 
         let msToken: string;
         try {
           msToken = await getAppToken();
         } catch (e: any) {
-          console.error(`[sharepoint-connect] request_id=${requestId} step=token error=${e.message}`);
           return respond({ error: "Microsoft-token feilet.", graph_status: 401, step: "token" }, 502);
         }
 
-        // Resolve site
         const siteUrl = `${GRAPH_BASE}/sites/${siteHostname}:${sitePath}`;
-        console.log(`[sharepoint-connect] request_id=${requestId} step=resolve_site url=${siteUrl}`);
         const siteRes = await graphFetch(msToken, siteUrl);
 
         if (!siteRes.ok) {
           const status = siteRes.status;
           await siteRes.text();
-          return respond({
-            error: graphErrorMessage(status),
-            graph_status: status,
-            step: "resolve_site",
-          }, 502);
+          return respond({ error: graphErrorMessage(status), graph_status: status, step: "resolve_site" }, 502);
         }
 
         const siteData = await siteRes.json();
         const resolvedSiteId = siteData.id;
 
-        // Get drives
         const drivesUrl = `${GRAPH_BASE}/sites/${resolvedSiteId}/drives`;
-        console.log(`[sharepoint-connect] request_id=${requestId} step=resolve_drives url=${drivesUrl}`);
         const drivesRes = await graphFetch(msToken, drivesUrl);
 
         if (!drivesRes.ok) {
           const status = drivesRes.status;
           await drivesRes.text();
-          return respond({
-            error: graphErrorMessage(status),
-            graph_status: status,
-            step: "resolve_drives",
-            site_id: resolvedSiteId,
-          }, 502);
+          return respond({ error: graphErrorMessage(status), graph_status: status, step: "resolve_drives", site_id: resolvedSiteId }, 502);
         }
 
         const drivesData = await drivesRes.json();
-        const drives = (drivesData.value || []).map((d: any) => ({
-          id: d.id,
-          name: d.name,
-          webUrl: d.webUrl,
-          driveType: d.driveType,
-        }));
-
+        const drives = (drivesData.value || []).map((d: any) => ({ id: d.id, name: d.name, webUrl: d.webUrl, driveType: d.driveType }));
         const defaultDrive = pickBestDrive(drivesData.value || []);
 
         if (!defaultDrive) {
-          return respond({ error: "Fant ingen dokumentbibliotek på dette SharePoint-området.", step: "resolve_drives", site_id: resolvedSiteId }, 404);
+          return respond({ error: "Fant ingen dokumentbibliotek.", step: "resolve_drives", site_id: resolvedSiteId }, 404);
         }
 
-        // Save to company_settings
         const spConfig = await loadSpConfig();
-        const settingsId = spConfig?.id;
-
-        if (!settingsId) {
-          return respond({ error: "Ingen firmainnstillinger funnet. Opprett dem først.", step: "save" }, 400);
+        if (!spConfig) {
+          return respond({ error: "Ingen firmainnstillinger funnet.", step: "save" }, 400);
         }
 
         const { error: saveErr } = await supabaseAdmin
@@ -562,12 +657,18 @@ Deno.serve(async (req) => {
             sharepoint_drive_id: defaultDrive.id,
             sharepoint_base_path: basePath || null,
           })
-          .eq("id", settingsId);
+          .eq("id", spConfig.id);
 
         if (saveErr) {
-          console.error(`[sharepoint-connect] request_id=${requestId} step=save error=${saveErr.message}`);
           return respond({ error: "Kunne ikke lagre konfigurasjon", detail: saveErr.message, step: "save" }, 500);
         }
+
+        await auditLog(supabaseAdmin, authUserId, "sharepoint_config_resolved", spConfig.id, "company_settings", {
+          site_id: resolvedSiteId,
+          drive_id: defaultDrive.id,
+          drive_name: defaultDrive.name,
+          base_path: basePath,
+        });
 
         return respond({
           success: true,
