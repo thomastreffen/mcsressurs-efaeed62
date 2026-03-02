@@ -22,6 +22,10 @@ import JobsPage from "./pages/JobsPage";
 import ResourcePlan from "./pages/ResourcePlan";
 import JobDetail from "./pages/JobDetail";
 import AdminUsers from "./pages/AdminUsers";
+import OrganisationPage from "./pages/OrganisationPage";
+import PeoplePage from "./pages/PeoplePage";
+import PersonDetailPage from "./pages/PersonDetailPage";
+import RolesPage from "./pages/RolesPage";
 import AdminSettings from "./pages/AdminSettings";
 import NotificationsPage from "./pages/NotificationsPage";
 import CalculationsPage from "./pages/CalculationsPage";
@@ -195,11 +199,42 @@ const App = () => (
                   </ProtectedRoute>
                 }
               />
+              {/* Legacy redirects for old admin pages */}
+              <Route path="/admin/users" element={<Navigate to="/admin/personer" replace />} />
+              <Route path="/admin/access" element={<Navigate to="/admin/organisasjon" replace />} />
+              <Route path="/admin/ansatte" element={<Navigate to="/admin/personer" replace />} />
+              <Route path="/admin/ansatte/:id" element={<Navigate to="/admin/personer" replace />} />
+
+              {/* New admin pages */}
               <Route
-                path="/admin/users"
+                path="/admin/organisasjon"
                 element={
                   <ProtectedRoute requiredRoles={["super_admin"]}>
-                    <AdminUsers />
+                    <OrganisationPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/personer"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <PeoplePage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/personer/:id"
+                element={
+                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
+                    <PersonDetailPage />
+                  </ProtectedRoute>
+                }
+              />
+              <Route
+                path="/admin/roller"
+                element={
+                  <ProtectedRoute requiredRoles={["super_admin"]}>
+                    <RolesPage />
                   </ProtectedRoute>
                 }
               />
@@ -216,14 +251,6 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
                     <TrashPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/access"
-                element={
-                  <ProtectedRoute requiredRoles={["super_admin"]}>
-                    <AccessControlPage />
                   </ProtectedRoute>
                 }
               />
@@ -273,22 +300,6 @@ const App = () => (
                 element={
                   <ProtectedRoute requiredPermission="postkontor.admin">
                     <SuperofficeSettingsPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/ansatte"
-                element={
-                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                    <EmployeesPage />
-                  </ProtectedRoute>
-                }
-              />
-              <Route
-                path="/admin/ansatte/:id"
-                element={
-                  <ProtectedRoute requiredRoles={["admin", "super_admin"]}>
-                    <PersonnelDetailPage />
                   </ProtectedRoute>
                 }
               />
