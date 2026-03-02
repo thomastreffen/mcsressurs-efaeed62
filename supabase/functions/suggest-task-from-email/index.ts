@@ -22,7 +22,7 @@ Deno.serve(async (req) => {
     const { data: { user }, error: authErr } = await userClient.auth.getUser();
     if (authErr || !user) throw new Error("Unauthorized");
 
-    const { case_id, case_item_id, triage_mode } = await req.json();
+    const { case_id, case_item_id, triage_mode, mentioned_user_ids } = await req.json();
     if (!case_id) throw new Error("case_id required");
 
     // Fetch case + items + documents in parallel
@@ -262,10 +262,66 @@ Return ONLY valid JSON, no markdown.`,
         ownerRole = "Økonomi"; rationale = "Fakturahenvendelse";
       }
 
+      // ── Mention-driven triage enhancements ──
+      const mentionIds: string[] = mentioned_user_ids || [];
+      let mentionSignal: any = null;
+      let suggestedOwnerUserId: string | null = null;
+      let suggestedTask: any = null;
+
+      if (mentionIds.length > 0) {
+        const hasActionVerb = !!combined.match(/ring|avklar|bestill|ordne|send|planlegg|book|avtal|fix|sjekk|følg opp|ta kontakt/);
+        
+        if (mentionIds.length === 1 && hasActionVerb) {
+          suggestedOwnerUserId = mentionIds[0];
+          mentionSignal = {
+            mentioned_user_ids: mentionIds,
+            confidence_boost: 0.3,
+            reasoning: "Én bruker nevnt med handlingsverb – høy sikkerhet",
+          };
+
+          // Parse natural due date
+          let taskDueDays = dueDays;
+          if (combined.match(/i morgen|tomorrow/)) taskDueDays = 1;
+          else if (combined.match(/i dag|today|asap/)) taskDueDays = 0;
+          else if (combined.match(/denne uken|this week/)) taskDueDays = 3;
+
+          const taskDue = new Date();
+          taskDue.setDate(taskDue.getDate() + taskDueDays);
+
+          // Extract a short action description from context
+          const actionMatch = combined.match(/(ring|avklar|bestill|ordne|send|planlegg|book|avtal|fix|sjekk|følg opp|ta kontakt)\s+(.{3,60}?)(?:\.|,|$)/);
+          const actionDesc = actionMatch ? `${actionMatch[1]} ${actionMatch[2]}`.trim() : "";
+
+          suggestedTask = {
+            title: actionDesc || targetItem?.subject || caseData.title || "Oppfølging",
+            description: `Basert på @mention i e-post`,
+            due_at: taskDue.toISOString(),
+            priority: priority === "critical" ? "critical" : "normal",
+            assignees: [{ user_id: mentionIds[0], role: "ansvarlig" }],
+          };
+        } else if (mentionIds.length > 1) {
+          mentionSignal = {
+            mentioned_user_ids: mentionIds,
+            confidence_boost: 0.1,
+            reasoning: `${mentionIds.length} brukere nevnt – manuell tildeling anbefalt`,
+          };
+        } else if (mentionIds.length === 1 && !hasActionVerb) {
+          suggestedOwnerUserId = mentionIds[0];
+          mentionSignal = {
+            mentioned_user_ids: mentionIds,
+            confidence_boost: 0.15,
+            reasoning: "Én bruker nevnt, men uten tydelig handlingsverb",
+          };
+        }
+      }
+
       return {
         priority, status: priority === "critical" ? "triage" : "in_progress",
         next_action: nextAction, suggested_owner_role: ownerRole,
         due_days: dueDays, convert_to: convertTo, rationale,
+        mention_signal: mentionSignal,
+        suggested_owner_user_id: suggestedOwnerUserId,
+        suggested_task: suggestedTask,
       };
     })();
 

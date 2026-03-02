@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
   Sparkles, Loader2, AlertTriangle, ArrowRight, UserCheck,
-  CalendarDays, Tag, CheckCircle,
+  CalendarDays, Tag, CheckCircle, AtSign, ListTodo,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -16,6 +16,19 @@ interface TriageSuggestion {
   due_days: number;
   convert_to: string | null;
   rationale: string;
+  mention_signal?: {
+    mentioned_user_ids: string[];
+    confidence_boost: number;
+    reasoning: string;
+  };
+  suggested_owner_user_id?: string | null;
+  suggested_task?: {
+    title: string;
+    description?: string;
+    due_at: string;
+    priority: string;
+    assignees: { user_id: string; role?: string }[];
+  } | null;
 }
 
 interface SmartTriageChipsProps {
@@ -23,7 +36,10 @@ interface SmartTriageChipsProps {
   caseTitle: string;
   currentStatus: string;
   currentPriority: string;
+  mentionedUserIds?: string[];
   onApplySuggestion: (updates: Record<string, any>) => void;
+  onAssignUser?: (userId: string) => void;
+  onCreateTask?: (task: { title: string; assigneeId?: string; dueAt?: string; priority?: string }) => void;
 }
 
 const PRIORITY_COLORS: Record<string, string> = {
@@ -38,11 +54,15 @@ export function SmartTriageChips({
   caseTitle,
   currentStatus,
   currentPriority,
+  mentionedUserIds,
   onApplySuggestion,
+  onAssignUser,
+  onCreateTask,
 }: SmartTriageChipsProps) {
   const [suggestion, setSuggestion] = useState<TriageSuggestion | null>(null);
   const [loading, setLoading] = useState(true);
   const [applied, setApplied] = useState(false);
+  const [ownerName, setOwnerName] = useState<string | null>(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -51,7 +71,11 @@ export function SmartTriageChips({
 
     supabase.functions
       .invoke("suggest-task-from-email", {
-        body: { case_id: caseId, triage_mode: true },
+        body: {
+          case_id: caseId,
+          triage_mode: true,
+          mentioned_user_ids: mentionedUserIds || [],
+        },
       })
       .then(({ data, error }) => {
         if (cancelled) return;
@@ -60,11 +84,23 @@ export function SmartTriageChips({
           return;
         }
         setSuggestion(data.triage);
+
+        // Resolve suggested owner name
+        if (data.triage.suggested_owner_user_id) {
+          supabase
+            .from("technicians")
+            .select("name")
+            .eq("user_id", data.triage.suggested_owner_user_id)
+            .maybeSingle()
+            .then(({ data: tech }) => {
+              if (!cancelled && tech?.name) setOwnerName(tech.name);
+            });
+        }
         setLoading(false);
       });
 
     return () => { cancelled = true; };
-  }, [caseId]);
+  }, [caseId, mentionedUserIds?.join(",")]);
 
   if (loading) {
     return (
@@ -79,7 +115,9 @@ export function SmartTriageChips({
   if (!suggestion || applied) return null;
 
   const hasDiff = suggestion.priority !== currentPriority || suggestion.status !== currentStatus;
-  if (!hasDiff && !suggestion.convert_to) return null;
+  const hasMentionSuggestion = !!suggestion.suggested_owner_user_id;
+  const hasTask = !!suggestion.suggested_task;
+  if (!hasDiff && !suggestion.convert_to && !hasMentionSuggestion && !hasTask) return null;
 
   const handleApply = () => {
     const updates: Record<string, any> = {};
@@ -96,11 +134,35 @@ export function SmartTriageChips({
     toast.success("AI-forslag brukt");
   };
 
+  const handleAssign = () => {
+    if (suggestion.suggested_owner_user_id && onAssignUser) {
+      onAssignUser(suggestion.suggested_owner_user_id);
+      toast.success(`Tildelt til ${ownerName || "bruker"}`);
+    }
+  };
+
+  const handleCreateTask = () => {
+    if (suggestion.suggested_task && onCreateTask) {
+      onCreateTask({
+        title: suggestion.suggested_task.title,
+        assigneeId: suggestion.suggested_owner_user_id || undefined,
+        dueAt: suggestion.suggested_task.due_at,
+        priority: suggestion.suggested_task.priority,
+      });
+    }
+  };
+
   return (
     <div className="rounded-lg border border-violet-200 dark:border-violet-800 bg-violet-50/50 dark:bg-violet-950/10 p-3 space-y-2">
       <div className="flex items-center gap-1.5">
         <Sparkles className="h-3.5 w-3.5 text-violet-500" />
         <span className="text-xs font-medium text-violet-700 dark:text-violet-300">AI-triage forslag</span>
+        {suggestion.mention_signal && suggestion.mention_signal.mentioned_user_ids.length > 0 && (
+          <Badge variant="outline" className="text-[10px] gap-1 border-violet-300 dark:border-violet-700 text-violet-600 dark:text-violet-400">
+            <AtSign className="h-3 w-3" />
+            Mention-signal
+          </Badge>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-1.5">
@@ -139,16 +201,45 @@ export function SmartTriageChips({
       {suggestion.rationale && (
         <p className="text-xs text-muted-foreground">{suggestion.rationale}</p>
       )}
+      {suggestion.mention_signal?.reasoning && (
+        <p className="text-xs text-muted-foreground italic">{suggestion.mention_signal.reasoning}</p>
+      )}
 
-      <Button
-        variant="outline"
-        size="sm"
-        className="gap-1.5 text-xs h-7 border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/30"
-        onClick={handleApply}
-      >
-        <CheckCircle className="h-3.5 w-3.5" />
-        Bruk forslag
-      </Button>
+      <div className="flex flex-wrap gap-1.5">
+        {hasDiff && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs h-7 border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/30"
+            onClick={handleApply}
+          >
+            <CheckCircle className="h-3.5 w-3.5" />
+            Bruk forslag
+          </Button>
+        )}
+        {hasMentionSuggestion && onAssignUser && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs h-7 border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/30"
+            onClick={handleAssign}
+          >
+            <UserCheck className="h-3.5 w-3.5" />
+            Tildel til {ownerName || "nevnt bruker"}
+          </Button>
+        )}
+        {hasTask && onCreateTask && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="gap-1.5 text-xs h-7 border-violet-200 dark:border-violet-800 text-violet-700 dark:text-violet-300 hover:bg-violet-100 dark:hover:bg-violet-900/30"
+            onClick={handleCreateTask}
+          >
+            <ListTodo className="h-3.5 w-3.5" />
+            Opprett oppgave{ownerName ? ` til ${ownerName}` : ""}
+          </Button>
+        )}
+      </div>
     </div>
   );
 }
