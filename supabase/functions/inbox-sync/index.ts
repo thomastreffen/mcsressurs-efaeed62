@@ -655,6 +655,14 @@ Deno.serve(async (req) => {
           const inReplyTo = headers.find((h: any) => h.name?.toLowerCase() === "in-reply-to")?.value || null;
           const referencesHeader = headers.find((h: any) => h.name?.toLowerCase() === "references")?.value || null;
 
+          // Extract X-MCS-* custom headers for robust routing
+          const xMcsEntity = headers.find((h: any) => h.name?.toLowerCase() === "x-mcs-entity")?.value || null;
+          const xMcsId = headers.find((h: any) => h.name?.toLowerCase() === "x-mcs-id")?.value || null;
+          const xMcsThread = headers.find((h: any) => h.name?.toLowerCase() === "x-mcs-thread")?.value || null;
+
+          // ── ROUTING ENGINE (priority: X-MCS → In-Reply-To/References → Subject/Body) ──
+          let routingMethod: string = "new_case";
+
           // ── EXTRACT IDs ──
           const extracted = extractAllIds(normalizedSubject, bodyText);
           let caseId: string | null = null;
@@ -662,45 +670,149 @@ Deno.serve(async (req) => {
           const resolvedLinks: ResolvedLink[] = [];
           const failedMatches: { match: IdMatch; reason: string }[] = [];
 
-          // 1. Try CASE IDs first — find existing case to attach to
-          for (const caseMatch of extracted.caseIds) {
-            const resolvedCaseId = await resolveCaseId(caseMatch, companyId, supabaseAdmin);
-            if (resolvedCaseId) {
-              caseId = resolvedCaseId;
-              console.log(`[inbox-sync] Matched case ${caseMatch.lookupValue} -> ${caseId}`);
-              break;
-            } else {
-              failedMatches.push({ match: caseMatch, reason: "objekt ikke funnet i samme firma" });
-            }
-          }
-
-          // 2. Priority order: JOB > PROJECT > OFFER > LEAD — resolve and link
-          const orderedMatches: IdMatch[] = [
-            ...extracted.jobIds,
-            ...extracted.projectIds,
-            ...extracted.offerIds,
-            ...extracted.leadIds,
-          ];
-
-          if (orderedMatches.length > 1) {
-            console.log(`[inbox-sync] Multiple IDs found: ${orderedMatches.map(m => m.lookupValue).join(", ")}. Using priority: JOB > PROJECT > OFFER > LEAD.`);
-          }
-
-          for (const idMatch of orderedMatches) {
-            let resolved: ResolvedLink | null = null;
-            switch (idMatch.type) {
-              case "job": resolved = await resolveJobId(idMatch, companyId, supabaseAdmin); break;
-              case "project": resolved = await resolveProjectId(idMatch, companyId, supabaseAdmin); break;
-              case "offer": resolved = await resolveOfferId(idMatch, companyId, supabaseAdmin); break;
-              case "lead": resolved = await resolveLeadId(idMatch, companyId, supabaseAdmin); break;
-            }
-            if (resolved) {
-              if (!linkedUpdates[resolved.field]) {
-                linkedUpdates[resolved.field] = resolved.id;
-                resolvedLinks.push(resolved);
+          // ── STEP 0: Route via X-MCS-ID header (highest priority) ──
+          if (xMcsId) {
+            console.log(`[inbox-sync] Found X-MCS-ID header: ${xMcsId}, entity: ${xMcsEntity}`);
+            // Try to match from X-MCS-ID (e.g. "JOB-000010")
+            const xMatches = extractIdsFromText(xMcsId, "subject");
+            for (const xm of xMatches) {
+              if (xm.type === "case") {
+                const resolved = await resolveCaseId(xm, companyId, supabaseAdmin);
+                if (resolved) { caseId = resolved; routingMethod = "xheader"; break; }
+              } else {
+                let resolved: ResolvedLink | null = null;
+                switch (xm.type) {
+                  case "job": resolved = await resolveJobId(xm, companyId, supabaseAdmin); break;
+                  case "project": resolved = await resolveProjectId(xm, companyId, supabaseAdmin); break;
+                  case "offer": resolved = await resolveOfferId(xm, companyId, supabaseAdmin); break;
+                  case "lead": resolved = await resolveLeadId(xm, companyId, supabaseAdmin); break;
+                }
+                if (resolved) {
+                  linkedUpdates[resolved.field] = resolved.id;
+                  resolvedLinks.push(resolved);
+                  routingMethod = "xheader";
+                }
               }
-            } else {
-              failedMatches.push({ match: idMatch, reason: "objekt ikke funnet i samme firma" });
+            }
+            // Also try X-MCS-THREAD (entity UUID) to find case directly
+            if (!caseId && xMcsThread) {
+              const { data: threadCase } = await supabaseAdmin
+                .from("cases")
+                .select("id")
+                .or(`linked_work_order_id.eq.${xMcsThread},linked_project_id.eq.${xMcsThread},linked_lead_id.eq.${xMcsThread},linked_offer_id.eq.${xMcsThread}`)
+                .eq("company_id", companyId)
+                .limit(1)
+                .maybeSingle();
+              if (threadCase) { caseId = threadCase.id; routingMethod = "xheader_thread"; }
+            }
+          }
+
+          // ── STEP 1: Route via In-Reply-To / References matching outgoing internet_message_id ──
+          if (!caseId && !routingMethod.startsWith("xheader")) {
+            // Check communication_logs (outgoing emails) for internet_message_id match
+            if (inReplyTo) {
+              const { data: outLog } = await supabaseAdmin
+                .from("communication_logs")
+                .select("entity_type, entity_id")
+                .eq("internet_message_id", inReplyTo)
+                .eq("direction", "outbound")
+                .limit(1)
+                .maybeSingle();
+              if (outLog) {
+                console.log(`[inbox-sync] Matched outgoing via In-Reply-To -> ${outLog.entity_type}/${outLog.entity_id}`);
+                // Find or create case linked to this entity
+                const { data: linkedCase } = await supabaseAdmin
+                  .from("cases")
+                  .select("id")
+                  .or(`linked_work_order_id.eq.${outLog.entity_id},linked_project_id.eq.${outLog.entity_id},linked_lead_id.eq.${outLog.entity_id},linked_offer_id.eq.${outLog.entity_id}`)
+                  .eq("company_id", companyId)
+                  .limit(1)
+                  .maybeSingle();
+                if (linkedCase) { caseId = linkedCase.id; routingMethod = "in_reply_to_outgoing"; }
+                else {
+                  // Map entity_type to linked field
+                  const fieldMap: Record<string, string> = { job: "linked_work_order_id", lead: "linked_lead_id", case: "linked_work_order_id" };
+                  const linkField = fieldMap[outLog.entity_type] || "linked_work_order_id";
+                  linkedUpdates[linkField] = outLog.entity_id;
+                  routingMethod = "in_reply_to_outgoing";
+                }
+              }
+            }
+            // Also check References header against outgoing
+            if (!caseId && routingMethod === "new_case" && referencesHeader) {
+              const refIds = referencesHeader.split(/\s+/).filter(Boolean).slice(0, 5);
+              for (const refId of refIds) {
+                const { data: outLog } = await supabaseAdmin
+                  .from("communication_logs")
+                  .select("entity_type, entity_id")
+                  .eq("internet_message_id", refId)
+                  .eq("direction", "outbound")
+                  .limit(1)
+                  .maybeSingle();
+                if (outLog) {
+                  const { data: linkedCase } = await supabaseAdmin
+                    .from("cases")
+                    .select("id")
+                    .or(`linked_work_order_id.eq.${outLog.entity_id},linked_project_id.eq.${outLog.entity_id},linked_lead_id.eq.${outLog.entity_id},linked_offer_id.eq.${outLog.entity_id}`)
+                    .eq("company_id", companyId)
+                    .limit(1)
+                    .maybeSingle();
+                  if (linkedCase) { caseId = linkedCase.id; routingMethod = "references_outgoing"; }
+                  else {
+                    const fieldMap: Record<string, string> = { job: "linked_work_order_id", lead: "linked_lead_id" };
+                    linkedUpdates[fieldMap[outLog.entity_type] || "linked_work_order_id"] = outLog.entity_id;
+                    routingMethod = "references_outgoing";
+                  }
+                  break;
+                }
+              }
+            }
+          }
+
+          // ── STEP 2: Route via subject/body ID extraction (existing logic) ──
+          if (!caseId && routingMethod === "new_case") {
+            // 1. Try CASE IDs first — find existing case to attach to
+            for (const caseMatch of extracted.caseIds) {
+              const resolvedCaseId = await resolveCaseId(caseMatch, companyId, supabaseAdmin);
+              if (resolvedCaseId) {
+                caseId = resolvedCaseId;
+                routingMethod = caseMatch.source === "subject" ? "subject_id" : "body_id";
+                console.log(`[inbox-sync] Matched case ${caseMatch.lookupValue} -> ${caseId}`);
+                break;
+              } else {
+                failedMatches.push({ match: caseMatch, reason: "objekt ikke funnet i samme firma" });
+              }
+            }
+
+            // 2. Priority order: JOB > PROJECT > OFFER > LEAD — resolve and link
+            const orderedMatches: IdMatch[] = [
+              ...extracted.jobIds,
+              ...extracted.projectIds,
+              ...extracted.offerIds,
+              ...extracted.leadIds,
+            ];
+
+            if (orderedMatches.length > 1) {
+              console.log(`[inbox-sync] Multiple IDs found: ${orderedMatches.map(m => m.lookupValue).join(", ")}. Using priority: JOB > PROJECT > OFFER > LEAD.`);
+            }
+
+            for (const idMatch of orderedMatches) {
+              let resolved: ResolvedLink | null = null;
+              switch (idMatch.type) {
+                case "job": resolved = await resolveJobId(idMatch, companyId, supabaseAdmin); break;
+                case "project": resolved = await resolveProjectId(idMatch, companyId, supabaseAdmin); break;
+                case "offer": resolved = await resolveOfferId(idMatch, companyId, supabaseAdmin); break;
+                case "lead": resolved = await resolveLeadId(idMatch, companyId, supabaseAdmin); break;
+              }
+              if (resolved) {
+                if (!linkedUpdates[resolved.field]) {
+                  linkedUpdates[resolved.field] = resolved.id;
+                  resolvedLinks.push(resolved);
+                  if (routingMethod === "new_case") routingMethod = idMatch.source === "subject" ? "subject_id" : "body_id";
+                }
+              } else {
+                failedMatches.push({ match: idMatch, reason: "objekt ikke funnet i samme firma" });
+              }
             }
           }
 
@@ -709,10 +821,13 @@ Deno.serve(async (req) => {
           if (!caseId) {
             const { data: existingCase } = await supabaseAdmin
               .from("cases").select("id").eq("thread_id", threadId).eq("company_id", companyId).maybeSingle();
-            if (existingCase) caseId = existingCase.id;
+            if (existingCase) {
+              caseId = existingCase.id;
+              if (routingMethod === "new_case") routingMethod = "thread_id";
+            }
           }
 
-          // 3b. Fallback: use In-Reply-To / References for threading
+          // 3b. Fallback: use In-Reply-To / References for threading on case_items
           if (!caseId && inReplyTo) {
             const { data: replyItem } = await supabaseAdmin
               .from("case_items")
@@ -722,11 +837,11 @@ Deno.serve(async (req) => {
               .maybeSingle();
             if (replyItem) {
               caseId = replyItem.case_id;
+              if (routingMethod === "new_case") routingMethod = "in_reply_to";
               console.log(`[inbox-sync] Matched case via In-Reply-To header -> ${caseId}`);
             }
           }
           if (!caseId && referencesHeader) {
-            // References header contains space-separated message IDs; try matching any
             const refIds = referencesHeader.split(/\s+/).filter(Boolean).slice(0, 5);
             for (const refId of refIds) {
               const { data: refItem } = await supabaseAdmin
@@ -737,11 +852,15 @@ Deno.serve(async (req) => {
                 .maybeSingle();
               if (refItem) {
                 caseId = refItem.case_id;
+                if (routingMethod === "new_case") routingMethod = "references";
                 console.log(`[inbox-sync] Matched case via References header -> ${caseId}`);
                 break;
               }
             }
           }
+
+          console.log(`[inbox-sync] Routing decision: method=${routingMethod}, caseId=${caseId || "new"}, links=${Object.keys(linkedUpdates).join(",") || "none"}`);
+
 
           if (caseId) {
             // Update existing case — protect manual links from being overwritten
@@ -801,6 +920,14 @@ Deno.serve(async (req) => {
             for (const sn of extracted.standaloneNumbers) {
               await logSuggestedLink(supabaseAdmin, caseId, companyId, sn);
             }
+            // Log routing decision as system event
+            if (routingMethod !== "new_case") {
+              await supabaseAdmin.from("case_items").insert({
+                case_id: caseId, company_id: companyId, type: "system",
+                subject: "routing_decision",
+                body_preview: `E-post rutet via ${routingMethod}. Subject: "${originalSubject.substring(0, 80)}"`,
+              });
+            }
           } else {
             // Create new case
             const ai = autoTriageEnabled
@@ -852,6 +979,14 @@ Deno.serve(async (req) => {
             // Log standalone number suggestions
             for (const sn of extracted.standaloneNumbers) {
               await logSuggestedLink(supabaseAdmin, caseId, companyId, sn);
+            }
+            // Log routing decision for new case
+            if (routingMethod !== "new_case") {
+              await supabaseAdmin.from("case_items").insert({
+                case_id: caseId, company_id: companyId, type: "system",
+                subject: "routing_decision",
+                body_preview: `Ny sak opprettet og rutet via ${routingMethod}. Subject: "${originalSubject.substring(0, 80)}"`,
+              });
             }
           }
 
